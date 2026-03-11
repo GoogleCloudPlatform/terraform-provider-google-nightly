@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 // ----------------------------------------------------------------------------
 //
@@ -17,6 +18,8 @@
 package sweeper_test
 
 import (
+	"testing"
+
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/accessapproval"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/accesscontextmanager"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/activedirectory"
@@ -111,6 +114,7 @@ import (
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iam2"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iam3"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iambeta"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamconnectors"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamworkforcepool"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iap"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/identityplatform"
@@ -185,7 +189,6 @@ import (
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workbench"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workflows"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workstations"
-	"testing"
 
 	// Manually add the services for DCL resource and handwritten resource sweepers if they are not in the above list
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/apikeys"

@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 // ----------------------------------------------------------------------------
 //
@@ -112,6 +113,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iam2"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iam3"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iambeta"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamconnectors"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamworkforcepool"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iap"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/identityplatform"
@@ -652,9 +654,9 @@ var handwrittenIAMDatasources = map[string]*schema.Resource{
 }
 
 // Resources
-// Generated resources: 797
+// Generated resources: 798
 // Generated IAM resources: 360
-// Total generated resources: 1157
+// Total generated resources: 1158
 var generatedResources = map[string]*schema.Resource{
 	"google_folder_access_approval_settings":                                     registry.Resource("google_folder_access_approval_settings"),
 	"google_organization_access_approval_settings":                               registry.Resource("google_organization_access_approval_settings"),
@@ -1369,6 +1371,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_iam_workload_identity_pool_managed_identity":                         registry.Resource("google_iam_workload_identity_pool_managed_identity"),
 	"google_iam_workload_identity_pool_namespace":                                registry.Resource("google_iam_workload_identity_pool_namespace"),
 	"google_iam_workload_identity_pool_provider":                                 registry.Resource("google_iam_workload_identity_pool_provider"),
+	"google_iam_connectors_connector":                                            registry.Resource("google_iam_connectors_connector"),
 	"google_iam_oauth_client":                                                    registry.Resource("google_iam_oauth_client"),
 	"google_iam_oauth_client_credential":                                         registry.Resource("google_iam_oauth_client_credential"),
 	"google_iam_workforce_pool":                                                  registry.Resource("google_iam_workforce_pool"),
@@ -2079,6 +2082,7 @@ func UseGeneratedProducts() {
 	var _ = iam2.ProductName
 	var _ = iam3.ProductName
 	var _ = iambeta.ProductName
+	var _ = iamconnectors.ProductName
 	var _ = iamworkforcepool.ProductName
 	var _ = iap.ProductName
 	var _ = identityplatform.ProductName

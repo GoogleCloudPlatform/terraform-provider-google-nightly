@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 // ----------------------------------------------------------------------------
 //
@@ -147,6 +148,7 @@ type ProviderModel struct {
 	IAM2CustomEndpoint                     types.String `tfsdk:"iam2_custom_endpoint"`
 	IAM3CustomEndpoint                     types.String `tfsdk:"iam3_custom_endpoint"`
 	IAMBetaCustomEndpoint                  types.String `tfsdk:"iam_beta_custom_endpoint"`
+	IamConnectorsCustomEndpoint            types.String `tfsdk:"iam_connectors_custom_endpoint"`
 	IAMWorkforcePoolCustomEndpoint         types.String `tfsdk:"iam_workforce_pool_custom_endpoint"`
 	IapCustomEndpoint                      types.String `tfsdk:"iap_custom_endpoint"`
 	IdentityPlatformCustomEndpoint         types.String `tfsdk:"identity_platform_custom_endpoint"`

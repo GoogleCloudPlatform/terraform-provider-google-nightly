@@ -1,0 +1,32 @@
+# Copyright IBM Corp. 2014, 2026
+# Copyright 2026 Google LLC
+# SPDX-License-Identifier: MPL-2.0
+resource: google_iam_connectors_connector
+generation_type: mmv1
+source_file: products/iamconnectors/Connector.yaml
+api_service_name: iamconnectors.googleapis.com
+api_version: v1alpha
+api_resource_type_kind: Connector
+fields:
+    - api_field: allowedScopes
+    - api_field: blockedScopes
+    - field: connector_id
+      provider_only: true
+    - api_field: connectorTypeParams.apiKey.apiKey
+    - api_field: connectorTypeParams.geConnectorParams
+    - api_field: connectorTypeParams.threeLeggedOauth.authorizationUrl
+    - api_field: connectorTypeParams.threeLeggedOauth.clientId
+    - api_field: connectorTypeParams.threeLeggedOauth.clientSecret
+    - api_field: connectorTypeParams.threeLeggedOauth.redirectUrl
+    - api_field: connectorTypeParams.threeLeggedOauth.tokenUrl
+    - api_field: connectorTypeParams.twoLeggedOauth.clientId
+    - api_field: connectorTypeParams.twoLeggedOauth.clientSecret
+    - api_field: connectorTypeParams.twoLeggedOauth.tokenEndpoint
+    - api_field: createTime
+    - api_field: deleted
+    - api_field: description
+    - api_field: expireTime
+    - field: location
+      provider_only: true
+    - api_field: state
+    - api_field: updateTime

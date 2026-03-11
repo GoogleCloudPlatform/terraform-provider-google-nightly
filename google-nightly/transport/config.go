@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 // ----------------------------------------------------------------------------
 //
@@ -63,7 +64,7 @@ import (
 	"google.golang.org/api/cloudkms/v1"
 	"google.golang.org/api/cloudresourcemanager/v1"
 	resourceManagerV3 "google.golang.org/api/cloudresourcemanager/v3"
-	"google.golang.org/api/composer/v1beta1"
+	composer "google.golang.org/api/composer/v1beta1"
 	compute "google.golang.org/api/compute/v0.beta"
 	container "google.golang.org/api/container/v1beta1"
 	dataflow "google.golang.org/api/dataflow/v1b3"
@@ -354,6 +355,7 @@ type Config struct {
 	IAM2BasePath                     string
 	IAM3BasePath                     string
 	IAMBetaBasePath                  string
+	IamConnectorsBasePath            string
 	IAMWorkforcePoolBasePath         string
 	IapBasePath                      string
 	IdentityPlatformBasePath         string
@@ -546,6 +548,7 @@ const HypercomputeclusterBasePathKey = "Hypercomputecluster"
 const IAM2BasePathKey = "IAM2"
 const IAM3BasePathKey = "IAM3"
 const IAMBetaBasePathKey = "IAMBeta"
+const IamConnectorsBasePathKey = "IamConnectors"
 const IAMWorkforcePoolBasePathKey = "IAMWorkforcePool"
 const IapBasePathKey = "Iap"
 const IdentityPlatformBasePathKey = "IdentityPlatform"
@@ -727,6 +730,7 @@ var DefaultBasePaths = map[string]string{
 	IAM2BasePathKey:                     "https://iam.googleapis.com/v2beta/",
 	IAM3BasePathKey:                     "https://iam.googleapis.com/v3beta/",
 	IAMBetaBasePathKey:                  "https://iam.googleapis.com/v1/",
+	IamConnectorsBasePathKey:            "https://iamconnectors.googleapis.com/v1alpha/",
 	IAMWorkforcePoolBasePathKey:         "https://iam.googleapis.com/v1/",
 	IapBasePathKey:                      "https://iap.googleapis.com/v1/",
 	IdentityPlatformBasePathKey:         "https://identitytoolkit.googleapis.com/v2/",
@@ -1360,6 +1364,11 @@ func SetEndpointDefaults(d *schema.ResourceData) error {
 		d.Set("iam_beta_custom_endpoint", MultiEnvDefault([]string{
 			"GOOGLE_IAM_BETA_CUSTOM_ENDPOINT",
 		}, DefaultBasePaths[IAMBetaBasePathKey]))
+	}
+	if d.Get("iam_connectors_custom_endpoint") == "" {
+		d.Set("iam_connectors_custom_endpoint", MultiEnvDefault([]string{
+			"GOOGLE_IAM_CONNECTORS_CUSTOM_ENDPOINT",
+		}, DefaultBasePaths[IamConnectorsBasePathKey]))
 	}
 	if d.Get("iam_workforce_pool_custom_endpoint") == "" {
 		d.Set("iam_workforce_pool_custom_endpoint", MultiEnvDefault([]string{
@@ -2936,6 +2945,7 @@ func ConfigureBasePaths(c *Config) {
 	c.IAM2BasePath = DefaultBasePaths[IAM2BasePathKey]
 	c.IAM3BasePath = DefaultBasePaths[IAM3BasePathKey]
 	c.IAMBetaBasePath = DefaultBasePaths[IAMBetaBasePathKey]
+	c.IamConnectorsBasePath = DefaultBasePaths[IamConnectorsBasePathKey]
 	c.IAMWorkforcePoolBasePath = DefaultBasePaths[IAMWorkforcePoolBasePathKey]
 	c.IapBasePath = DefaultBasePaths[IapBasePathKey]
 	c.IdentityPlatformBasePath = DefaultBasePaths[IdentityPlatformBasePathKey]
