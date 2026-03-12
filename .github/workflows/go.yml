@@ -7,7 +7,7 @@ on:
   pull_request:
     branches: [ main ]
     paths:
-      - '.github/workflows/go.yaml'
+      - '.github/workflows/go.yml'
       - 'go.mod'
       - '**.go'
 
