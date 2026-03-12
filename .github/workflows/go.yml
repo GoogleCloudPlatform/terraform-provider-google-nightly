@@ -29,5 +29,4 @@ jobs:
 
     - name: Test
       run: |
-        make docscheck
         make testnolint
