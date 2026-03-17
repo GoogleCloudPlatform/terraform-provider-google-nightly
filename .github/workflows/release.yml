@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0
   terraform-provider-release:
     name: 'Terraform Provider Release'
-    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/hashicorp.yml@6aaebb3861655bb2337598ea36025a2e2e52b66f # ref: standard-runner
+    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/hashicorp.yml@f0c5aefbb7fa006958e34347b5116b1eb887d9b4 # ref: larger-runner
     secrets:
       hc-releases-github-token: '${{ secrets.HASHI_RELEASES_GITHUB_TOKEN }}'
       hc-releases-host-staging: '${{ secrets.HC_RELEASES_HOST_STAGING }}'
