@@ -17,7 +17,7 @@ jobs:
           fetch-depth: 0
   terraform-provider-release:
     name: 'Terraform Provider Release'
-    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/hashicorp.yml@f0c5aefbb7fa006958e34347b5116b1eb887d9b4 # ref: larger-runner
+    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/hashicorp.yml@c7119e3a267ccea27ca9fd690ddea3d105c27904 # ref: larger-runner
     secrets:
       hc-releases-github-token: '${{ secrets.HASHI_RELEASES_GITHUB_TOKEN }}'
       hc-releases-host-staging: '${{ secrets.HC_RELEASES_HOST_STAGING }}'
@@ -29,6 +29,7 @@ jobs:
       signore-client-id: '${{ secrets.SIGNORE_CLIENT_ID }}'
       signore-client-secret: '${{ secrets.SIGNORE_CLIENT_SECRET }}'
     with:
+      changelog: false
       release-notes: false
       setup-go-version-file: '.go-version'
       # Product Version (e.g. v1.2.3 or github.ref_name)
