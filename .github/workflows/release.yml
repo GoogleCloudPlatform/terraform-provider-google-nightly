@@ -30,7 +30,7 @@ jobs:
       signore-client-secret: '${{ secrets.SIGNORE_CLIENT_SECRET }}'
     with:
       changelog: false
-      promote: false
+      promote: true
       release-notes: false
       setup-go-version-file: '.go-version'
       # Product Version (e.g. v1.2.3 or github.ref_name)
