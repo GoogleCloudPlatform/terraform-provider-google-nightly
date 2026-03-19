@@ -12,12 +12,6 @@ permissions:
   contents: write
 
 jobs:
-  release-notes:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-        with:
-          fetch-depth: 0
   terraform-provider-release:
     name: 'Terraform Provider Release'
     uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/hashicorp.yml@3ad2918eeaf6ecc4cfcbd1a3fa97fc0e3c238935 # ref: tidy
