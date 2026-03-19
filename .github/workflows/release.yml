@@ -3,7 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*' # TODO: limit to prerelease-style versions
+      # examples:
+      #   v0.0.31310-20270509.0
+      #   v0.0.31310-20270509.0+hats
+      - 'v[0-9]+.[0-9]+.[0-9]+-[0-9]{8}\.[0-9]+'
 
 permissions:
   contents: write
@@ -17,7 +20,7 @@ jobs:
           fetch-depth: 0
   terraform-provider-release:
     name: 'Terraform Provider Release'
-    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/hashicorp.yml@a2c9295fa7abe6772a211b8f3cb0ad887a9cf60b # ref: tidy
+    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/hashicorp.yml@3ad2918eeaf6ecc4cfcbd1a3fa97fc0e3c238935 # ref: tidy
     secrets:
       hc-releases-github-token: '${{ secrets.HASHI_RELEASES_GITHUB_TOKEN }}'
       hc-releases-host-staging: '${{ secrets.HC_RELEASES_HOST_STAGING }}'
@@ -29,8 +32,6 @@ jobs:
       signore-client-id: '${{ secrets.SIGNORE_CLIENT_ID }}'
       signore-client-secret: '${{ secrets.SIGNORE_CLIENT_SECRET }}'
     with:
-      changelog: false
-      promote: true
       release-notes: false
       setup-go-version-file: '.go-version'
       # Product Version (e.g. v1.2.3 or github.ref_name)
