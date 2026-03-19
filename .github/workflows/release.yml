@@ -14,7 +14,7 @@ permissions:
 jobs:
   terraform-provider-release:
     name: 'Terraform Provider Release'
-    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/hashicorp.yml@3ad2918eeaf6ecc4cfcbd1a3fa97fc0e3c238935 # ref: tidy
+    uses: hashicorp/ghaction-terraform-provider-release/.github/workflows/hashicorp.yml@731f7d472982904b8b2cde767788c62ed14b1419 # v4.2.0
     secrets:
       hc-releases-github-token: '${{ secrets.HASHI_RELEASES_GITHUB_TOKEN }}'
       hc-releases-host-staging: '${{ secrets.HC_RELEASES_HOST_STAGING }}'
