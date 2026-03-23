@@ -6,7 +6,7 @@ on:
       # examples:
       #   v0.0.31310-20270509.0
       #   v0.0.31310-20270509.0+hats
-      - 'v.*-.*'
+      - 'v*-*'
 
 permissions:
   contents: write
