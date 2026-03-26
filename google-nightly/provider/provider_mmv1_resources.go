@@ -67,6 +67,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/composer"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/contactcenterinsights"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/container"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/containeranalysis"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/containerattached"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/corebilling"
@@ -191,7 +192,6 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workstations"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
-	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/container"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/containeraws"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/containerazure"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataflow"
@@ -504,6 +504,7 @@ var handwrittenDatasources = map[string]*schema.Resource{
 	"google_compute_region_backend_service":                      compute.DataSourceGoogleComputeRegionBackendService(),
 	"google_network_management_connectivity_test_run":            networkmanagement.DataSourceGoogleNetworkManagementTestRun(),
 	"google_network_management_connectivity_tests":               networkmanagement.DataSourceGoogleNetworkManagementConnectivityTests(),
+	"google_network_security_address_groups":                     networksecurity.DataSourceNetworkSecurityAddressGroups(),
 	// ####### END handwritten datasources ###########
 }
 
@@ -584,6 +585,9 @@ var generatedIAMDatasources = map[string]*schema.Resource{
 	"google_healthcare_consent_store_iam_policy":                   registry.DataSource("google_healthcare_consent_store_iam_policy"),
 	"google_iam_workload_identity_pool_iam_policy":                 registry.DataSource("google_iam_workload_identity_pool_iam_policy"),
 	"google_iam_workforce_pool_iam_policy":                         registry.DataSource("google_iam_workforce_pool_iam_policy"),
+	"google_iap_agent_registry_agent_iam_policy":                   registry.DataSource("google_iap_agent_registry_agent_iam_policy"),
+	"google_iap_agent_registry_endpoint_iam_policy":                registry.DataSource("google_iap_agent_registry_endpoint_iam_policy"),
+	"google_iap_agent_registry_mcp_server_iam_policy":              registry.DataSource("google_iap_agent_registry_mcp_server_iam_policy"),
 	"google_iap_app_engine_service_iam_policy":                     registry.DataSource("google_iap_app_engine_service_iam_policy"),
 	"google_iap_app_engine_version_iam_policy":                     registry.DataSource("google_iap_app_engine_version_iam_policy"),
 	"google_iap_tunnel_iam_policy":                                 registry.DataSource("google_iap_tunnel_iam_policy"),
@@ -659,9 +663,9 @@ var handwrittenIAMDatasources = map[string]*schema.Resource{
 }
 
 // Resources
-// Generated resources: 804
-// Generated IAM resources: 360
-// Total generated resources: 1164
+// Generated resources: 806
+// Generated IAM resources: 369
+// Total generated resources: 1175
 var generatedResources = map[string]*schema.Resource{
 	"google_folder_access_approval_settings":                                     registry.Resource("google_folder_access_approval_settings"),
 	"google_organization_access_approval_settings":                               registry.Resource("google_organization_access_approval_settings"),
@@ -826,6 +830,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_bigquery_capacity_commitment":                                        registry.Resource("google_bigquery_capacity_commitment"),
 	"google_bigquery_reservation":                                                registry.Resource("google_bigquery_reservation"),
 	"google_bigquery_reservation_assignment":                                     registry.Resource("google_bigquery_reservation_assignment"),
+	"google_bigquery_reservation_group":                                          registry.Resource("google_bigquery_reservation_group"),
 	"google_bigtable_app_profile":                                                registry.Resource("google_bigtable_app_profile"),
 	"google_bigtable_logical_view":                                               registry.Resource("google_bigtable_logical_view"),
 	"google_bigtable_materialized_view":                                          registry.Resource("google_bigtable_materialized_view"),
@@ -854,6 +859,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_chronicle_data_access_label":                                         registry.Resource("google_chronicle_data_access_label"),
 	"google_chronicle_data_access_scope":                                         registry.Resource("google_chronicle_data_access_scope"),
 	"google_chronicle_data_table":                                                registry.Resource("google_chronicle_data_table"),
+	"google_chronicle_data_table_row":                                            registry.Resource("google_chronicle_data_table_row"),
 	"google_chronicle_reference_list":                                            registry.Resource("google_chronicle_reference_list"),
 	"google_chronicle_retrohunt":                                                 registry.Resource("google_chronicle_retrohunt"),
 	"google_chronicle_rule":                                                      registry.Resource("google_chronicle_rule"),
@@ -1392,6 +1398,15 @@ var generatedResources = map[string]*schema.Resource{
 	"google_iam_workforce_pool_provider_key":                                     registry.Resource("google_iam_workforce_pool_provider_key"),
 	"google_iam_workforce_pool_provider_scim_tenant":                             registry.Resource("google_iam_workforce_pool_provider_scim_tenant"),
 	"google_iam_workforce_pool_provider_scim_token":                              registry.Resource("google_iam_workforce_pool_provider_scim_token"),
+	"google_iap_agent_registry_agent_iam_binding":                                registry.Resource("google_iap_agent_registry_agent_iam_binding"),
+	"google_iap_agent_registry_agent_iam_member":                                 registry.Resource("google_iap_agent_registry_agent_iam_member"),
+	"google_iap_agent_registry_agent_iam_policy":                                 registry.Resource("google_iap_agent_registry_agent_iam_policy"),
+	"google_iap_agent_registry_endpoint_iam_binding":                             registry.Resource("google_iap_agent_registry_endpoint_iam_binding"),
+	"google_iap_agent_registry_endpoint_iam_member":                              registry.Resource("google_iap_agent_registry_endpoint_iam_member"),
+	"google_iap_agent_registry_endpoint_iam_policy":                              registry.Resource("google_iap_agent_registry_endpoint_iam_policy"),
+	"google_iap_agent_registry_mcp_server_iam_binding":                           registry.Resource("google_iap_agent_registry_mcp_server_iam_binding"),
+	"google_iap_agent_registry_mcp_server_iam_member":                            registry.Resource("google_iap_agent_registry_mcp_server_iam_member"),
+	"google_iap_agent_registry_mcp_server_iam_policy":                            registry.Resource("google_iap_agent_registry_mcp_server_iam_policy"),
 	"google_iap_app_engine_service_iam_binding":                                  registry.Resource("google_iap_app_engine_service_iam_binding"),
 	"google_iap_app_engine_service_iam_member":                                   registry.Resource("google_iap_app_engine_service_iam_member"),
 	"google_iap_app_engine_service_iam_policy":                                   registry.Resource("google_iap_app_engine_service_iam_policy"),
@@ -2048,6 +2063,7 @@ func UseGeneratedProducts() {
 	var _ = composer.ProductName
 	var _ = compute.ProductName
 	var _ = contactcenterinsights.ProductName
+	var _ = container.ProductName
 	var _ = containeranalysis.ProductName
 	var _ = containerattached.ProductName
 	var _ = corebilling.ProductName
