@@ -48,6 +48,7 @@ The following arguments are supported:
 
 ## Attributes Reference
 
+* `urn` - The URN of the Endpoint.
 * `display_name` - The display name of the endpoint.
 * `description` - The description of the endpoint.
 * `interfaces` - The connection details for the Endpoint.

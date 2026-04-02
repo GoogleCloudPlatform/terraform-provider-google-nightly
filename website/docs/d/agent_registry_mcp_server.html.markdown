@@ -48,6 +48,7 @@ The following arguments are supported:
 
 ## Attributes Reference
 
+* `urn` - The URN of the MCP Server.
 * `display_name` - The display name of the MCP Server.
 * `description` - The description of the MCP Server.
 * `interfaces` - The connection details for the MCP Server.
