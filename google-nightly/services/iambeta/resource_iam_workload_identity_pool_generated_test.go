@@ -53,8 +53,11 @@ var (
 func TestAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolBasicExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"workload_identity_pool_id": "tf-test-example-pool" + randomSuffix,
+		"random_suffix":             randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -78,7 +81,7 @@ func TestAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolBasicExample(t *t
 func testAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolBasicExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_iam_workload_identity_pool" "example" {
-  workload_identity_pool_id = "tf-test-example-pool%{random_suffix}"
+  workload_identity_pool_id = "%{workload_identity_pool_id}"
 }
 `, context)
 }
@@ -86,13 +89,16 @@ resource "google_iam_workload_identity_pool" "example" {
 func TestAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolFullFederationOnlyModeExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"workload_identity_pool_id": "tf-test-example-pool" + randomSuffix,
+		"random_suffix":             randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckIAMBetaWorkloadIdentityPoolDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -111,9 +117,7 @@ func TestAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolFullFederationOnl
 func testAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolFullFederationOnlyModeExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_iam_workload_identity_pool" "example" {
-  provider = google-beta
-
-  workload_identity_pool_id = "tf-test-example-pool%{random_suffix}"
+  workload_identity_pool_id = "%{workload_identity_pool_id}"
   display_name              = "Name of the pool"
   description               = "Identity pool operates in FEDERATION_ONLY mode"
   disabled                  = true
@@ -125,13 +129,17 @@ resource "google_iam_workload_identity_pool" "example" {
 func TestAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolFullTrustDomainModeExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"project":                   envvar.GetTestProjectNumberFromEnv(),
+		"workload_identity_pool_id": "tf-test-example-pool" + randomSuffix,
+		"random_suffix":             randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckIAMBetaWorkloadIdentityPoolDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -150,9 +158,7 @@ func TestAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolFullTrustDomainMo
 func testAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolFullTrustDomainModeExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_iam_workload_identity_pool" "example" {
-  provider = google-beta
-
-  workload_identity_pool_id = "tf-test-example-pool%{random_suffix}"
+  workload_identity_pool_id = "%{workload_identity_pool_id}"
   display_name              = "Name of the pool"
   description               = "Identity pool operates in TRUST_DOMAIN mode"
   disabled                  = true
@@ -186,6 +192,9 @@ resource "google_iam_workload_identity_pool" "example" {
       }
     }
   }
+  attestation_rules {
+    google_cloud_resource = "//run.googleapis.com/projects/%{project}/type/Service/*"
+  }
 }
 `, context)
 }
@@ -193,13 +202,17 @@ resource "google_iam_workload_identity_pool" "example" {
 func TestAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolFullTrustDomainModeWithDefaultSharedCaExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"project":                   envvar.GetTestProjectNumberFromEnv(),
+		"workload_identity_pool_id": "tf-test-example-pool" + randomSuffix,
+		"random_suffix":             randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckIAMBetaWorkloadIdentityPoolDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -218,9 +231,7 @@ func TestAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolFullTrustDomainMo
 func testAccIAMBetaWorkloadIdentityPool_iamWorkloadIdentityPoolFullTrustDomainModeWithDefaultSharedCaExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_iam_workload_identity_pool" "example" {
-  provider = google-beta
-
-  workload_identity_pool_id = "tf-test-example-pool%{random_suffix}"
+  workload_identity_pool_id = "%{workload_identity_pool_id}"
   display_name              = "Name of the pool"
   description               = "Identity pool operates in TRUST_DOMAIN mode"
   disabled                  = true

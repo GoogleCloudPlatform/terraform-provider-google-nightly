@@ -96,6 +96,11 @@ func DataSourceAgentRegistryAgent() *schema.Resource {
 					},
 				},
 			},
+			"urn": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `The URN of the Agent.`,
+			},
 			"display_name": {
 				Type:        schema.TypeString,
 				Computed:    true,
@@ -261,7 +266,12 @@ func dataSourceAgentRegistryAgentRead(d *schema.ResourceData, meta any) error {
 			return fmt.Errorf("constructing id: %v", err)
 		}
 	} else {
-		fmt.Errorf("one of agent_id or filter must be set")
+		return fmt.Errorf("one of agent_id or filter must be set")
+	}
+
+	err = d.Set("urn", res["agentId"])
+	if err != nil {
+		return err
 	}
 
 	err = d.Set("display_name", res["displayName"])
