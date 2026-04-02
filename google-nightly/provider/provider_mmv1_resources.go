@@ -665,9 +665,9 @@ var handwrittenIAMDatasources = map[string]*schema.Resource{
 }
 
 // Resources
-// Generated resources: 809
+// Generated resources: 810
 // Generated IAM resources: 369
-// Total generated resources: 1178
+// Total generated resources: 1179
 var generatedResources = map[string]*schema.Resource{
 	"google_folder_access_approval_settings":                                     registry.Resource("google_folder_access_approval_settings"),
 	"google_organization_access_approval_settings":                               registry.Resource("google_organization_access_approval_settings"),
@@ -694,6 +694,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_active_directory_domain":                                             registry.Resource("google_active_directory_domain"),
 	"google_active_directory_domain_trust":                                       registry.Resource("google_active_directory_domain_trust"),
 	"google_active_directory_peering":                                            registry.Resource("google_active_directory_peering"),
+	"google_agent_registry_binding":                                              registry.Resource("google_agent_registry_binding"),
 	"google_agent_registry_service":                                              registry.Resource("google_agent_registry_service"),
 	"google_alloydb_backup":                                                      registry.Resource("google_alloydb_backup"),
 	"google_alloydb_cluster":                                                     registry.Resource("google_alloydb_cluster"),

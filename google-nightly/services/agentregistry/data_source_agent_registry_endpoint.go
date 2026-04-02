@@ -59,6 +59,11 @@ func DataSourceAgentRegistryEndpoint() *schema.Resource {
 				ConflictsWith: []string{"endpoint_id"},
 				Description:   `A filter string that identifies a unique endpoint.`,
 			},
+			"urn": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `The URN of the Endpoint.`,
+			},
 			"display_name": {
 				Type:        schema.TypeString,
 				Computed:    true,
@@ -193,7 +198,12 @@ func dataSourceAgentRegistryEndpointRead(d *schema.ResourceData, meta any) error
 			return fmt.Errorf("constructing id: %v", err)
 		}
 	} else {
-		fmt.Errorf("one of endpoint_id or filter must be set")
+		return fmt.Errorf("one of endpoint_id or filter must be set")
+	}
+
+	err = d.Set("urn", res["endpointId"])
+	if err != nil {
+		return err
 	}
 
 	err = d.Set("display_name", res["displayName"])

@@ -48,6 +48,7 @@ The following arguments are supported:
 
 ## Attributes Reference
 
+* `urn` - The URN of the Agent.
 * `protocols` - The connection details for the Agent.
 * `protocols.0.type` - The type of the protocol.
 * `protocols.0.protocol_version` - The version of the protocol, for example, the A2A Agent Card version.
