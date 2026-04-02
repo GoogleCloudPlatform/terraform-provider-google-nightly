@@ -350,6 +350,8 @@ var handwrittenDatasources = map[string]*schema.Resource{
 	"google_dataplex_data_quality_rules":                         dataplex.DataSourceDataplexDataQualityRules(),
 	"google_dataproc_metastore_service":                          dataprocmetastore.DataSourceDataprocMetastoreService(),
 	"google_datastream_static_ips":                               datastream.DataSourceGoogleDatastreamStaticIps(),
+	"google_discovery_engine_data_store":                         discoveryengine.DataSourceGoogleDiscoveryEngineDataStore(),
+	"google_discovery_engine_data_stores":                        discoveryengine.DataSourceGoogleDiscoveryEngineDataStores(),
 	"google_dns_keys":                                            dns.DataSourceDNSKeys(),
 	"google_dns_managed_zone":                                    dns.DataSourceDnsManagedZone(),
 	"google_dns_managed_zones":                                   dns.DataSourceDnsManagedZones(),
@@ -663,9 +665,9 @@ var handwrittenIAMDatasources = map[string]*schema.Resource{
 }
 
 // Resources
-// Generated resources: 806
+// Generated resources: 810
 // Generated IAM resources: 369
-// Total generated resources: 1175
+// Total generated resources: 1179
 var generatedResources = map[string]*schema.Resource{
 	"google_folder_access_approval_settings":                                     registry.Resource("google_folder_access_approval_settings"),
 	"google_organization_access_approval_settings":                               registry.Resource("google_organization_access_approval_settings"),
@@ -692,6 +694,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_active_directory_domain":                                             registry.Resource("google_active_directory_domain"),
 	"google_active_directory_domain_trust":                                       registry.Resource("google_active_directory_domain_trust"),
 	"google_active_directory_peering":                                            registry.Resource("google_active_directory_peering"),
+	"google_agent_registry_binding":                                              registry.Resource("google_agent_registry_binding"),
 	"google_agent_registry_service":                                              registry.Resource("google_agent_registry_service"),
 	"google_alloydb_backup":                                                      registry.Resource("google_alloydb_backup"),
 	"google_alloydb_cluster":                                                     registry.Resource("google_alloydb_cluster"),
@@ -856,10 +859,12 @@ var generatedResources = map[string]*schema.Resource{
 	"google_ces_guardrail":                                                       registry.Resource("google_ces_guardrail"),
 	"google_ces_tool":                                                            registry.Resource("google_ces_tool"),
 	"google_ces_toolset":                                                         registry.Resource("google_ces_toolset"),
+	"google_chronicle_dashboard_chart":                                           registry.Resource("google_chronicle_dashboard_chart"),
 	"google_chronicle_data_access_label":                                         registry.Resource("google_chronicle_data_access_label"),
 	"google_chronicle_data_access_scope":                                         registry.Resource("google_chronicle_data_access_scope"),
 	"google_chronicle_data_table":                                                registry.Resource("google_chronicle_data_table"),
 	"google_chronicle_data_table_row":                                            registry.Resource("google_chronicle_data_table_row"),
+	"google_chronicle_native_dashboard":                                          registry.Resource("google_chronicle_native_dashboard"),
 	"google_chronicle_reference_list":                                            registry.Resource("google_chronicle_reference_list"),
 	"google_chronicle_retrohunt":                                                 registry.Resource("google_chronicle_retrohunt"),
 	"google_chronicle_rule":                                                      registry.Resource("google_chronicle_rule"),
@@ -1531,6 +1536,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_network_connectivity_policy_based_route":                             registry.Resource("google_network_connectivity_policy_based_route"),
 	"google_network_connectivity_regional_endpoint":                              registry.Resource("google_network_connectivity_regional_endpoint"),
 	"google_network_connectivity_spoke":                                          registry.Resource("google_network_connectivity_spoke"),
+	"google_network_connectivity_transport":                                      registry.Resource("google_network_connectivity_transport"),
 	"google_network_connectivity_internal_range":                                 registry.Resource("google_network_connectivity_internal_range"),
 	"google_network_connectivity_service_connection_policy":                      registry.Resource("google_network_connectivity_service_connection_policy"),
 	"google_network_management_connectivity_test":                                registry.Resource("google_network_management_connectivity_test"),
@@ -1893,6 +1899,7 @@ var handwrittenResources = map[string]*schema.Resource{
 	"google_folder":                                resourcemanager.ResourceGoogleFolder(),
 	"google_folder_organization_policy":            resourcemanager.ResourceGoogleFolderOrganizationPolicy(),
 	"google_folder_service_identity":               resourcemanager.ResourceFolderServiceIdentity(),
+	"google_organization_service_identity":         resourcemanager.ResourceOrganizationServiceIdentity(),
 	"google_logging_billing_account_sink":          logging.ResourceLoggingBillingAccountSink(),
 	"google_logging_billing_account_exclusion":     logging.ResourceLoggingExclusion(logging.BillingAccountLoggingExclusionSchema, logging.NewBillingAccountLoggingExclusionUpdater, logging.BillingAccountLoggingExclusionIdParseFunc),
 	"google_logging_billing_account_bucket_config": logging.ResourceLoggingBillingAccountBucketConfig(),

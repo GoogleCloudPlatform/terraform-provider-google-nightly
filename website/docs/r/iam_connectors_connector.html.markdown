@@ -25,6 +25,10 @@ Connector object.
 
 
 
+~> **Warning:** All arguments including the following potentially sensitive
+values will be stored in the raw state as plain text: `connector_type_params.three_legged_oauth.client_secret`, `connector_type_params.two_legged_oauth.client_secret`, `connector_type_params.api_key.api_key`.
+[Read more about sensitive data in state](https://developer.hashicorp.com/terraform/language/manage-sensitive-data).
+
 <div class = "oics-button" style="float: right; margin: 0 0 -15px">
   <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=iam_connectors_connector_basic&open_in_editor=main.tf" target="_blank">
     <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
@@ -203,6 +207,7 @@ The following arguments are supported:
 * `client_secret` -
   (Required)
   The client secret of the OAuth client.
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `client_id` -
   (Required)
@@ -225,6 +230,7 @@ The following arguments are supported:
 * `client_secret` -
   (Required)
   The client secret of the OAuth client.
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `client_id` -
   (Required)
@@ -239,6 +245,7 @@ The following arguments are supported:
 * `api_key` -
   (Required)
   The API key for this connector.
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 ## Attributes Reference
 

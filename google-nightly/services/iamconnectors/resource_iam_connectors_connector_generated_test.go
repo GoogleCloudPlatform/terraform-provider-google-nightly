@@ -54,8 +54,11 @@ var (
 func TestAccIamConnectorsConnector_iamConnectorsConnectorBasicExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"connector":     "connector" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -84,7 +87,7 @@ resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
   location       = "europe-west4"
-  connector_id   = "connector%{random_suffix}"
+  connector_id   = "%{connector}"
 
   connector_type_params {
     api_key {
@@ -98,8 +101,11 @@ resource "google_iam_connectors_connector" "default" {
 func TestAccIamConnectorsConnector_iamConnectorsConnectorGeminiEnterpriseExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"connector":     "connector" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -128,7 +134,7 @@ resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
   location       = "europe-west4"
-  connector_id   = "connector%{random_suffix}"
+  connector_id   = "%{connector}"
 
   connector_type_params {
     ge_connector_params {}
@@ -140,8 +146,11 @@ resource "google_iam_connectors_connector" "default" {
 func TestAccIamConnectorsConnector_iamConnectorsConnectorThreeLeggedExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"connector":     "connector" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -170,7 +179,7 @@ resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
   location       = "europe-west4"
-  connector_id   = "connector%{random_suffix}"
+  connector_id   = "%{connector}"
 
   allowed_scopes = ["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/userinfo.email"]
 
@@ -189,8 +198,11 @@ resource "google_iam_connectors_connector" "default" {
 func TestAccIamConnectorsConnector_iamConnectorsConnectorTwoLeggedExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"connector":     "connector" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -219,7 +231,7 @@ resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
   location       = "europe-west4"
-  connector_id   = "connector%{random_suffix}"
+  connector_id   = "%{connector}"
 
   allowed_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
   blocked_scopes = ["https://www.googleapis.com/auth/userinfo.email"]

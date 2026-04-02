@@ -144,6 +144,7 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 										Type:        schema.TypeString,
 										Required:    true,
 										Description: `The API key for this connector.`,
+										Sensitive:   true,
 									},
 								},
 							},
@@ -180,6 +181,7 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 										Type:        schema.TypeString,
 										Required:    true,
 										Description: `The client secret of the OAuth client.`,
+										Sensitive:   true,
 									},
 									"token_url": {
 										Type:        schema.TypeString,
@@ -211,6 +213,7 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 										Type:        schema.TypeString,
 										Required:    true,
 										Description: `The client secret of the OAuth client.`,
+										Sensitive:   true,
 									},
 									"token_endpoint": {
 										Type:        schema.TypeString,

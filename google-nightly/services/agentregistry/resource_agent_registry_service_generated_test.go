@@ -54,8 +54,11 @@ var (
 func TestAccAgentRegistryService_agentRegistryServiceBasicExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"service":       "service" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -80,7 +83,7 @@ func testAccAgentRegistryService_agentRegistryServiceBasicExample(context map[st
 	return acctest.Nprintf(`
 resource "google_agent_registry_service" "default" {
   location     = "us-central1"
-  service_id   = "service%{random_suffix}"
+  service_id   = "%{service}"
 
   display_name = "My Service"
   interfaces {
@@ -98,8 +101,11 @@ resource "google_agent_registry_service" "default" {
 func TestAccAgentRegistryService_agentRegistryServiceMcpServerExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"service":       "service" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -124,7 +130,7 @@ func testAccAgentRegistryService_agentRegistryServiceMcpServerExample(context ma
 	return acctest.Nprintf(`
 resource "google_agent_registry_service" "default" {
   location     = "us-central1"
-  service_id   = "service%{random_suffix}"
+  service_id   = "%{service}"
 
   display_name = "My Service"
   interfaces {

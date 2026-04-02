@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -53,13 +54,16 @@ var (
 func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineDeletionPolicyExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"name":          "tf-test-reasoning-engine" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckVertexAIReasoningEngineDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -78,7 +82,7 @@ func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineDeletionPolicyExample
 func testAccVertexAIReasoningEngine_vertexAiReasoningEngineDeletionPolicyExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  display_name    = "tf-test-reasoning-engine%{random_suffix}"
+  display_name    = "%{name}"
   description     = "A reasoning engine with deletion policy"
   region          = "us-central1"
   deletion_policy = "FORCE"
@@ -89,13 +93,16 @@ resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
 func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineBasicExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"name":          "tf-test-reasoning-engine" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckVertexAIReasoningEngineDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -114,7 +121,7 @@ func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineBasicExample(t *testi
 func testAccVertexAIReasoningEngine_vertexAiReasoningEngineBasicExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  display_name = "tf-test-reasoning-engine%{random_suffix}"
+  display_name = "%{name}"
   description  = "A basic reasoning engine"
   region       = "us-central1"
 }
@@ -124,13 +131,16 @@ resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
 func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineSourceBasedDeploymentExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"name":          "tf-test-reasoning-engine" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckVertexAIReasoningEngineDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -149,7 +159,7 @@ func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineSourceBasedDeployment
 func testAccVertexAIReasoningEngine_vertexAiReasoningEngineSourceBasedDeploymentExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  display_name = "tf-test-reasoning-engine%{random_suffix}"
+  display_name = "%{name}"
   description  = "A basic reasoning engine"
   region       = "us-central1"
 
@@ -173,13 +183,16 @@ resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
 func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineDeveloperConnectSourceExample(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"name":          "tf-test-reasoning-engine" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckVertexAIReasoningEngineDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -200,7 +213,7 @@ func testAccVertexAIReasoningEngine_vertexAiReasoningEngineDeveloperConnectSourc
 data "google_project" "project" {}
 
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  display_name = "tf-test-reasoning-engine%{random_suffix}"
+  display_name = "%{name}"
   description  = "A basic reasoning engine"
   region       = "us-central1"
 
@@ -234,14 +247,20 @@ func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineFullExample(t *testin
 		},
 	})
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
-		"kms_key_name":  acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-re-key1").CryptoKey.Name,
-		"random_suffix": acctest.RandString(t, 10),
+		"bucket_name":        "tf-test-reasoning-engine" + randomSuffix,
+		"kms_key_name":       acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-re-key1").CryptoKey.Name,
+		"name":               "tf-test-reasoning-engine" + randomSuffix,
+		"secret_name":        "secret" + randomSuffix,
+		"service_account_id": "sa" + randomSuffix,
+		"random_suffix":      randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		ExternalProviders: map[string]resource.ExternalProvider{
 			"time": {},
 		},
@@ -290,7 +309,7 @@ locals {
 }
 
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  display_name = "tf-test-reasoning-engine%{random_suffix}"
+  display_name = "%{name}"
   description  = "A basic reasoning engine"
   region       = "us-central1"
 
@@ -374,7 +393,7 @@ resource "google_secret_manager_secret_version" "secret_version" {
 }
 
 resource "google_secret_manager_secret" "secret" {
-  secret_id = "secret%{random_suffix}"
+  secret_id = "%{secret_name}"
 
   replication {
     auto {}
@@ -388,7 +407,7 @@ resource "google_secret_manager_secret_iam_member" "secret_access" {
 }
 
 resource "google_storage_bucket" "bucket" {
-  name                        = "tf-test-reasoning-engine%{random_suffix}"
+  name                        = "%{bucket_name}"
   location                    = "us-central1"
   uniform_bucket_level_access = true
   force_destroy               = true
@@ -413,7 +432,7 @@ resource "google_storage_bucket_object" "bucket_obj_dependencies_tar_gz" {
 }
 
 resource "google_service_account" "service_account" {
-  account_id = "sa%{random_suffix}"
+  account_id = "%{service_account_id}"
 }
 
 resource "google_project_iam_member" "sa_iam_object_viewer" {
@@ -435,6 +454,208 @@ resource "google_project_iam_member" "sa_iam_viewer" {
 }
 
 data "google_project" "project" {
+}
+`, context)
+}
+
+func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineContextSpecExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"name":          "tf-test-re-ctx-spec" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		CheckDestroy:             testAccCheckVertexAIReasoningEngineDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccVertexAIReasoningEngine_vertexAiReasoningEngineContextSpecExample(context),
+			},
+			{
+				ResourceName:            "google_vertex_ai_reasoning_engine.reasoning_engine",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"deletion_policy", "region", "spec.0.source_code_spec.0.inline_source"},
+			},
+		},
+	})
+}
+
+func testAccVertexAIReasoningEngine_vertexAiReasoningEngineContextSpecExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
+  display_name = "%{name}"
+  description  = "Reasoning engine with context spec"
+  region       = "us-central1"
+  provider     = google-beta
+
+  context_spec {
+    memory_bank_config {
+      generation_config {
+        model = "projects/${data.google_project.project.project_id}/locations/us-central1/publishers/google/models/gemini-2.5-flash"
+      }
+      similarity_search_config {
+        embedding_model = "projects/${data.google_project.project.project_id}/locations/us-central1/publishers/google/models/text-embedding-005"
+      }
+      disable_memory_revisions = false
+      ttl_config {
+        default_ttl = "86400s"
+      }
+    }
+  }
+}
+
+data "google_project" "project" {
+  provider = google-beta
+}
+`, context)
+}
+
+func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineGranularTtlExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"name":          "tf-test-re-gran-ttl" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		CheckDestroy:             testAccCheckVertexAIReasoningEngineDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccVertexAIReasoningEngine_vertexAiReasoningEngineGranularTtlExample(context),
+			},
+			{
+				ResourceName:            "google_vertex_ai_reasoning_engine.reasoning_engine",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"deletion_policy", "region", "spec.0.source_code_spec.0.inline_source"},
+			},
+		},
+	})
+}
+
+func testAccVertexAIReasoningEngine_vertexAiReasoningEngineGranularTtlExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
+  display_name = "%{name}"
+  description  = "Reasoning engine with granular ttl"
+  region       = "us-central1"
+  provider     = google-beta
+
+  context_spec {
+    memory_bank_config {
+      generation_config {
+        model = "projects/${data.google_project.project.project_id}/locations/us-central1/publishers/google/models/gemini-2.5-flash"
+      }
+      similarity_search_config {
+        embedding_model = "projects/${data.google_project.project.project_id}/locations/us-central1/publishers/google/models/text-embedding-005"
+      }
+      disable_memory_revisions = false
+      ttl_config {
+        memory_revision_default_ttl = "86400s"
+        granular_ttl_config {
+          create_ttl = "86400s"
+          generate_created_ttl = "86400s"
+          generate_updated_ttl = "86400s"
+        }
+      }
+    }
+  }
+}
+
+data "google_project" "project" {
+  provider = google-beta
+}
+`, context)
+}
+
+func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineAgentGatewayExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"name":          "tf-test-reasoning-engine" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		CheckDestroy:             testAccCheckVertexAIReasoningEngineDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccVertexAIReasoningEngine_vertexAiReasoningEngineAgentGatewayExample(context),
+			},
+			{
+				ResourceName:            "google_vertex_ai_reasoning_engine.reasoning_engine",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"deletion_policy", "region", "spec.0.source_code_spec.0.inline_source"},
+			},
+		},
+	})
+}
+
+func testAccVertexAIReasoningEngine_vertexAiReasoningEngineAgentGatewayExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+data "google_project" "project" {
+  provider = google-nightly
+}
+
+resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
+  provider = google-nightly
+
+  display_name = "%{name}"
+  description  = "A basic reasoning engine"
+  region       = "us-central1"
+
+  spec {
+    identity_type = "AGENT_IDENTITY"
+
+    deployment_spec {
+      agent_gateway_config {
+        client_to_agent_config {
+          agent_gateway = google_network_services_agent_gateway.default.id
+        }
+      }
+    }
+
+    source_code_spec {
+      inline_source {
+        source_archive = filebase64("./test-fixtures/source.tar.gz")
+      }
+
+      python_spec {
+        entrypoint_module = "simple_agent"
+        entrypoint_object = "fixed_name_generator"
+        version           = "3.14"
+      }
+    }
+  }
+}
+
+resource "google_network_services_agent_gateway" "default" {
+  provider = google-nightly
+
+  name     = "%{name}"
+  location = "us-central1"
+
+  protocols = ["MCP"]
+
+  google_managed {
+    governed_access_path = "CLIENT_TO_AGENT"
+  }
 }
 `, context)
 }

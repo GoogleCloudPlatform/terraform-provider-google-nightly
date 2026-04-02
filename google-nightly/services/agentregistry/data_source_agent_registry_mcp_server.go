@@ -59,6 +59,11 @@ func DataSourceAgentRegistryMcpServer() *schema.Resource {
 				ConflictsWith: []string{"mcp_server_id"},
 				Description:   `A filter string that identifies a unique MCP server.`,
 			},
+			"urn": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `The URN of the MCP Server.`,
+			},
 			"display_name": {
 				Type:        schema.TypeString,
 				Computed:    true,
@@ -236,7 +241,12 @@ func dataSourceAgentRegistryMcpServerRead(d *schema.ResourceData, meta any) erro
 			return fmt.Errorf("constructing id: %v", err)
 		}
 	} else {
-		fmt.Errorf("one of mcp_server_id or filter must be set")
+		return fmt.Errorf("one of mcp_server_id or filter must be set")
+	}
+
+	err = d.Set("urn", res["mcpServerId"])
+	if err != nil {
+		return err
 	}
 
 	err = d.Set("display_name", res["displayName"])
