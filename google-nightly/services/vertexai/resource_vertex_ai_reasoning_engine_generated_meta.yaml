@@ -1,4 +1,5 @@
 # Copyright IBM Corp. 2014, 2026
+# Copyright 2026 Google LLC
 # SPDX-License-Identifier: MPL-2.0
 resource: google_vertex_ai_reasoning_engine
 generation_type: mmv1
@@ -27,6 +28,8 @@ fields:
     - api_field: spec.agentFramework
     - api_field: spec.classMethods
       json: true
+    - api_field: spec.deploymentSpec.agentGatewayConfig.agentToAnywhereConfig.agentGateway
+    - api_field: spec.deploymentSpec.agentGatewayConfig.clientToAgentConfig.agentGateway
     - api_field: spec.deploymentSpec.containerConcurrency
     - api_field: spec.deploymentSpec.env.name
     - api_field: spec.deploymentSpec.env.value

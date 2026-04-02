@@ -455,6 +455,64 @@ data "google_project" "project" {
   provider = google-beta
 }
 ```
+<div class = "oics-button" style="float: right; margin: 0 0 -15px">
+  <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=vertex_ai_reasoning_engine_agent_gateway&open_in_editor=main.tf" target="_blank">
+    <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
+  </a>
+</div>
+## Example Usage - Vertex Ai Reasoning Engine Agent Gateway
+
+
+```hcl
+data "google_project" "project" {
+  provider = google-nightly
+}
+
+resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
+  provider = google-nightly
+
+  display_name = "reasoning-engine"
+  description  = "A basic reasoning engine"
+  region       = "us-central1"
+
+  spec {
+    identity_type = "AGENT_IDENTITY"
+
+    deployment_spec {
+      agent_gateway_config {
+        client_to_agent_config {
+          agent_gateway = google_network_services_agent_gateway.default.id
+        }
+      }
+    }
+
+    source_code_spec {
+      inline_source {
+        source_archive = filebase64("./test-fixtures/source.tar.gz")
+      }
+
+      python_spec {
+        entrypoint_module = "simple_agent"
+        entrypoint_object = "fixed_name_generator"
+        version           = "3.14"
+      }
+    }
+  }
+}
+
+resource "google_network_services_agent_gateway" "default" {
+  provider = google-nightly
+
+  name     = "reasoning-engine"
+  location = "us-central1"
+
+  protocols = ["MCP"]
+
+  google_managed {
+    governed_access_path = "CLIENT_TO_AGENT"
+  }
+}
+```
 
 ## Argument Reference
 
@@ -610,6 +668,11 @@ The following arguments are supported:
   Optional. Concurrency for each container and agent server.
   Recommended value: 2 * cpu + 1. Defaults to 9.
 
+* `agent_gateway_config` -
+  (Optional)
+  Agent Gateway configuration for the Reasoning Engine deployment.
+  Structure is [documented below](#nested_spec_deployment_spec_agent_gateway_config).
+
 
 <a name="nested_spec_deployment_spec_env"></a>The `env` block supports:
 
@@ -695,6 +758,37 @@ The following arguments are supported:
   (Required)
   Required. The VPC network name in the targetProject
   where the DNS zone specified by 'domain' is visible.
+
+<a name="nested_spec_deployment_spec_agent_gateway_config"></a>The `agent_gateway_config` block supports:
+
+* `client_to_agent_config` -
+  (Optional)
+  Configuration for traffic targeting the Reasoning Engine.
+  When unset, incoming traffic is not routed through an Agent Gateway.
+  Structure is [documented below](#nested_spec_deployment_spec_agent_gateway_config_client_to_agent_config).
+
+* `agent_to_anywhere_config` -
+  (Optional)
+  Configuration for traffic originating from the Reasoning Engine.
+  When unset, outgoing traffic is not routed through an Agent Gateway.
+  Structure is [documented below](#nested_spec_deployment_spec_agent_gateway_config_agent_to_anywhere_config).
+
+
+<a name="nested_spec_deployment_spec_agent_gateway_config_client_to_agent_config"></a>The `client_to_agent_config` block supports:
+
+* `agent_gateway` -
+  (Required)
+  The resource name of the Agent Gateway for inbound traffic.
+  It must be set to a Google-managed gateway whose
+  governed_access_path is CLIENT_TO_AGENT.
+
+<a name="nested_spec_deployment_spec_agent_gateway_config_agent_to_anywhere_config"></a>The `agent_to_anywhere_config` block supports:
+
+* `agent_gateway` -
+  (Required)
+  The resource name of the Agent Gateway for outbound traffic.
+  It must be set to a Google-managed gateway whose
+  governed_access_path is AGENT_TO_ANYWHERE.
 
 <a name="nested_spec_package_spec"></a>The `package_spec` block supports:
 
