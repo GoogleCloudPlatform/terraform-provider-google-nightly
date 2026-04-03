@@ -356,6 +356,7 @@ var handwrittenDatasources = map[string]*schema.Resource{
 	"google_dns_managed_zone":                                    dns.DataSourceDnsManagedZone(),
 	"google_dns_managed_zones":                                   dns.DataSourceDnsManagedZones(),
 	"google_dns_record_set":                                      dns.DataSourceDnsRecordSet(),
+	"google_dns_record_sets":                                     dns.DataSourceDnsRecordSets(),
 	"google_gke_hub_membership":                                  gkehub.DataSourceGoogleGkeHubMembership(),
 	"google_gke_hub_membership_binding":                          gkehub2.DataSourceGoogleGkeHubMembershipBinding(),
 	"google_gke_hub_feature":                                     gkehub2.DataSourceGoogleGkeHubFeature(),
@@ -665,9 +666,9 @@ var handwrittenIAMDatasources = map[string]*schema.Resource{
 }
 
 // Resources
-// Generated resources: 810
+// Generated resources: 811
 // Generated IAM resources: 369
-// Total generated resources: 1179
+// Total generated resources: 1180
 var generatedResources = map[string]*schema.Resource{
 	"google_folder_access_approval_settings":                                     registry.Resource("google_folder_access_approval_settings"),
 	"google_organization_access_approval_settings":                               registry.Resource("google_organization_access_approval_settings"),
@@ -864,6 +865,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_chronicle_data_access_scope":                                         registry.Resource("google_chronicle_data_access_scope"),
 	"google_chronicle_data_table":                                                registry.Resource("google_chronicle_data_table"),
 	"google_chronicle_data_table_row":                                            registry.Resource("google_chronicle_data_table_row"),
+	"google_chronicle_feed":                                                      registry.Resource("google_chronicle_feed"),
 	"google_chronicle_native_dashboard":                                          registry.Resource("google_chronicle_native_dashboard"),
 	"google_chronicle_reference_list":                                            registry.Resource("google_chronicle_reference_list"),
 	"google_chronicle_retrohunt":                                                 registry.Resource("google_chronicle_retrohunt"),
