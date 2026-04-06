@@ -37,16 +37,16 @@ Represents a user-defined Binding.
 resource "google_agent_registry_binding" "default" {
   provider = google-nightly
 
-  location     = "us-central1"
+  location     = "us-east7"
   binding_id   = "ar-binding"
   display_name = "My Binding"
 
   source {
-    identifier = data.google_agent_registry_agent.source.urn
+    identifier = data.google_agent_registry_agent.default.urn
   }
 
   target {
-    identifier = data.google_agent_registry_mcp_server.target.urn
+    identifier = data.google_agent_registry_agent.default.urn
   }
 
   auth_provider_binding {
@@ -54,28 +54,22 @@ resource "google_agent_registry_binding" "default" {
   }
 }
 
-data "google_agent_registry_agent" "source" {
+data "google_agent_registry_agent" "default" {
   provider = google-nightly
 
-  location = "us-central1"
-  filter   = "displayName:Source_Agent"
+  location = "global"
+  filter   = "displayName:Workspace Agent"
 }
-
-data "google_agent_registry_mcp_server" "target" {
-  provider = google-nightly
-
-  location = "us-central1"
-  filter   = "displayName:Best_AI_Agent"
-}
-
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "us-central1"
+  location       = "us-east7"
   connector_id   = "ar-binding"
 
   connector_type_params {
-    ge_connector_params {}
+    api_key {
+      api_key = "foobar"
+    }
   }
 }
 ```
