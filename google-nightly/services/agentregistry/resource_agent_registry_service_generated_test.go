@@ -75,6 +75,12 @@ func TestAccAgentRegistryService_agentRegistryServiceBasicExample(t *testing.T) 
 				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"location", "service_id"},
 			},
+			{
+				ResourceName:       "google_agent_registry_service.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
 		},
 	})
 }
@@ -121,6 +127,12 @@ func TestAccAgentRegistryService_agentRegistryServiceMcpServerExample(t *testing
 				ImportState:             true,
 				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"location", "service_id"},
+			},
+			{
+				ResourceName:       "google_agent_registry_service.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
 		},
 	})

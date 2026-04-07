@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -117,7 +118,7 @@ func listAndActionNetworkServicesEndpointPolicy(action sweeper.ResourceAction) e
 		}
 
 		// Prepare list URL
-		listTemplate := strings.Split("https://networkservices.googleapis.com/v1/projects/{{project}}/locations/global/endpointPolicies", "?")[0]
+		listTemplate := strings.Split("https://networkservices.googleapis.com/v1alpha1/projects/{{project}}/locations/global/endpointPolicies", "?")[0]
 		listUrl, err := tpgresource.ReplaceVars(mockConfig, config, listTemplate)
 		if err != nil {
 			log.Printf("[INFO][SWEEPER_LOG] error preparing sweeper list url: %s", err)
@@ -195,7 +196,7 @@ func deleteResourceNetworkServicesEndpointPolicy(config *transport_tpg.Config, d
 		return nil
 	}
 
-	deleteTemplate := "https://networkservices.googleapis.com/v1/projects/{{project}}/locations/global/endpointPolicies/{{name}}"
+	deleteTemplate := "https://networkservices.googleapis.com/v1alpha1/projects/{{project}}/locations/global/endpointPolicies/{{name}}"
 
 	url, err := tpgresource.ReplaceVars(d, config, deleteTemplate)
 	if err != nil {

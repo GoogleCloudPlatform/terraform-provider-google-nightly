@@ -171,6 +171,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicemanagement"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/serviceusage"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/serviceusagev2"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/siteverification"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/sourcerepo"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/spanner"
@@ -189,6 +190,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vpcaccess"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workbench"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workflows"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workloadidentity"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workstations"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
@@ -356,6 +358,7 @@ var handwrittenDatasources = map[string]*schema.Resource{
 	"google_dns_managed_zone":                                    dns.DataSourceDnsManagedZone(),
 	"google_dns_managed_zones":                                   dns.DataSourceDnsManagedZones(),
 	"google_dns_record_set":                                      dns.DataSourceDnsRecordSet(),
+	"google_dns_record_sets":                                     dns.DataSourceDnsRecordSets(),
 	"google_gke_hub_membership":                                  gkehub.DataSourceGoogleGkeHubMembership(),
 	"google_gke_hub_membership_binding":                          gkehub2.DataSourceGoogleGkeHubMembershipBinding(),
 	"google_gke_hub_feature":                                     gkehub2.DataSourceGoogleGkeHubFeature(),
@@ -490,6 +493,7 @@ var handwrittenDatasources = map[string]*schema.Resource{
 	"google_redis_instance":                                      redis.DataSourceGoogleRedisInstance(),
 	"google_redis_cluster":                                       redis.DataSourceRedisCluster(),
 	"google_vertex_ai_index":                                     vertexai.DataSourceVertexAIIndex(),
+	"google_vertex_ai_reasoning_engine_query":                    vertexai.DataSourceVertexAIReasoningEngineQuery(),
 	"google_vmwareengine_cluster":                                vmwareengine.DataSourceVmwareengineCluster(),
 	"google_vmwareengine_external_access_rule":                   vmwareengine.DataSourceVmwareengineExternalAccessRule(),
 	"google_vmwareengine_external_address":                       vmwareengine.DataSourceVmwareengineExternalAddress(),
@@ -632,6 +636,7 @@ var generatedIAMDatasources = map[string]*schema.Resource{
 	"google_vertex_ai_feature_online_store_featureview_iam_policy": registry.DataSource("google_vertex_ai_feature_online_store_featureview_iam_policy"),
 	"google_vertex_ai_featurestore_iam_policy":                     registry.DataSource("google_vertex_ai_featurestore_iam_policy"),
 	"google_vertex_ai_featurestore_entitytype_iam_policy":          registry.DataSource("google_vertex_ai_featurestore_entitytype_iam_policy"),
+	"google_vertex_ai_reasoning_engine_iam_policy":                 registry.DataSource("google_vertex_ai_reasoning_engine_iam_policy"),
 	"google_workbench_instance_iam_policy":                         registry.DataSource("google_workbench_instance_iam_policy"),
 	"google_workstations_workstation_iam_policy":                   registry.DataSource("google_workstations_workstation_iam_policy"),
 	"google_workstations_workstation_config_iam_policy":            registry.DataSource("google_workstations_workstation_config_iam_policy"),
@@ -661,13 +666,14 @@ var handwrittenIAMDatasources = map[string]*schema.Resource{
 	"google_pubsub_subscription_iam_policy":     tpgiamresource.DataSourceIamPolicy(pubsub.IamPubsubSubscriptionSchema, pubsub.NewPubsubSubscriptionIamUpdater),
 	"google_service_account_iam_policy":         tpgiamresource.DataSourceIamPolicy(resourcemanager.IamServiceAccountSchema, resourcemanager.NewServiceAccountIamUpdater),
 	"google_storage_bucket_iam_policy":          tpgiamresource.DataSourceIamPolicy(storage.StorageBucketIamSchema, storage.StorageBucketIamUpdaterProducer),
+	"google_apigee_deployment_iam_policy":       tpgiamresource.DataSourceIamPolicy(apigee.ApigeeDeploymentIamSchema, apigee.ApigeeDeploymentIamUpdaterProducer),
 	// ####### END non-generated IAM datasources ###########
 }
 
 // Resources
-// Generated resources: 810
-// Generated IAM resources: 369
-// Total generated resources: 1179
+// Generated resources: 813
+// Generated IAM resources: 372
+// Total generated resources: 1185
 var generatedResources = map[string]*schema.Resource{
 	"google_folder_access_approval_settings":                                     registry.Resource("google_folder_access_approval_settings"),
 	"google_organization_access_approval_settings":                               registry.Resource("google_organization_access_approval_settings"),
@@ -864,6 +870,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_chronicle_data_access_scope":                                         registry.Resource("google_chronicle_data_access_scope"),
 	"google_chronicle_data_table":                                                registry.Resource("google_chronicle_data_table"),
 	"google_chronicle_data_table_row":                                            registry.Resource("google_chronicle_data_table_row"),
+	"google_chronicle_feed":                                                      registry.Resource("google_chronicle_feed"),
 	"google_chronicle_native_dashboard":                                          registry.Resource("google_chronicle_native_dashboard"),
 	"google_chronicle_reference_list":                                            registry.Resource("google_chronicle_reference_list"),
 	"google_chronicle_retrohunt":                                                 registry.Resource("google_chronicle_retrohunt"),
@@ -1747,6 +1754,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_endpoints_service_consumers_iam_policy":                              registry.Resource("google_endpoints_service_consumers_iam_policy"),
 	"google_service_networking_vpc_service_controls":                             registry.Resource("google_service_networking_vpc_service_controls"),
 	"google_service_usage_consumer_quota_override":                               registry.Resource("google_service_usage_consumer_quota_override"),
+	"google_service_usage_v2_folder_consumer_policy":                             registry.Resource("google_service_usage_v2_folder_consumer_policy"),
 	"google_site_verification_web_resource":                                      registry.Resource("google_site_verification_web_resource"),
 	"google_sourcerepo_repository":                                               registry.Resource("google_sourcerepo_repository"),
 	"google_sourcerepo_repository_iam_binding":                                   registry.Resource("google_sourcerepo_repository_iam_binding"),
@@ -1823,6 +1831,9 @@ var generatedResources = map[string]*schema.Resource{
 	"google_vertex_ai_metadata_store":                                            registry.Resource("google_vertex_ai_metadata_store"),
 	"google_vertex_ai_rag_engine_config":                                         registry.Resource("google_vertex_ai_rag_engine_config"),
 	"google_vertex_ai_reasoning_engine":                                          registry.Resource("google_vertex_ai_reasoning_engine"),
+	"google_vertex_ai_reasoning_engine_iam_binding":                              registry.Resource("google_vertex_ai_reasoning_engine_iam_binding"),
+	"google_vertex_ai_reasoning_engine_iam_member":                               registry.Resource("google_vertex_ai_reasoning_engine_iam_member"),
+	"google_vertex_ai_reasoning_engine_iam_policy":                               registry.Resource("google_vertex_ai_reasoning_engine_iam_policy"),
 	"google_vertex_ai_tensorboard":                                               registry.Resource("google_vertex_ai_tensorboard"),
 	"google_vmwareengine_cluster":                                                registry.Resource("google_vmwareengine_cluster"),
 	"google_vmwareengine_datastore":                                              registry.Resource("google_vmwareengine_datastore"),
@@ -1839,6 +1850,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_workbench_instance_iam_member":                                       registry.Resource("google_workbench_instance_iam_member"),
 	"google_workbench_instance_iam_policy":                                       registry.Resource("google_workbench_instance_iam_policy"),
 	"google_workflows_workflow":                                                  registry.Resource("google_workflows_workflow"),
+	"google_workload_identity_service_agent":                                     registry.Resource("google_workload_identity_service_agent"),
 	"google_workstations_workstation":                                            registry.Resource("google_workstations_workstation"),
 	"google_workstations_workstation_iam_binding":                                registry.Resource("google_workstations_workstation_iam_binding"),
 	"google_workstations_workstation_iam_member":                                 registry.Resource("google_workstations_workstation_iam_member"),
@@ -2013,6 +2025,9 @@ var handwrittenIAMResources = map[string]*schema.Resource{
 	"google_service_account_iam_binding":         tpgiamresource.ResourceIamBinding(resourcemanager.IamServiceAccountSchema, resourcemanager.NewServiceAccountIamUpdater, resourcemanager.ServiceAccountIdParseFunc),
 	"google_service_account_iam_member":          tpgiamresource.ResourceIamMember(resourcemanager.IamServiceAccountSchema, resourcemanager.NewServiceAccountIamUpdater, resourcemanager.ServiceAccountIdParseFunc),
 	"google_service_account_iam_policy":          tpgiamresource.ResourceIamPolicy(resourcemanager.IamServiceAccountSchema, resourcemanager.NewServiceAccountIamUpdater, resourcemanager.ServiceAccountIdParseFunc),
+	"google_apigee_deployment_iam_binding":       tpgiamresource.ResourceIamBinding(apigee.ApigeeDeploymentIamSchema, apigee.ApigeeDeploymentIamUpdaterProducer, apigee.ApigeeDeploymentIdParseFunc),
+	"google_apigee_deployment_iam_member":        tpgiamresource.ResourceIamMember(apigee.ApigeeDeploymentIamSchema, apigee.ApigeeDeploymentIamUpdaterProducer, apigee.ApigeeDeploymentIdParseFunc),
+	"google_apigee_deployment_iam_policy":        tpgiamresource.ResourceIamPolicy(apigee.ApigeeDeploymentIamSchema, apigee.ApigeeDeploymentIamUpdaterProducer, apigee.ApigeeDeploymentIdParseFunc),
 	// ####### END non-generated IAM resources ###########
 }
 
@@ -2174,6 +2189,7 @@ func UseGeneratedProducts() {
 	var _ = servicemanagement.ProductName
 	var _ = servicenetworking.ProductName
 	var _ = serviceusage.ProductName
+	var _ = serviceusagev2.ProductName
 	var _ = siteverification.ProductName
 	var _ = sourcerepo.ProductName
 	var _ = spanner.ProductName
@@ -2192,5 +2208,6 @@ func UseGeneratedProducts() {
 	var _ = vpcaccess.ProductName
 	var _ = workbench.ProductName
 	var _ = workflows.ProductName
+	var _ = workloadidentity.ProductName
 	var _ = workstations.ProductName
 }

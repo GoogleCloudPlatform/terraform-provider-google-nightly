@@ -30,9 +30,12 @@ import (
 func TestAccIamConnectorsConnector_iamConnectorsConnectorUpdate(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+
 	context := map[string]interface{}{
 		"project":       envvar.GetTestProjectFromEnv(),
-		"random_suffix": acctest.RandString(t, 10),
+		"connector":     "connector" + randomSuffix,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -41,16 +44,16 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorUpdate(t *testing.T) {
 		CheckDestroy:             testAccCheckIamConnectorsConnectorDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccIamConnectorsConnector_iamConnectorsConnectorThreeLeggedExample(context),
+				Config: testAccIamConnectorsConnector_iamConnectorsConnectorGeminiEnterpriseExample(context),
 			},
 			{
 				ResourceName:            "google_iam_connectors_connector.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location"},
+				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location", "workload_ids"},
 			},
 			{
-				Config: testAccIamConnectorsConnector_iamConnectorsConnectorTwoLeggedExample(context),
+				Config: testAccIamConnectorsConnector_iamConnectorsConnectorUpdate(context),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectResourceAction(
@@ -64,10 +67,10 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorUpdate(t *testing.T) {
 				ResourceName:            "google_iam_connectors_connector.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location"},
+				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location", "workload_ids"},
 			},
 			{
-				Config: testAccIamConnectorsConnector_iamConnectorsConnectorThreeLeggedExample(context),
+				Config: testAccIamConnectorsConnector_iamConnectorsConnectorGeminiEnterpriseExample(context),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
 						plancheck.ExpectResourceAction(
@@ -81,8 +84,27 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorUpdate(t *testing.T) {
 				ResourceName:            "google_iam_connectors_connector.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location"},
+				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location", "workload_ids"},
 			},
 		},
 	})
+}
+
+func testAccIamConnectorsConnector_iamConnectorsConnectorUpdate(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+provider "google-nightly" {}
+
+resource "google_iam_connectors_connector" "default" {
+  provider     = google-nightly
+
+  location       = "us-east7"
+  connector_id   = "%{connector}"
+
+  connector_type_params {
+    ge_connector_params {}
+  }
+
+  workload_ids = ["spiffe://example.com/spire/agent/k8s_psat/my-k8s-cluster/52174304-42f0-460b-9123-ed833d7904eb", "spiffe://example.com/spire/agent/k8s_psat/my-k8s-cluster/52174304-42f0-460b-9789-ed833d7904eb"]
+}
+`, context)
 }

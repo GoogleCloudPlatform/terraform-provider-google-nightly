@@ -413,6 +413,7 @@ type Config struct {
 	ServiceManagementBasePath        string
 	ServiceNetworkingBasePath        string
 	ServiceUsageBasePath             string
+	ServiceUsageV2BasePath           string
 	SiteVerificationBasePath         string
 	SourceRepoBasePath               string
 	SpannerBasePath                  string
@@ -431,6 +432,7 @@ type Config struct {
 	VPCAccessBasePath                string
 	WorkbenchBasePath                string
 	WorkflowsBasePath                string
+	WorkloadIdentityBasePath         string
 	WorkstationsBasePath             string
 
 	CloudBillingBasePath      string
@@ -607,6 +609,7 @@ const ServiceDirectoryBasePathKey = "ServiceDirectory"
 const ServiceManagementBasePathKey = "ServiceManagement"
 const ServiceNetworkingBasePathKey = "ServiceNetworking"
 const ServiceUsageBasePathKey = "ServiceUsage"
+const ServiceUsageV2BasePathKey = "ServiceUsageV2"
 const SiteVerificationBasePathKey = "SiteVerification"
 const SourceRepoBasePathKey = "SourceRepo"
 const SpannerBasePathKey = "Spanner"
@@ -625,6 +628,7 @@ const VmwareengineBasePathKey = "Vmwareengine"
 const VPCAccessBasePathKey = "VPCAccess"
 const WorkbenchBasePathKey = "Workbench"
 const WorkflowsBasePathKey = "Workflows"
+const WorkloadIdentityBasePathKey = "WorkloadIdentity"
 const WorkstationsBasePathKey = "Workstations"
 const CloudBillingBasePathKey = "CloudBilling"
 const DataflowBasePathKey = "Dataflow"
@@ -757,7 +761,7 @@ var DefaultBasePaths = map[string]string{
 	NetworkConnectivityv1BasePathKey:    "https://networkconnectivity.googleapis.com/v1/",
 	NetworkManagementBasePathKey:        "https://networkmanagement.googleapis.com/v1beta1/",
 	NetworkSecurityBasePathKey:          "https://networksecurity.googleapis.com/v1beta1/",
-	NetworkServicesBasePathKey:          "https://networkservices.googleapis.com/v1/",
+	NetworkServicesBasePathKey:          "https://networkservices.googleapis.com/v1alpha1/",
 	NotebooksBasePathKey:                "https://notebooks.googleapis.com/v1/",
 	ObservabilityBasePathKey:            "https://observability.googleapis.com/v1/",
 	OracleDatabaseBasePathKey:           "https://oracledatabase.googleapis.com/v1/",
@@ -790,6 +794,7 @@ var DefaultBasePaths = map[string]string{
 	ServiceManagementBasePathKey:        "https://servicemanagement.googleapis.com/v1/",
 	ServiceNetworkingBasePathKey:        "https://servicenetworking.googleapis.com/v1/",
 	ServiceUsageBasePathKey:             "https://serviceusage.googleapis.com/v1beta1/",
+	ServiceUsageV2BasePathKey:           "https://serviceusage.googleapis.com/v2beta/",
 	SiteVerificationBasePathKey:         "https://www.googleapis.com/siteVerification/v1/",
 	SourceRepoBasePathKey:               "https://sourcerepo.googleapis.com/v1/",
 	SpannerBasePathKey:                  "https://spanner.googleapis.com/v1/",
@@ -808,6 +813,7 @@ var DefaultBasePaths = map[string]string{
 	VPCAccessBasePathKey:                "https://vpcaccess.googleapis.com/v1beta1/",
 	WorkbenchBasePathKey:                "https://notebooks.googleapis.com/v2/",
 	WorkflowsBasePathKey:                "https://workflows.googleapis.com/v1/",
+	WorkloadIdentityBasePathKey:         "https://workloadidentity.googleapis.com/v1/",
 	WorkstationsBasePathKey:             "https://workstations.googleapis.com/v1beta/",
 	CloudBillingBasePathKey:             "https://cloudbilling.googleapis.com/v1/",
 	DataflowBasePathKey:                 "https://dataflow.googleapis.com/v1b3/",
@@ -1658,6 +1664,11 @@ func SetEndpointDefaults(d *schema.ResourceData) error {
 			"GOOGLE_SERVICE_USAGE_CUSTOM_ENDPOINT",
 		}, DefaultBasePaths[ServiceUsageBasePathKey]))
 	}
+	if d.Get("service_usage_v2_custom_endpoint") == "" {
+		d.Set("service_usage_v2_custom_endpoint", MultiEnvDefault([]string{
+			"GOOGLE_SERVICE_USAGE_V2_CUSTOM_ENDPOINT",
+		}, DefaultBasePaths[ServiceUsageV2BasePathKey]))
+	}
 	if d.Get("site_verification_custom_endpoint") == "" {
 		d.Set("site_verification_custom_endpoint", MultiEnvDefault([]string{
 			"GOOGLE_SITE_VERIFICATION_CUSTOM_ENDPOINT",
@@ -1747,6 +1758,11 @@ func SetEndpointDefaults(d *schema.ResourceData) error {
 		d.Set("workflows_custom_endpoint", MultiEnvDefault([]string{
 			"GOOGLE_WORKFLOWS_CUSTOM_ENDPOINT",
 		}, DefaultBasePaths[WorkflowsBasePathKey]))
+	}
+	if d.Get("workload_identity_custom_endpoint") == "" {
+		d.Set("workload_identity_custom_endpoint", MultiEnvDefault([]string{
+			"GOOGLE_WORKLOAD_IDENTITY_CUSTOM_ENDPOINT",
+		}, DefaultBasePaths[WorkloadIdentityBasePathKey]))
 	}
 	if d.Get("workstations_custom_endpoint") == "" {
 		d.Set("workstations_custom_endpoint", MultiEnvDefault([]string{
@@ -3016,6 +3032,7 @@ func ConfigureBasePaths(c *Config) {
 	c.ServiceManagementBasePath = DefaultBasePaths[ServiceManagementBasePathKey]
 	c.ServiceNetworkingBasePath = DefaultBasePaths[ServiceNetworkingBasePathKey]
 	c.ServiceUsageBasePath = DefaultBasePaths[ServiceUsageBasePathKey]
+	c.ServiceUsageV2BasePath = DefaultBasePaths[ServiceUsageV2BasePathKey]
 	c.SiteVerificationBasePath = DefaultBasePaths[SiteVerificationBasePathKey]
 	c.SourceRepoBasePath = DefaultBasePaths[SourceRepoBasePathKey]
 	c.SpannerBasePath = DefaultBasePaths[SpannerBasePathKey]
@@ -3034,6 +3051,7 @@ func ConfigureBasePaths(c *Config) {
 	c.VPCAccessBasePath = DefaultBasePaths[VPCAccessBasePathKey]
 	c.WorkbenchBasePath = DefaultBasePaths[WorkbenchBasePathKey]
 	c.WorkflowsBasePath = DefaultBasePaths[WorkflowsBasePathKey]
+	c.WorkloadIdentityBasePath = DefaultBasePaths[WorkloadIdentityBasePathKey]
 	c.WorkstationsBasePath = DefaultBasePaths[WorkstationsBasePathKey]
 
 	// Handwritten Products / Versioned / Atypical Entries

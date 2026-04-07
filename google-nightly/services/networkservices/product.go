@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -27,6 +28,6 @@ const ProductName = "networkservices"
 func init() {
 	registry.Product{
 		Name:    "networkservices",
-		BaseUrl: "https://networkservices.googleapis.com/v1/",
+		BaseUrl: "https://networkservices.googleapis.com/v1alpha1/",
 	}.Register()
 }
