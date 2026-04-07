@@ -117,6 +117,22 @@ func ResourceFirebaseAILogicConfig() *schema.Resource {
 			tpgresource.DefaultProviderProject,
 		),
 
+		Identity: &schema.ResourceIdentity{
+			Version: 1,
+			SchemaFunc: func() map[string]*schema.Schema {
+				return map[string]*schema.Schema{
+					"location": {
+						Type:              schema.TypeString,
+						OptionalForImport: true,
+					},
+					"project": {
+						Type:              schema.TypeString,
+						OptionalForImport: true,
+					},
+				}
+			},
+		},
+
 		Schema: map[string]*schema.Schema{
 			"generative_language_config": {
 				Type:     schema.TypeList,
@@ -301,6 +317,22 @@ func resourceFirebaseAILogicConfigCreate(d *schema.ResourceData, meta interface{
 	}
 	d.SetId(id)
 
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
+			if err = identity.Set("location", locationValue.(string)); err != nil {
+				return fmt.Errorf("Error setting location: %s", err)
+			}
+		}
+		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
+			if err = identity.Set("project", projectValue.(string)); err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Create) identity not set: %s", err)
+	}
+
 	log.Printf("[DEBUG] Finished creating Config %q: %#v", d.Id(), res)
 
 	return resourceFirebaseAILogicConfigRead(d, meta)
@@ -363,6 +395,24 @@ func resourceFirebaseAILogicConfigRead(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error reading Config: %s", err)
 	}
 
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if v, ok := identity.GetOk("location"); !ok && v == "" {
+			err = identity.Set("location", d.Get("location").(string))
+			if err != nil {
+				return fmt.Errorf("Error setting location: %s", err)
+			}
+		}
+		if v, ok := identity.GetOk("project"); !ok && v == "" {
+			err = identity.Set("project", d.Get("project").(string))
+			if err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Read) identity not set: %s", err)
+	}
+
 	return nil
 }
 
@@ -371,6 +421,21 @@ func resourceFirebaseAILogicConfigUpdate(d *schema.ResourceData, meta interface{
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
 		return err
+	}
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
+			if err = identity.Set("location", locationValue.(string)); err != nil {
+				return fmt.Errorf("Error setting location: %s", err)
+			}
+		}
+		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
+			if err = identity.Set("project", projectValue.(string)); err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Update) identity not set: %s", err)
 	}
 
 	billingProject := ""
@@ -576,26 +641,35 @@ func flattenFirebaseAILogicConfigTelemetryConfigSamplingRate(v interface{}, d *s
 }
 
 func flattenFirebaseAILogicConfigTrafficFilter(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) interface{} {
-	if v == nil {
-		// If the API drops the whole block, pull the user's configured block from state
-		// to prevent the perpetual diff.
-		if val, ok := d.GetOk("traffic_filter"); ok {
-			return val
+	userState := d.Get("traffic_filter").([]interface{})
+
+	var apiState []interface{}
+	apiEnabled := false
+	if original, ok := v.(map[string]interface{}); ok {
+		block := make(map[string]interface{})
+		if templateOnly, ok := original["templateOnly"].(bool); ok && templateOnly {
+			block["template_only"] = true
+			apiEnabled = true
+		} else {
+			block["template_only"] = false
 		}
-		return nil
+		apiState = []interface{}{block}
 	}
 
-	original := v.(map[string]interface{})
-	transformed := make(map[string]interface{})
-
-	if val, ok := original["templateOnly"]; ok {
-		transformed["template_only"] = val
-	} else if val, ok := d.GetOk("traffic_filter.0.template_only"); ok {
-		// If the API returns the block but drops the false boolean, pull it from state
-		transformed["template_only"] = val
+	userEnabled := false
+	if len(userState) > 0 && userState[0] != nil {
+		if tfMap, ok := userState[0].(map[string]interface{}); ok {
+			userEnabled, _ = tfMap["template_only"].(bool)
+		}
 	}
 
-	return []interface{}{transformed}
+	if apiEnabled || userEnabled {
+		return apiState
+	}
+
+	// Both API and user agree the feature is disabled.
+	// Return the userState to prevent perpetual diffs.
+	return userState
 }
 
 func expandFirebaseAILogicConfigGenerativeLanguageConfig(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {

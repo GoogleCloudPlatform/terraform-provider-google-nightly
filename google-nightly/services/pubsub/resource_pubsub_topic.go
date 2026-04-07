@@ -118,6 +118,22 @@ func ResourcePubsubTopic() *schema.Resource {
 			tpgresource.DefaultProviderProject,
 		),
 
+		Identity: &schema.ResourceIdentity{
+			Version: 1,
+			SchemaFunc: func() map[string]*schema.Schema {
+				return map[string]*schema.Schema{
+					"name": {
+						Type:              schema.TypeString,
+						RequiredForImport: true,
+					},
+					"project": {
+						Type:              schema.TypeString,
+						OptionalForImport: true,
+					},
+				}
+			},
+		},
+
 		Schema: map[string]*schema.Schema{
 			"name": {
 				Type:             schema.TypeString,
@@ -464,6 +480,50 @@ attached to this topic in any region that is not in 'allowedPersistenceRegions'.
 order specified.`,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
+						"ai_inference": {
+							Type:     schema.TypeList,
+							Optional: true,
+							Description: `AI Inference. Specifies the Vertex AI endpoint that inference
+requests built from the Pub/Sub message data and provided parameters will
+be sent to.`,
+							MaxItems: 1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"endpoint": {
+										Type:     schema.TypeString,
+										Required: true,
+										Description: `The endpoint to a Vertex AI model of the form
+'projects/{project}/locations/{location}/endpoints/{endpoint}' or
+'projects/{project}/locations/{location}/publishers/{publisher}/models/{model}'.
+Vertex AI API requests will be sent to this endpoint.`,
+									},
+									"service_account_email": {
+										Type:     schema.TypeString,
+										Optional: true,
+										Description: `The service account to use to make prediction requests against
+endpoints.`,
+									},
+									"unstructured_inference": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `Configuration for making inferences using arbitrary JSON payloads.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"parameters": {
+													Type:     schema.TypeMap,
+													Optional: true,
+													Description: `A parameters object to be included in each inference request.
+The parameters object is combined with the data field of the Pub/Sub
+message to form the inference request.`,
+													Elem: &schema.Schema{Type: schema.TypeString},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
 						"disabled": {
 							Type:     schema.TypeBool,
 							Optional: true,
@@ -695,6 +755,22 @@ func resourcePubsubTopicCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 	d.SetId(id)
 
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
+			if err = identity.Set("name", nameValue.(string)); err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
+		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
+			if err = identity.Set("project", projectValue.(string)); err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Create) identity not set: %s", err)
+	}
+
 	err = transport_tpg.PollingWaitTime(resourcePubsubTopicPollRead(d, meta), transport_tpg.PollCheckForExistence, "Creating Topic", d.Timeout(schema.TimeoutCreate), 1)
 	if err != nil {
 		log.Printf("[ERROR] Unable to confirm eventually consistent Topic %q finished updating: %q", d.Id(), err)
@@ -824,6 +900,24 @@ func resourcePubsubTopicRead(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Error reading Topic: %s", err)
 	}
 
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if v, ok := identity.GetOk("name"); !ok && v == "" {
+			err = identity.Set("name", d.Get("name").(string))
+			if err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
+		if v, ok := identity.GetOk("project"); !ok && v == "" {
+			err = identity.Set("project", d.Get("project").(string))
+			if err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Read) identity not set: %s", err)
+	}
+
 	return nil
 }
 
@@ -832,6 +926,21 @@ func resourcePubsubTopicUpdate(d *schema.ResourceData, meta interface{}) error {
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
 		return err
+	}
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
+			if err = identity.Set("name", nameValue.(string)); err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
+		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
+			if err = identity.Set("project", projectValue.(string)); err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Update) identity not set: %s", err)
 	}
 
 	billingProject := ""
@@ -1397,12 +1506,55 @@ func flattenPubsubTopicMessageTransforms(v interface{}, d *schema.ResourceData, 
 			continue
 		}
 		transformed = append(transformed, map[string]interface{}{
+			"ai_inference":   flattenPubsubTopicMessageTransformsAiInference(original["aiInference"], d, config),
 			"javascript_udf": flattenPubsubTopicMessageTransformsJavascriptUdf(original["javascriptUdf"], d, config),
 			"disabled":       flattenPubsubTopicMessageTransformsDisabled(original["disabled"], d, config),
 		})
 	}
 	return transformed
 }
+func flattenPubsubTopicMessageTransformsAiInference(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["endpoint"] =
+		flattenPubsubTopicMessageTransformsAiInferenceEndpoint(original["endpoint"], d, config)
+	transformed["unstructured_inference"] =
+		flattenPubsubTopicMessageTransformsAiInferenceUnstructuredInference(original["unstructuredInference"], d, config)
+	transformed["service_account_email"] =
+		flattenPubsubTopicMessageTransformsAiInferenceServiceAccountEmail(original["serviceAccountEmail"], d, config)
+	return []interface{}{transformed}
+}
+func flattenPubsubTopicMessageTransformsAiInferenceEndpoint(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenPubsubTopicMessageTransformsAiInferenceUnstructuredInference(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["parameters"] =
+		flattenPubsubTopicMessageTransformsAiInferenceUnstructuredInferenceParameters(original["parameters"], d, config)
+	return []interface{}{transformed}
+}
+func flattenPubsubTopicMessageTransformsAiInferenceUnstructuredInferenceParameters(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenPubsubTopicMessageTransformsAiInferenceServiceAccountEmail(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenPubsubTopicMessageTransformsJavascriptUdf(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return nil
@@ -2043,6 +2195,13 @@ func expandPubsubTopicMessageTransforms(v interface{}, d tpgresource.TerraformRe
 		original := raw.(map[string]interface{})
 		transformed := make(map[string]interface{})
 
+		transformedAiInference, err := expandPubsubTopicMessageTransformsAiInference(original["ai_inference"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedAiInference); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["aiInference"] = transformedAiInference
+		}
+
 		transformedJavascriptUdf, err := expandPubsubTopicMessageTransformsJavascriptUdf(original["javascript_udf"], d, config)
 		if err != nil {
 			return nil, err
@@ -2060,6 +2219,83 @@ func expandPubsubTopicMessageTransforms(v interface{}, d tpgresource.TerraformRe
 		req = append(req, transformed)
 	}
 	return req, nil
+}
+
+func expandPubsubTopicMessageTransformsAiInference(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedEndpoint, err := expandPubsubTopicMessageTransformsAiInferenceEndpoint(original["endpoint"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedEndpoint); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["endpoint"] = transformedEndpoint
+	}
+
+	transformedUnstructuredInference, err := expandPubsubTopicMessageTransformsAiInferenceUnstructuredInference(original["unstructured_inference"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedUnstructuredInference); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["unstructuredInference"] = transformedUnstructuredInference
+	}
+
+	transformedServiceAccountEmail, err := expandPubsubTopicMessageTransformsAiInferenceServiceAccountEmail(original["service_account_email"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedServiceAccountEmail); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["serviceAccountEmail"] = transformedServiceAccountEmail
+	}
+
+	return transformed, nil
+}
+
+func expandPubsubTopicMessageTransformsAiInferenceEndpoint(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandPubsubTopicMessageTransformsAiInferenceUnstructuredInference(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedParameters, err := expandPubsubTopicMessageTransformsAiInferenceUnstructuredInferenceParameters(original["parameters"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedParameters); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["parameters"] = transformedParameters
+	}
+
+	return transformed, nil
+}
+
+func expandPubsubTopicMessageTransformsAiInferenceUnstructuredInferenceParameters(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
+}
+
+func expandPubsubTopicMessageTransformsAiInferenceServiceAccountEmail(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
 }
 
 func expandPubsubTopicMessageTransformsJavascriptUdf(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {

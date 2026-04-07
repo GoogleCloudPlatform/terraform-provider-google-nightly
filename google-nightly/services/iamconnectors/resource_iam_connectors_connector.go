@@ -119,6 +119,26 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 			tpgresource.DefaultProviderProject,
 		),
 
+		Identity: &schema.ResourceIdentity{
+			Version: 1,
+			SchemaFunc: func() map[string]*schema.Schema {
+				return map[string]*schema.Schema{
+					"location": {
+						Type:              schema.TypeString,
+						RequiredForImport: true,
+					},
+					"connector_id": {
+						Type:              schema.TypeString,
+						RequiredForImport: true,
+					},
+					"project": {
+						Type:              schema.TypeString,
+						OptionalForImport: true,
+					},
+				}
+			},
+		},
+
 		Schema: map[string]*schema.Schema{
 			"connector_id": {
 				Type:        schema.TypeString,
@@ -136,6 +156,7 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 						"api_key": {
 							Type:        schema.TypeList,
 							Optional:    true,
+							ForceNew:    true,
 							Description: `ApiKey connector type parameters.`,
 							MaxItems:    1,
 							Elem: &schema.Resource{
@@ -153,6 +174,7 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 						"ge_connector_params": {
 							Type:        schema.TypeList,
 							Optional:    true,
+							ForceNew:    true,
 							Description: `GeminiEnterprise connector type parameters.`,
 							MaxItems:    1,
 							Elem: &schema.Resource{
@@ -163,7 +185,8 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 						"three_legged_oauth": {
 							Type:        schema.TypeList,
 							Optional:    true,
-							Description: `TwoLeggedOAuth connector type parameters.`,
+							ForceNew:    true,
+							Description: `ThreeLeggedOAuth connector type parameters.`,
 							MaxItems:    1,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
@@ -183,6 +206,11 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 										Description: `The client secret of the OAuth client.`,
 										Sensitive:   true,
 									},
+									"enable_pkce": {
+										Type:        schema.TypeBool,
+										Required:    true,
+										Description: `Enables Proof Key for Code Exchange (PKCE) for the OAuth flow to prevent authorization code interception attacks.`,
+									},
 									"token_url": {
 										Type:        schema.TypeString,
 										Required:    true,
@@ -200,6 +228,7 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 						"two_legged_oauth": {
 							Type:        schema.TypeList,
 							Optional:    true,
+							ForceNew:    true,
 							Description: `TwoLeggedOAuth connector type parameters.`,
 							MaxItems:    1,
 							Elem: &schema.Resource{
@@ -266,6 +295,14 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 				Description:  `The state of the connector. Default value: "ENABLED" Possible values: ["ENABLED", "DISABLED"]`,
 				Default:      "ENABLED",
 			},
+			"workload_ids": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: `Workload identity (SPIFFE ID) of the agent.`,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+			},
 			"create_time": {
 				Type:        schema.TypeString,
 				Computed:    true,
@@ -330,6 +367,12 @@ func resourceIamConnectorsConnectorCreate(d *schema.ResourceData, meta interface
 	} else if v, ok := d.GetOkExists("state"); !tpgresource.IsEmptyValue(reflect.ValueOf(stateProp)) && (ok || !reflect.DeepEqual(v, stateProp)) {
 		obj["state"] = stateProp
 	}
+	workloadIdsProp, err := expandIamConnectorsConnectorWorkloadIds(d.Get("workload_ids"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("workload_ids"); !tpgresource.IsEmptyValue(reflect.ValueOf(workloadIdsProp)) && (ok || !reflect.DeepEqual(v, workloadIdsProp)) {
+		obj["workloadIds"] = workloadIdsProp
+	}
 	expireTimeProp, err := expandIamConnectorsConnectorExpireTime(d.Get("expire_time"), d, config)
 	if err != nil {
 		return err
@@ -372,11 +415,32 @@ func resourceIamConnectorsConnectorCreate(d *schema.ResourceData, meta interface
 	}
 
 	// Store the ID now
-	id, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/services/{{connector_id}}")
+	id, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}")
 	if err != nil {
 		return fmt.Errorf("Error constructing id: %s", err)
 	}
 	d.SetId(id)
+
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
+			if err = identity.Set("location", locationValue.(string)); err != nil {
+				return fmt.Errorf("Error setting location: %s", err)
+			}
+		}
+		if connectorIdValue, ok := d.GetOk("connector_id"); ok && connectorIdValue.(string) != "" {
+			if err = identity.Set("connector_id", connectorIdValue.(string)); err != nil {
+				return fmt.Errorf("Error setting connector_id: %s", err)
+			}
+		}
+		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
+			if err = identity.Set("project", projectValue.(string)); err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Create) identity not set: %s", err)
+	}
 
 	err = transport_tpg.PollingWaitTime(resourceIamConnectorsConnectorPollRead(d, meta), transport_tpg.PollCheckForExistence, "Creating Connector", d.Timeout(schema.TimeoutCreate), 5)
 	if err != nil {
@@ -502,6 +566,30 @@ func resourceIamConnectorsConnectorRead(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error reading Connector: %s", err)
 	}
 
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if v, ok := identity.GetOk("location"); !ok && v == "" {
+			err = identity.Set("location", d.Get("location").(string))
+			if err != nil {
+				return fmt.Errorf("Error setting location: %s", err)
+			}
+		}
+		if v, ok := identity.GetOk("connector_id"); !ok && v == "" {
+			err = identity.Set("connector_id", d.Get("connector_id").(string))
+			if err != nil {
+				return fmt.Errorf("Error setting connector_id: %s", err)
+			}
+		}
+		if v, ok := identity.GetOk("project"); !ok && v == "" {
+			err = identity.Set("project", d.Get("project").(string))
+			if err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Read) identity not set: %s", err)
+	}
+
 	return nil
 }
 
@@ -510,6 +598,26 @@ func resourceIamConnectorsConnectorUpdate(d *schema.ResourceData, meta interface
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
 		return err
+	}
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
+			if err = identity.Set("location", locationValue.(string)); err != nil {
+				return fmt.Errorf("Error setting location: %s", err)
+			}
+		}
+		if connectorIdValue, ok := d.GetOk("connector_id"); ok && connectorIdValue.(string) != "" {
+			if err = identity.Set("connector_id", connectorIdValue.(string)); err != nil {
+				return fmt.Errorf("Error setting connector_id: %s", err)
+			}
+		}
+		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
+			if err = identity.Set("project", projectValue.(string)); err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Update) identity not set: %s", err)
 	}
 
 	billingProject := ""
@@ -551,6 +659,12 @@ func resourceIamConnectorsConnectorUpdate(d *schema.ResourceData, meta interface
 	} else if v, ok := d.GetOkExists("state"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, stateProp)) {
 		obj["state"] = stateProp
 	}
+	workloadIdsProp, err := expandIamConnectorsConnectorWorkloadIds(d.Get("workload_ids"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("workload_ids"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, workloadIdsProp)) {
+		obj["workloadIds"] = workloadIdsProp
+	}
 	expireTimeProp, err := expandIamConnectorsConnectorExpireTime(d.Get("expire_time"), d, config)
 	if err != nil {
 		return err
@@ -585,6 +699,10 @@ func resourceIamConnectorsConnectorUpdate(d *schema.ResourceData, meta interface
 
 	if d.HasChange("state") {
 		updateMask = append(updateMask, "state")
+	}
+
+	if d.HasChange("workload_ids") {
+		updateMask = append(updateMask, "workloadIds")
 	}
 
 	if d.HasChange("expire_time") {
@@ -677,7 +795,7 @@ func resourceIamConnectorsConnectorDelete(d *schema.ResourceData, meta interface
 func resourceIamConnectorsConnectorImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	config := meta.(*transport_tpg.Config)
 	if err := tpgresource.ParseImportId([]string{
-		"^projects/(?P<project>[^/]+)/locations/(?P<location>[^/]+)/services/(?P<connector_id>[^/]+)$",
+		"^projects/(?P<project>[^/]+)/locations/(?P<location>[^/]+)/connectors/(?P<connector_id>[^/]+)$",
 		"^(?P<project>[^/]+)/(?P<location>[^/]+)/(?P<connector_id>[^/]+)$",
 		"^(?P<location>[^/]+)/(?P<connector_id>[^/]+)$",
 	}, d, config); err != nil {
@@ -685,7 +803,7 @@ func resourceIamConnectorsConnectorImport(d *schema.ResourceData, meta interface
 	}
 
 	// Replace import id for the resource id
-	id, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/services/{{connector_id}}")
+	id, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}")
 	if err != nil {
 		return nil, fmt.Errorf("Error constructing id: %s", err)
 	}
@@ -744,6 +862,8 @@ func flattenIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauth(v interfac
 		flattenIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthAuthorizationUrl(original["authorizationUrl"], d, config)
 	transformed["token_url"] =
 		flattenIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthTokenUrl(original["tokenUrl"], d, config)
+	transformed["enable_pkce"] =
+		flattenIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthEnablePkce(original["enablePkce"], d, config)
 	return []interface{}{transformed}
 }
 func flattenIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthClientSecret(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -763,6 +883,10 @@ func flattenIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthAuthorizati
 }
 
 func flattenIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthTokenUrl(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthEnablePkce(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -939,6 +1063,13 @@ func expandIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauth(v interface
 		transformed["tokenUrl"] = transformedTokenUrl
 	}
 
+	transformedEnablePkce, err := expandIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthEnablePkce(original["enable_pkce"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedEnablePkce); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["enablePkce"] = transformedEnablePkce
+	}
+
 	return transformed, nil
 }
 
@@ -959,6 +1090,10 @@ func expandIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthAuthorizatio
 }
 
 func expandIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthTokenUrl(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandIamConnectorsConnectorConnectorTypeParamsThreeLeggedOauthEnablePkce(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -1060,6 +1195,10 @@ func expandIamConnectorsConnectorConnectorTypeParamsGeConnectorParams(v interfac
 }
 
 func expandIamConnectorsConnectorState(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandIamConnectorsConnectorWorkloadIds(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 

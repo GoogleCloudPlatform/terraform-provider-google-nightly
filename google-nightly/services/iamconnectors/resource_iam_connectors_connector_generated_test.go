@@ -73,7 +73,13 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorBasicExample(t *testing
 				ResourceName:            "google_iam_connectors_connector.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location"},
+				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location", "workload_ids"},
+			},
+			{
+				ResourceName:       "google_iam_connectors_connector.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
 		},
 	})
@@ -86,7 +92,7 @@ provider "google-nightly" {}
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "europe-west4"
+  location       = "us-east7"
   connector_id   = "%{connector}"
 
   connector_type_params {
@@ -120,7 +126,13 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorGeminiEnterpriseExample
 				ResourceName:            "google_iam_connectors_connector.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location"},
+				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location", "workload_ids"},
+			},
+			{
+				ResourceName:       "google_iam_connectors_connector.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
 		},
 	})
@@ -133,12 +145,14 @@ provider "google-nightly" {}
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "europe-west4"
+  location       = "us-east7"
   connector_id   = "%{connector}"
 
   connector_type_params {
     ge_connector_params {}
   }
+
+  workload_ids = ["spiffe://example.com/spire/agent/k8s_psat/my-k8s-cluster/52174304-42f0-460b-9273-ed833d7904eb"]
 }
 `, context)
 }
@@ -165,7 +179,13 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorThreeLeggedExample(t *t
 				ResourceName:            "google_iam_connectors_connector.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location"},
+				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location", "workload_ids"},
+			},
+			{
+				ResourceName:       "google_iam_connectors_connector.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
 		},
 	})
@@ -178,7 +198,7 @@ provider "google-nightly" {}
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "europe-west4"
+  location       = "us-east7"
   connector_id   = "%{connector}"
 
   allowed_scopes = ["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/userinfo.email"]
@@ -189,6 +209,7 @@ resource "google_iam_connectors_connector" "default" {
       client_secret = "bar"
       authorization_url = "baz"
       token_url = "qux"
+      enable_pkce = true
     }
   }
 }
@@ -217,7 +238,13 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorTwoLeggedExample(t *tes
 				ResourceName:            "google_iam_connectors_connector.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location"},
+				ImportStateVerifyIgnore: []string{"connector_id", "connector_type_params.0.api_key.0.api_key", "connector_type_params.0.three_legged_oauth.0.client_secret", "connector_type_params.0.two_legged_oauth.0.client_secret", "location", "workload_ids"},
+			},
+			{
+				ResourceName:       "google_iam_connectors_connector.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
 		},
 	})
@@ -230,7 +257,7 @@ provider "google-nightly" {}
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "europe-west4"
+  location       = "us-east7"
   connector_id   = "%{connector}"
 
   allowed_scopes = ["https://www.googleapis.com/auth/cloud-platform"]

@@ -43,7 +43,7 @@ provider "google-nightly" {}
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "europe-west4"
+  location       = "us-east7"
   connector_id   = "connector"
 
   connector_type_params {
@@ -67,12 +67,14 @@ provider "google-nightly" {}
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "europe-west4"
+  location       = "us-east7"
   connector_id   = "connector"
 
   connector_type_params {
     ge_connector_params {}
   }
+
+  workload_ids = ["spiffe://example.com/spire/agent/k8s_psat/my-k8s-cluster/52174304-42f0-460b-9273-ed833d7904eb"]
 }
 ```
 <div class = "oics-button" style="float: right; margin: 0 0 -15px">
@@ -89,7 +91,7 @@ provider "google-nightly" {}
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "europe-west4"
+  location       = "us-east7"
   connector_id   = "connector"
 
   allowed_scopes = ["https://www.googleapis.com/auth/cloud-platform", "https://www.googleapis.com/auth/userinfo.email"]
@@ -100,6 +102,7 @@ resource "google_iam_connectors_connector" "default" {
       client_secret = "bar"
       authorization_url = "baz"
       token_url = "qux"
+      enable_pkce = true
     }
   }
 }
@@ -118,7 +121,7 @@ provider "google-nightly" {}
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "europe-west4"
+  location       = "us-east7"
   connector_id   = "connector"
 
   allowed_scopes = ["https://www.googleapis.com/auth/cloud-platform"]
@@ -171,6 +174,10 @@ The following arguments are supported:
   Default value is `ENABLED`.
   Possible values are: `ENABLED`, `DISABLED`.
 
+* `workload_ids` -
+  (Optional)
+  Workload identity (SPIFFE ID) of the agent.
+
 * `expire_time` -
   (Optional)
   The time when the connector will expire.
@@ -184,7 +191,7 @@ The following arguments are supported:
 
 * `three_legged_oauth` -
   (Optional)
-  TwoLeggedOAuth connector type parameters.
+  ThreeLeggedOAuth connector type parameters.
   Structure is [documented below](#nested_connector_type_params_three_legged_oauth).
 
 * `two_legged_oauth` -
@@ -225,6 +232,10 @@ The following arguments are supported:
   (Required)
   The token endpoint for requesting tokens on behalf of an end user.
 
+* `enable_pkce` -
+  (Required)
+  Enables Proof Key for Code Exchange (PKCE) for the OAuth flow to prevent authorization code interception attacks.
+
 <a name="nested_connector_type_params_two_legged_oauth"></a>The `two_legged_oauth` block supports:
 
 * `client_secret` -
@@ -251,7 +262,7 @@ The following arguments are supported:
 
 In addition to the arguments listed above, the following computed attributes are exported:
 
-* `id` - an identifier for the resource with format `projects/{{project}}/locations/{{location}}/services/{{connector_id}}`
+* `id` - an identifier for the resource with format `projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}`
 
 * `deleted` -
   This is set to true if the connector is deleted.
@@ -277,16 +288,28 @@ This resource provides the following
 
 Connector can be imported using any of these accepted formats:
 
-* `projects/{{project}}/locations/{{location}}/services/{{connector_id}}`
+* `projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}`
 * `{{project}}/{{location}}/{{connector_id}}`
 * `{{location}}/{{connector_id}}`
 
+In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/resources/identities) to import Connector using identity values. For example:
+
+```tf
+import {
+  identity = {
+    location = "<-required value->"
+    connectorId = "<-required value->"
+    project = "<-optional value->"
+  }
+  to = google_iam_connectors_connector.default
+}
+```
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import Connector using one of the formats above. For example:
 
 ```tf
 import {
-  id = "projects/{{project}}/locations/{{location}}/services/{{connector_id}}"
+  id = "projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}"
   to = google_iam_connectors_connector.default
 }
 ```
@@ -294,7 +317,7 @@ import {
 When using the [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import), Connector can be imported using one of the formats above. For example:
 
 ```
-$ terraform import google_iam_connectors_connector.default projects/{{project}}/locations/{{location}}/services/{{connector_id}}
+$ terraform import google_iam_connectors_connector.default projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}
 $ terraform import google_iam_connectors_connector.default {{project}}/{{location}}/{{connector_id}}
 $ terraform import google_iam_connectors_connector.default {{location}}/{{connector_id}}
 ```

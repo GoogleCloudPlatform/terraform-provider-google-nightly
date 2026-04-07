@@ -211,7 +211,7 @@ The following arguments are supported:
   Possible values are: `SCALE_TIER_UNSPECIFIED`, `SCALE_TIER_STANDARD`, `SCALE_TIER_ENTERPRISE`.
 
 * `mode` -
-  (Optional, [Beta](../guides/provider_versions.html.markdown))
+  (Optional)
   Mode of the storage pool.
   The operational mode of the storage pool. ONTAP mode enables operations
   via ONTAP Mode APIs, while DEFAULT mode enables operations via NetApp Volumes APIs.
@@ -273,6 +273,18 @@ StoragePool can be imported using any of these accepted formats:
 * `{{project}}/{{location}}/{{name}}`
 * `{{location}}/{{name}}`
 
+In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/resources/identities) to import StoragePool using identity values. For example:
+
+```tf
+import {
+  identity = {
+    location = "<-required value->"
+    name = "<-required value->"
+    project = "<-optional value->"
+  }
+  to = google_netapp_storage_pool.default
+}
+```
 
 In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashicorp.com/terraform/language/import) to import StoragePool using one of the formats above. For example:
 
