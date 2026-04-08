@@ -21,13 +21,17 @@ fields:
       provider_only: true
     - api_field: description
     - api_field: displayName
+    - field: effective_labels
+      provider_only: true
     - api_field: encryptionSpec.kmsKeyName
+    - api_field: labels
     - api_field: name
     - field: region
       provider_only: true
     - api_field: spec.agentFramework
     - api_field: spec.classMethods
       json: true
+    - api_field: spec.containerSpec.imageUri
     - api_field: spec.deploymentSpec.agentGatewayConfig.agentToAnywhereConfig.agentGateway
     - api_field: spec.deploymentSpec.agentGatewayConfig.clientToAgentConfig.agentGateway
     - api_field: spec.deploymentSpec.containerConcurrency
@@ -59,4 +63,6 @@ fields:
     - api_field: spec.sourceCodeSpec.pythonSpec.entrypointObject
     - api_field: spec.sourceCodeSpec.pythonSpec.requirementsFile
     - api_field: spec.sourceCodeSpec.pythonSpec.version
+    - field: terraform_labels
+      provider_only: true
     - api_field: updateTime

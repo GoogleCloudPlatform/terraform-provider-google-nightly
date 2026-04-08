@@ -413,7 +413,6 @@ type Config struct {
 	ServiceManagementBasePath        string
 	ServiceNetworkingBasePath        string
 	ServiceUsageBasePath             string
-	ServiceUsageV2BasePath           string
 	SiteVerificationBasePath         string
 	SourceRepoBasePath               string
 	SpannerBasePath                  string
@@ -609,7 +608,6 @@ const ServiceDirectoryBasePathKey = "ServiceDirectory"
 const ServiceManagementBasePathKey = "ServiceManagement"
 const ServiceNetworkingBasePathKey = "ServiceNetworking"
 const ServiceUsageBasePathKey = "ServiceUsage"
-const ServiceUsageV2BasePathKey = "ServiceUsageV2"
 const SiteVerificationBasePathKey = "SiteVerification"
 const SourceRepoBasePathKey = "SourceRepo"
 const SpannerBasePathKey = "Spanner"
@@ -794,7 +792,6 @@ var DefaultBasePaths = map[string]string{
 	ServiceManagementBasePathKey:        "https://servicemanagement.googleapis.com/v1/",
 	ServiceNetworkingBasePathKey:        "https://servicenetworking.googleapis.com/v1/",
 	ServiceUsageBasePathKey:             "https://serviceusage.googleapis.com/v1beta1/",
-	ServiceUsageV2BasePathKey:           "https://serviceusage.googleapis.com/v2beta/",
 	SiteVerificationBasePathKey:         "https://www.googleapis.com/siteVerification/v1/",
 	SourceRepoBasePathKey:               "https://sourcerepo.googleapis.com/v1/",
 	SpannerBasePathKey:                  "https://spanner.googleapis.com/v1/",
@@ -1663,11 +1660,6 @@ func SetEndpointDefaults(d *schema.ResourceData) error {
 		d.Set("service_usage_custom_endpoint", MultiEnvDefault([]string{
 			"GOOGLE_SERVICE_USAGE_CUSTOM_ENDPOINT",
 		}, DefaultBasePaths[ServiceUsageBasePathKey]))
-	}
-	if d.Get("service_usage_v2_custom_endpoint") == "" {
-		d.Set("service_usage_v2_custom_endpoint", MultiEnvDefault([]string{
-			"GOOGLE_SERVICE_USAGE_V2_CUSTOM_ENDPOINT",
-		}, DefaultBasePaths[ServiceUsageV2BasePathKey]))
 	}
 	if d.Get("site_verification_custom_endpoint") == "" {
 		d.Set("site_verification_custom_endpoint", MultiEnvDefault([]string{
@@ -3032,7 +3024,6 @@ func ConfigureBasePaths(c *Config) {
 	c.ServiceManagementBasePath = DefaultBasePaths[ServiceManagementBasePathKey]
 	c.ServiceNetworkingBasePath = DefaultBasePaths[ServiceNetworkingBasePathKey]
 	c.ServiceUsageBasePath = DefaultBasePaths[ServiceUsageBasePathKey]
-	c.ServiceUsageV2BasePath = DefaultBasePaths[ServiceUsageV2BasePathKey]
 	c.SiteVerificationBasePath = DefaultBasePaths[SiteVerificationBasePathKey]
 	c.SourceRepoBasePath = DefaultBasePaths[SourceRepoBasePathKey]
 	c.SpannerBasePath = DefaultBasePaths[SpannerBasePathKey]

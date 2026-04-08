@@ -170,7 +170,6 @@ import (
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicemanagement"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/serviceusage"
-	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/serviceusagev2"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/siteverification"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/sourcerepo"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/spanner"
