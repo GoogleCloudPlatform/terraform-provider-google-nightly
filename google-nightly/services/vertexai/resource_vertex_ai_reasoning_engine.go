@@ -115,6 +115,7 @@ func ResourceVertexAIReasoningEngine() *schema.Resource {
 		},
 
 		CustomizeDiff: customdiff.All(
+			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
 		),
 
@@ -272,6 +273,17 @@ is created.`,
 					},
 				},
 			},
+			"labels": {
+				Type:     schema.TypeMap,
+				Optional: true,
+				Description: `The labels associated with this ReasoningEngine. You can use these to
+organize and group your ReasoningEngines.
+
+
+**Note**: This field is non-authoritative, and will only manage the labels present in your configuration.
+Please refer to the field 'effective_labels' for all of the labels present on the resource.`,
+				Elem: &schema.Schema{Type: schema.TypeString},
+			},
 			"region": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -298,6 +310,24 @@ is created.`,
 							StateFunc:    func(v interface{}) string { s, _ := structure.NormalizeJsonString(v); return s },
 							Description: `Optional. Declarations for object class methods in OpenAPI
 specification format.`,
+						},
+						"container_spec": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `Deploy from a container image with a defined entrypoint and commands.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"image_uri": {
+										Type:     schema.TypeString,
+										Required: true,
+										Description: `The Artifact Registry Docker image URI (e.g.,
+'us-central1-docker.pkg.dev/my-project/my-repo/my-image:tag') of the
+container image that is to be run on each worker replica.`,
+									},
+								},
+							},
+							ConflictsWith: []string{"spec.0.source_code_spec"},
 						},
 						"deployment_spec": {
 							Type:        schema.TypeList,
@@ -640,6 +670,7 @@ default value is 3.10.`,
 									},
 								},
 							},
+							ConflictsWith: []string{"spec.0.container_spec"},
 						},
 						"effective_identity": {
 							Type:        schema.TypeString,
@@ -655,11 +686,24 @@ default value is 3.10.`,
 				Description: `The timestamp of when the Index was created in RFC3339 UTC "Zulu" format,
 with nanosecond resolution and up to nine fractional digits.`,
 			},
+			"effective_labels": {
+				Type:        schema.TypeMap,
+				Computed:    true,
+				Description: `All of labels (key/value pairs) present on the resource in GCP, including the labels configured through Terraform, other clients and services.`,
+				Elem:        &schema.Schema{Type: schema.TypeString},
+			},
 			"name": {
 				Type:     schema.TypeString,
 				Computed: true,
 				Description: `The generated name of the ReasoningEngine, in the format
 projects/{project}/locations/{location}/reasoningEngines/{reasoningEngine}`,
+			},
+			"terraform_labels": {
+				Type:     schema.TypeMap,
+				Computed: true,
+				Description: `The combination of labels configured directly on the resource
+ and default labels configured on the provider.`,
+				Elem: &schema.Schema{Type: schema.TypeString},
 			},
 			"update_time": {
 				Type:     schema.TypeString,
@@ -783,6 +827,12 @@ func resourceVertexAIReasoningEngineCreate(d *schema.ResourceData, meta interfac
 		return err
 	} else if v, ok := d.GetOkExists("context_spec"); !tpgresource.IsEmptyValue(reflect.ValueOf(contextSpecProp)) && (ok || !reflect.DeepEqual(v, contextSpecProp)) {
 		obj["contextSpec"] = contextSpecProp
+	}
+	effectiveLabelsProp, err := expandVertexAIReasoningEngineEffectiveLabels(d.Get("effective_labels"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("effective_labels"); !tpgresource.IsEmptyValue(reflect.ValueOf(effectiveLabelsProp)) && (ok || !reflect.DeepEqual(v, effectiveLabelsProp)) {
+		obj["labels"] = effectiveLabelsProp
 	}
 
 	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/reasoningEngines")
@@ -930,6 +980,9 @@ func resourceVertexAIReasoningEngineRead(d *schema.ResourceData, meta interface{
 	if err := d.Set("description", flattenVertexAIReasoningEngineDescription(res["description"], d, config)); err != nil {
 		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
 	}
+	if err := d.Set("labels", flattenVertexAIReasoningEngineLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
 	if err := d.Set("create_time", flattenVertexAIReasoningEngineCreateTime(res["createTime"], d, config)); err != nil {
 		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
 	}
@@ -943,6 +996,12 @@ func resourceVertexAIReasoningEngineRead(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
 	}
 	if err := d.Set("context_spec", flattenVertexAIReasoningEngineContextSpec(res["contextSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err := d.Set("terraform_labels", flattenVertexAIReasoningEngineTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err := d.Set("effective_labels", flattenVertexAIReasoningEngineEffectiveLabels(res["labels"], d, config)); err != nil {
 		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
 	}
 
@@ -1033,6 +1092,12 @@ func resourceVertexAIReasoningEngineUpdate(d *schema.ResourceData, meta interfac
 	} else if v, ok := d.GetOkExists("context_spec"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, contextSpecProp)) {
 		obj["contextSpec"] = contextSpecProp
 	}
+	effectiveLabelsProp, err := expandVertexAIReasoningEngineEffectiveLabels(d.Get("effective_labels"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("effective_labels"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, effectiveLabelsProp)) {
+		obj["labels"] = effectiveLabelsProp
+	}
 
 	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/reasoningEngines/{{name}}")
 	if err != nil {
@@ -1057,6 +1122,10 @@ func resourceVertexAIReasoningEngineUpdate(d *schema.ResourceData, meta interfac
 
 	if d.HasChange("context_spec") {
 		updateMask = append(updateMask, "contextSpec")
+	}
+
+	if d.HasChange("effective_labels") {
+		updateMask = append(updateMask, "labels")
 	}
 	// updateMask is a URL parameter but not present in the schema, so ReplaceVars
 	// won't set it
@@ -1203,6 +1272,21 @@ func flattenVertexAIReasoningEngineDescription(v interface{}, d *schema.Resource
 	return v
 }
 
+func flattenVertexAIReasoningEngineLabels(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return v
+	}
+
+	transformed := make(map[string]interface{})
+	if l, ok := d.GetOkExists("labels"); ok {
+		for k := range l.(map[string]interface{}) {
+			transformed[k] = v.(map[string]interface{})[k]
+		}
+	}
+
+	return transformed
+}
+
 func flattenVertexAIReasoningEngineCreateTime(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
@@ -1245,6 +1329,8 @@ func flattenVertexAIReasoningEngineSpec(v interface{}, d *schema.ResourceData, c
 		flattenVertexAIReasoningEngineSpecDeploymentSpec(original["deploymentSpec"], d, config)
 	transformed["package_spec"] =
 		flattenVertexAIReasoningEngineSpecPackageSpec(original["packageSpec"], d, config)
+	transformed["container_spec"] =
+		flattenVertexAIReasoningEngineSpecContainerSpec(original["containerSpec"], d, config)
 	transformed["source_code_spec"] =
 		flattenVertexAIReasoningEngineSpecSourceCodeSpec(original["sourceCodeSpec"], d, config)
 	transformed["service_account"] =
@@ -1561,6 +1647,23 @@ func flattenVertexAIReasoningEngineSpecPackageSpecRequirementsGcsUri(v interface
 	return v
 }
 
+func flattenVertexAIReasoningEngineSpecContainerSpec(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["image_uri"] =
+		flattenVertexAIReasoningEngineSpecContainerSpecImageUri(original["imageUri"], d, config)
+	return []interface{}{transformed}
+}
+func flattenVertexAIReasoningEngineSpecContainerSpecImageUri(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenVertexAIReasoningEngineSpecSourceCodeSpec(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return nil
@@ -1814,6 +1917,25 @@ func flattenVertexAIReasoningEngineContextSpecMemoryBankConfigDisableMemoryRevis
 	return v
 }
 
+func flattenVertexAIReasoningEngineTerraformLabels(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return v
+	}
+
+	transformed := make(map[string]interface{})
+	if l, ok := d.GetOkExists("terraform_labels"); ok {
+		for k := range l.(map[string]interface{}) {
+			transformed[k] = v.(map[string]interface{})[k]
+		}
+	}
+
+	return transformed
+}
+
+func flattenVertexAIReasoningEngineEffectiveLabels(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func expandVertexAIReasoningEngineDisplayName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
@@ -1886,6 +2008,13 @@ func expandVertexAIReasoningEngineSpec(v interface{}, d tpgresource.TerraformRes
 		return nil, err
 	} else if val := reflect.ValueOf(transformedPackageSpec); val.IsValid() && !tpgresource.IsEmptyValue(val) {
 		transformed["packageSpec"] = transformedPackageSpec
+	}
+
+	transformedContainerSpec, err := expandVertexAIReasoningEngineSpecContainerSpec(original["container_spec"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedContainerSpec); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["containerSpec"] = transformedContainerSpec
 	}
 
 	transformedSourceCodeSpec, err := expandVertexAIReasoningEngineSpecSourceCodeSpec(original["source_code_spec"], d, config)
@@ -2368,6 +2497,32 @@ func expandVertexAIReasoningEngineSpecPackageSpecRequirementsGcsUri(v interface{
 	return v, nil
 }
 
+func expandVertexAIReasoningEngineSpecContainerSpec(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedImageUri, err := expandVertexAIReasoningEngineSpecContainerSpecImageUri(original["image_uri"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedImageUri); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["imageUri"] = transformedImageUri
+	}
+
+	return transformed, nil
+}
+
+func expandVertexAIReasoningEngineSpecContainerSpecImageUri(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandVertexAIReasoningEngineSpecSourceCodeSpec(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	if v == nil {
 		return nil, nil
@@ -2827,4 +2982,15 @@ func expandVertexAIReasoningEngineContextSpecMemoryBankConfigTtlConfigMemoryRevi
 
 func expandVertexAIReasoningEngineContextSpecMemoryBankConfigDisableMemoryRevisions(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func expandVertexAIReasoningEngineEffectiveLabels(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
 }
