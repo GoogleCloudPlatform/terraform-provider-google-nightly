@@ -27,6 +27,7 @@ import (
 
 	dcl "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgdclresource"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgdclresource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -1167,4 +1168,13 @@ func expandClouddeployTargetExecutionConfigsUsagesArray(o interface{}) []TargetE
 		items = append(items, *i)
 	}
 	return items
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_clouddeploy_target",
+		ProductName: "clouddeploy",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceClouddeployTarget(),
+	}.Register()
 }
