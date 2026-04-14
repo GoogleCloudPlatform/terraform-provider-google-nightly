@@ -21,6 +21,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/serviceusage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -145,4 +146,13 @@ func resourceOrganizationServiceIdentityRead(d *schema.ResourceData, meta interf
 // There is no delete endpoint for this API.
 func resourceOrganizationServiceIdentityDelete(d *schema.ResourceData, meta interface{}) error {
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_organization_service_identity",
+		ProductName: "resourcemanager",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceOrganizationServiceIdentity(),
+	}.Register()
 }

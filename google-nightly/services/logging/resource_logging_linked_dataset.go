@@ -134,6 +134,9 @@ func ResourceLoggingLinkedDataset() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"bucket": {
@@ -268,6 +271,18 @@ func resourceLoggingLinkedDatasetCreate(d *schema.ResourceData, meta interface{}
 	}
 	d.SetId(id)
 
+	err = LoggingOperationWaitTime(
+		config, res, "Creating LinkedDataset", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create LinkedDataset: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating LinkedDataset %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if linkIdValue, ok := d.GetOk("link_id"); ok && linkIdValue.(string) != "" {
@@ -293,18 +308,6 @@ func resourceLoggingLinkedDatasetCreate(d *schema.ResourceData, meta interface{}
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = LoggingOperationWaitTime(
-		config, res, "Creating LinkedDataset", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create LinkedDataset: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating LinkedDataset %q: %#v", d.Id(), res)
 
 	return resourceLoggingLinkedDatasetRead(d, meta)
 }

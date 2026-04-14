@@ -136,6 +136,9 @@ func ResourceVmwareengineNetworkPolicy() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"edge_services_cidr": {
@@ -331,6 +334,18 @@ func resourceVmwareengineNetworkPolicyCreate(d *schema.ResourceData, meta interf
 	}
 	d.SetId(id)
 
+	err = VmwareengineOperationWaitTime(
+		config, res, project, "Creating NetworkPolicy", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create NetworkPolicy: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating NetworkPolicy %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -351,18 +366,6 @@ func resourceVmwareengineNetworkPolicyCreate(d *schema.ResourceData, meta interf
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = VmwareengineOperationWaitTime(
-		config, res, project, "Creating NetworkPolicy", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create NetworkPolicy: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating NetworkPolicy %q: %#v", d.Id(), res)
 
 	return resourceVmwareengineNetworkPolicyRead(d, meta)
 }

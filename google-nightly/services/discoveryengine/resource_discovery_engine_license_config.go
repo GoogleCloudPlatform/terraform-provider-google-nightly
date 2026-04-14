@@ -136,6 +136,9 @@ func ResourceDiscoveryEngineLicenseConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"license_config_id": {
@@ -337,6 +340,8 @@ func resourceDiscoveryEngineLicenseConfigCreate(d *schema.ResourceData, meta int
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating LicenseConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -357,8 +362,6 @@ func resourceDiscoveryEngineLicenseConfigCreate(d *schema.ResourceData, meta int
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating LicenseConfig %q: %#v", d.Id(), res)
 
 	return resourceDiscoveryEngineLicenseConfigRead(d, meta)
 }

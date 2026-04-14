@@ -136,6 +136,9 @@ func ResourceNetworkSecurityAddressGroup() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"capacity": {
@@ -314,6 +317,18 @@ func resourceNetworkSecurityAddressGroupCreate(d *schema.ResourceData, meta inte
 	}
 	d.SetId(id)
 
+	err = NetworkSecurityOperationWaitTime(
+		config, res, project, "Creating AddressGroup", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create AddressGroup: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating AddressGroup %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if parentValue, ok := d.GetOk("parent"); ok && parentValue.(string) != "" {
@@ -334,18 +349,6 @@ func resourceNetworkSecurityAddressGroupCreate(d *schema.ResourceData, meta inte
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetworkSecurityOperationWaitTime(
-		config, res, project, "Creating AddressGroup", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create AddressGroup: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating AddressGroup %q: %#v", d.Id(), res)
 
 	return resourceNetworkSecurityAddressGroupRead(d, meta)
 }

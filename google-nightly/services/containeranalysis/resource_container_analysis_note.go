@@ -132,6 +132,9 @@ func ResourceContainerAnalysisNote() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"attestation_authority": {
@@ -359,6 +362,8 @@ func resourceContainerAnalysisNoteCreate(d *schema.ResourceData, meta interface{
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Note %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -374,8 +379,6 @@ func resourceContainerAnalysisNoteCreate(d *schema.ResourceData, meta interface{
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Note %q: %#v", d.Id(), res)
 
 	return resourceContainerAnalysisNoteRead(d, meta)
 }

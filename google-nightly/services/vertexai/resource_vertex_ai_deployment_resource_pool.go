@@ -134,6 +134,9 @@ func ResourceVertexAIDeploymentResourcePool() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -305,6 +308,18 @@ func resourceVertexAIDeploymentResourcePoolCreate(d *schema.ResourceData, meta i
 	}
 	d.SetId(id)
 
+	err = VertexAIOperationWaitTime(
+		config, res, project, "Creating DeploymentResourcePool", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create DeploymentResourcePool: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating DeploymentResourcePool %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -325,18 +340,6 @@ func resourceVertexAIDeploymentResourcePoolCreate(d *schema.ResourceData, meta i
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = VertexAIOperationWaitTime(
-		config, res, project, "Creating DeploymentResourcePool", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create DeploymentResourcePool: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating DeploymentResourcePool %q: %#v", d.Id(), res)
 
 	return resourceVertexAIDeploymentResourcePoolRead(d, meta)
 }

@@ -146,6 +146,9 @@ func ResourceCertificateManagerDnsAuthorization() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"domain": {
@@ -325,6 +328,18 @@ func resourceCertificateManagerDnsAuthorizationCreate(d *schema.ResourceData, me
 	}
 	d.SetId(id)
 
+	err = CertificateManagerOperationWaitTime(
+		config, res, project, "Creating DnsAuthorization", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create DnsAuthorization: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating DnsAuthorization %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -345,18 +360,6 @@ func resourceCertificateManagerDnsAuthorizationCreate(d *schema.ResourceData, me
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = CertificateManagerOperationWaitTime(
-		config, res, project, "Creating DnsAuthorization", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create DnsAuthorization: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating DnsAuthorization %q: %#v", d.Id(), res)
 
 	return resourceCertificateManagerDnsAuthorizationRead(d, meta)
 }

@@ -137,6 +137,9 @@ func ResourceNetworkServicesMulticastGroupProducerActivation() *schema.Resource 
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -332,6 +335,18 @@ func resourceNetworkServicesMulticastGroupProducerActivationCreate(d *schema.Res
 	}
 	d.SetId(id)
 
+	err = NetworkServicesOperationWaitTime(
+		config, res, project, "Creating MulticastGroupProducerActivation", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create MulticastGroupProducerActivation: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating MulticastGroupProducerActivation %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -352,18 +367,6 @@ func resourceNetworkServicesMulticastGroupProducerActivationCreate(d *schema.Res
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetworkServicesOperationWaitTime(
-		config, res, project, "Creating MulticastGroupProducerActivation", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create MulticastGroupProducerActivation: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating MulticastGroupProducerActivation %q: %#v", d.Id(), res)
 
 	return resourceNetworkServicesMulticastGroupProducerActivationRead(d, meta)
 }

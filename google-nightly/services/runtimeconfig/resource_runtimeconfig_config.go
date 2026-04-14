@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/verify"
@@ -218,4 +219,13 @@ func resourceRuntimeconfigParseFullName(fullName string) (project, name string, 
 		return "", "", fmt.Errorf("Given full name doesn't match expected regexp; fullname = '%s'", fullName)
 	}
 	return matches[1], matches[2], nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_runtimeconfig_config",
+		ProductName: "runtimeconfig",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceRuntimeconfigConfig(),
+	}.Register()
 }

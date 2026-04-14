@@ -133,6 +133,9 @@ func ResourceGKEHub2RolloutSequence() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"rollout_sequence_id": {
@@ -318,6 +321,18 @@ func resourceGKEHub2RolloutSequenceCreate(d *schema.ResourceData, meta interface
 	}
 	d.SetId(id)
 
+	err = GKEHub2OperationWaitTime(
+		config, res, project, "Creating RolloutSequence", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create RolloutSequence: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating RolloutSequence %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if rolloutSequenceIdValue, ok := d.GetOk("rollout_sequence_id"); ok && rolloutSequenceIdValue.(string) != "" {
@@ -333,18 +348,6 @@ func resourceGKEHub2RolloutSequenceCreate(d *schema.ResourceData, meta interface
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = GKEHub2OperationWaitTime(
-		config, res, project, "Creating RolloutSequence", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create RolloutSequence: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating RolloutSequence %q: %#v", d.Id(), res)
 
 	return resourceGKEHub2RolloutSequenceRead(d, meta)
 }

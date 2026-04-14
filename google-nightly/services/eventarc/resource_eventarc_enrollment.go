@@ -138,6 +138,9 @@ func ResourceEventarcEnrollment() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"cel_match": {
@@ -341,6 +344,18 @@ func resourceEventarcEnrollmentCreate(d *schema.ResourceData, meta interface{}) 
 	}
 	d.SetId(id)
 
+	err = EventarcOperationWaitTime(
+		config, res, project, "Creating Enrollment", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Enrollment: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Enrollment %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -361,18 +376,6 @@ func resourceEventarcEnrollmentCreate(d *schema.ResourceData, meta interface{}) 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = EventarcOperationWaitTime(
-		config, res, project, "Creating Enrollment", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Enrollment: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Enrollment %q: %#v", d.Id(), res)
 
 	return resourceEventarcEnrollmentRead(d, meta)
 }

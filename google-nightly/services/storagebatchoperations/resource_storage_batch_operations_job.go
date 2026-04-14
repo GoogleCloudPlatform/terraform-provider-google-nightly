@@ -132,6 +132,9 @@ func ResourceStorageBatchOperationsJob() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"bucket_list": {
@@ -456,6 +459,18 @@ func resourceStorageBatchOperationsJobCreate(d *schema.ResourceData, meta interf
 	}
 	d.SetId(id)
 
+	err = StorageBatchOperationsOperationWaitTime(
+		config, res, project, "Creating Job", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Job: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Job %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if jobIdValue, ok := d.GetOk("job_id"); ok && jobIdValue.(string) != "" {
@@ -471,18 +486,6 @@ func resourceStorageBatchOperationsJobCreate(d *schema.ResourceData, meta interf
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = StorageBatchOperationsOperationWaitTime(
-		config, res, project, "Creating Job", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Job: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Job %q: %#v", d.Id(), res)
 
 	return resourceStorageBatchOperationsJobRead(d, meta)
 }

@@ -133,6 +133,9 @@ func ResourceNetworkSecuritySacRealm() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -322,6 +325,18 @@ func resourceNetworkSecuritySacRealmCreate(d *schema.ResourceData, meta interfac
 	}
 	d.SetId(id)
 
+	err = NetworkSecurityOperationWaitTime(
+		config, res, project, "Creating SacRealm", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create SacRealm: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating SacRealm %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -337,18 +352,6 @@ func resourceNetworkSecuritySacRealmCreate(d *schema.ResourceData, meta interfac
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetworkSecurityOperationWaitTime(
-		config, res, project, "Creating SacRealm", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create SacRealm: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating SacRealm %q: %#v", d.Id(), res)
 
 	return resourceNetworkSecuritySacRealmRead(d, meta)
 }

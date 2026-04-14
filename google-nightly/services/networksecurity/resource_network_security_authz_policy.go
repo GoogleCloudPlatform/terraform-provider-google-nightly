@@ -137,6 +137,9 @@ func ResourceNetworkSecurityAuthzPolicy() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"action": {
@@ -1096,6 +1099,7 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 			},
 			"policy_profile": {
 				Type:         schema.TypeString,
+				Computed:     true,
 				Optional:     true,
 				ForceNew:     true,
 				ValidateFunc: verify.ValidateEnum([]string{"REQUEST_AUTHZ", "CONTENT_AUTHZ", ""}),
@@ -1238,6 +1242,18 @@ func resourceNetworkSecurityAuthzPolicyCreate(d *schema.ResourceData, meta inter
 	}
 	d.SetId(id)
 
+	err = NetworkSecurityOperationWaitTime(
+		config, res, project, "Creating AuthzPolicy", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create AuthzPolicy: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating AuthzPolicy %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -1258,18 +1274,6 @@ func resourceNetworkSecurityAuthzPolicyCreate(d *schema.ResourceData, meta inter
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetworkSecurityOperationWaitTime(
-		config, res, project, "Creating AuthzPolicy", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create AuthzPolicy: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating AuthzPolicy %q: %#v", d.Id(), res)
 
 	return resourceNetworkSecurityAuthzPolicyRead(d, meta)
 }

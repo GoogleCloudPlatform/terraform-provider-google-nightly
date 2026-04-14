@@ -146,15 +146,17 @@ func ResourceHypercomputeclusterCluster() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"cluster_id": {
 				Type:     schema.TypeString,
 				Required: true,
 				ForceNew: true,
-				Description: `ID of the cluster to create. Must conform to
-[RFC-1034](https://datatracker.ietf.org/doc/html/rfc1034) (lower-case,
-alphanumeric, and at most 63 characters).`,
+				Description: `ID of the cluster to create. Must start with a lowercase letter,
+use only lowercase letters and numbers, and be at most 10 characters long.`,
 			},
 			"location": {
 				Type:        schema.TypeString,
@@ -1145,6 +1147,18 @@ func resourceHypercomputeclusterClusterCreate(d *schema.ResourceData, meta inter
 	}
 	d.SetId(id)
 
+	err = HypercomputeclusterOperationWaitTime(
+		config, res, project, "Creating Cluster", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Cluster: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Cluster %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -1165,18 +1179,6 @@ func resourceHypercomputeclusterClusterCreate(d *schema.ResourceData, meta inter
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = HypercomputeclusterOperationWaitTime(
-		config, res, project, "Creating Cluster", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Cluster: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Cluster %q: %#v", d.Id(), res)
 
 	return resourceHypercomputeclusterClusterRead(d, meta)
 }

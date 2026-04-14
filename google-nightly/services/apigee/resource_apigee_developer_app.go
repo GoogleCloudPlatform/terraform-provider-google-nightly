@@ -132,6 +132,9 @@ func ResourceApigeeDeveloperApp() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"callback_url": {
@@ -424,6 +427,8 @@ func resourceApigeeDeveloperAppCreate(d *schema.ResourceData, meta interface{}) 
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating DeveloperApp %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -444,8 +449,6 @@ func resourceApigeeDeveloperAppCreate(d *schema.ResourceData, meta interface{}) 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating DeveloperApp %q: %#v", d.Id(), res)
 
 	return resourceApigeeDeveloperAppRead(d, meta)
 }

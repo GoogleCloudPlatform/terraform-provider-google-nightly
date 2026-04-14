@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -264,4 +265,13 @@ func setRuntimeConfigVariableToResourceData(d *schema.ResourceData, variable run
 	}
 
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_runtimeconfig_variable",
+		ProductName: "runtimeconfig",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceRuntimeconfigVariable(),
+	}.Register()
 }

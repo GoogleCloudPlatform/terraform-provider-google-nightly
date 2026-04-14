@@ -141,6 +141,9 @@ func ResourceNetappVolumeSnapshot() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -267,6 +270,18 @@ func resourceNetappVolumeSnapshotCreate(d *schema.ResourceData, meta interface{}
 	}
 	d.SetId(id)
 
+	err = NetappOperationWaitTime(
+		config, res, project, "Creating VolumeSnapshot", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create VolumeSnapshot: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating VolumeSnapshot %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -292,18 +307,6 @@ func resourceNetappVolumeSnapshotCreate(d *schema.ResourceData, meta interface{}
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetappOperationWaitTime(
-		config, res, project, "Creating VolumeSnapshot", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create VolumeSnapshot: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating VolumeSnapshot %q: %#v", d.Id(), res)
 
 	return resourceNetappVolumeSnapshotRead(d, meta)
 }

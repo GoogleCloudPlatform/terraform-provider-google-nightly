@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgiamresource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -336,4 +337,25 @@ func (u *BigqueryDatasetIamUpdater) GetMutexKey() string {
 
 func (u *BigqueryDatasetIamUpdater) DescribeResource() string {
 	return fmt.Sprintf("Bigquery Dataset %s/%s", u.project, u.datasetId)
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_bigquery_dataset_iam_binding",
+		ProductName: "bigquery",
+		Type:        registry.SchemaTypeIAMResource,
+		Schema:      tpgiamresource.ResourceIamBinding(IamBigqueryDatasetSchema, NewBigqueryDatasetIamUpdater, BigqueryDatasetIdParseFunc),
+	}.Register()
+	registry.Schema{
+		Name:        "google_bigquery_dataset_iam_policy",
+		ProductName: "bigquery",
+		Type:        registry.SchemaTypeIAMResource,
+		Schema:      tpgiamresource.ResourceIamPolicy(IamBigqueryDatasetSchema, NewBigqueryDatasetIamUpdater, BigqueryDatasetIdParseFunc),
+	}.Register()
+	registry.Schema{
+		Name:        "google_bigquery_dataset_iam_policy",
+		ProductName: "bigquery",
+		Type:        registry.SchemaTypeIAMDataSource,
+		Schema:      tpgiamresource.DataSourceIamPolicy(IamBigqueryDatasetSchema, NewBigqueryDatasetIamUpdater),
+	}.Register()
 }

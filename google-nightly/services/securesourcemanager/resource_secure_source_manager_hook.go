@@ -140,6 +140,9 @@ func ResourceSecureSourceManagerHook() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"hook_id": {
@@ -315,6 +318,18 @@ func resourceSecureSourceManagerHookCreate(d *schema.ResourceData, meta interfac
 	}
 	d.SetId(id)
 
+	err = SecureSourceManagerOperationWaitTime(
+		config, res, project, "Creating Hook", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Hook: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Hook %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if hookIdValue, ok := d.GetOk("hook_id"); ok && hookIdValue.(string) != "" {
@@ -340,18 +355,6 @@ func resourceSecureSourceManagerHookCreate(d *schema.ResourceData, meta interfac
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = SecureSourceManagerOperationWaitTime(
-		config, res, project, "Creating Hook", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Hook: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Hook %q: %#v", d.Id(), res)
 
 	return resourceSecureSourceManagerHookRead(d, meta)
 }

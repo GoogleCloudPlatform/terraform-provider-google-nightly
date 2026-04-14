@@ -137,6 +137,9 @@ func ResourceNetworkSecurityMirroringEndpointGroup() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -436,6 +439,18 @@ func resourceNetworkSecurityMirroringEndpointGroupCreate(d *schema.ResourceData,
 	}
 	d.SetId(id)
 
+	err = NetworkSecurityOperationWaitTime(
+		config, res, project, "Creating MirroringEndpointGroup", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create MirroringEndpointGroup: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating MirroringEndpointGroup %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -456,18 +471,6 @@ func resourceNetworkSecurityMirroringEndpointGroupCreate(d *schema.ResourceData,
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetworkSecurityOperationWaitTime(
-		config, res, project, "Creating MirroringEndpointGroup", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create MirroringEndpointGroup: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating MirroringEndpointGroup %q: %#v", d.Id(), res)
 
 	return resourceNetworkSecurityMirroringEndpointGroupRead(d, meta)
 }

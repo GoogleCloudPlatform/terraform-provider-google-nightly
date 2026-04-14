@@ -137,6 +137,9 @@ func ResourceCertificateManagerTrustConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -337,6 +340,18 @@ func resourceCertificateManagerTrustConfigCreate(d *schema.ResourceData, meta in
 	}
 	d.SetId(id)
 
+	err = CertificateManagerOperationWaitTime(
+		config, res, project, "Creating TrustConfig", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create TrustConfig: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating TrustConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -357,18 +372,6 @@ func resourceCertificateManagerTrustConfigCreate(d *schema.ResourceData, meta in
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = CertificateManagerOperationWaitTime(
-		config, res, project, "Creating TrustConfig", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create TrustConfig: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating TrustConfig %q: %#v", d.Id(), res)
 
 	return resourceCertificateManagerTrustConfigRead(d, meta)
 }

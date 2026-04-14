@@ -137,6 +137,9 @@ func ResourceBlockchainNodeEngineBlockchainNodes() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"blockchain_node_id": {
@@ -421,6 +424,18 @@ func resourceBlockchainNodeEngineBlockchainNodesCreate(d *schema.ResourceData, m
 	}
 	d.SetId(id)
 
+	err = BlockchainNodeEngineOperationWaitTime(
+		config, res, project, "Creating BlockchainNodes", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create BlockchainNodes: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating BlockchainNodes %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -441,18 +456,6 @@ func resourceBlockchainNodeEngineBlockchainNodesCreate(d *schema.ResourceData, m
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = BlockchainNodeEngineOperationWaitTime(
-		config, res, project, "Creating BlockchainNodes", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create BlockchainNodes: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating BlockchainNodes %q: %#v", d.Id(), res)
 
 	return resourceBlockchainNodeEngineBlockchainNodesRead(d, meta)
 }

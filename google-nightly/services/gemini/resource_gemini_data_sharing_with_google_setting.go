@@ -137,6 +137,9 @@ func ResourceGeminiDataSharingWithGoogleSetting() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"data_sharing_with_google_setting_id": {
@@ -285,6 +288,8 @@ func resourceGeminiDataSharingWithGoogleSettingCreate(d *schema.ResourceData, me
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating DataSharingWithGoogleSetting %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -305,8 +310,6 @@ func resourceGeminiDataSharingWithGoogleSettingCreate(d *schema.ResourceData, me
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating DataSharingWithGoogleSetting %q: %#v", d.Id(), res)
 
 	return resourceGeminiDataSharingWithGoogleSettingRead(d, meta)
 }

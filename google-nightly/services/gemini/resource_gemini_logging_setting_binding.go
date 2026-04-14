@@ -141,6 +141,9 @@ func ResourceGeminiLoggingSettingBinding() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"logging_setting_id": {
@@ -297,6 +300,18 @@ func resourceGeminiLoggingSettingBindingCreate(d *schema.ResourceData, meta inte
 	}
 	d.SetId(id)
 
+	err = GeminiOperationWaitTime(
+		config, res, project, "Creating LoggingSettingBinding", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create LoggingSettingBinding: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating LoggingSettingBinding %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -322,18 +337,6 @@ func resourceGeminiLoggingSettingBindingCreate(d *schema.ResourceData, meta inte
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = GeminiOperationWaitTime(
-		config, res, project, "Creating LoggingSettingBinding", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create LoggingSettingBinding: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating LoggingSettingBinding %q: %#v", d.Id(), res)
 
 	return resourceGeminiLoggingSettingBindingRead(d, meta)
 }

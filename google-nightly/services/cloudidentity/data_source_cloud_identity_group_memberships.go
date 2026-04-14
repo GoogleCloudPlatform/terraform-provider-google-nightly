@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -114,4 +115,13 @@ func flattenCloudIdentityGroupMembershipsRoles(roles []*cloudidentity.Membership
 		})
 	}
 	return transformed
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_cloud_identity_group_memberships",
+		ProductName: "cloudidentity",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceGoogleCloudIdentityGroupMemberships(),
+	}.Register()
 }

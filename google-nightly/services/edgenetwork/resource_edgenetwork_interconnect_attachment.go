@@ -141,6 +141,9 @@ func ResourceEdgenetworkInterconnectAttachment() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"interconnect": {
@@ -335,6 +338,18 @@ func resourceEdgenetworkInterconnectAttachmentCreate(d *schema.ResourceData, met
 	}
 	d.SetId(id)
 
+	err = EdgenetworkOperationWaitTime(
+		config, res, project, "Creating InterconnectAttachment", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create InterconnectAttachment: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating InterconnectAttachment %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -360,18 +375,6 @@ func resourceEdgenetworkInterconnectAttachmentCreate(d *schema.ResourceData, met
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = EdgenetworkOperationWaitTime(
-		config, res, project, "Creating InterconnectAttachment", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create InterconnectAttachment: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating InterconnectAttachment %q: %#v", d.Id(), res)
 
 	return resourceEdgenetworkInterconnectAttachmentRead(d, meta)
 }

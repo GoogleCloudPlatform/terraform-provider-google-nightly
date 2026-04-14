@@ -118,6 +118,9 @@ func ResourceAccessContextManagerAccessLevelCondition() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"access_level": {
@@ -426,6 +429,13 @@ func resourceAccessContextManagerAccessLevelConditionCreate(d *schema.ResourceDa
 	}
 	d.SetId(id)
 
+	err = transport_tpg.PollingWaitTime(resourceAccessContextManagerAccessLevelConditionPollRead(d, meta), transport_tpg.PollCheckForExistence, "Creating AccessLevelCondition", d.Timeout(schema.TimeoutCreate), 1)
+	if err != nil {
+		return fmt.Errorf("Error waiting to create AccessLevelCondition: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating AccessLevelCondition %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if accessLevelValue, ok := d.GetOk("access_level"); ok && accessLevelValue.(string) != "" {
@@ -436,13 +446,6 @@ func resourceAccessContextManagerAccessLevelConditionCreate(d *schema.ResourceDa
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = transport_tpg.PollingWaitTime(resourceAccessContextManagerAccessLevelConditionPollRead(d, meta), transport_tpg.PollCheckForExistence, "Creating AccessLevelCondition", d.Timeout(schema.TimeoutCreate), 1)
-	if err != nil {
-		return fmt.Errorf("Error waiting to create AccessLevelCondition: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating AccessLevelCondition %q: %#v", d.Id(), res)
 
 	return resourceAccessContextManagerAccessLevelConditionRead(d, meta)
 }

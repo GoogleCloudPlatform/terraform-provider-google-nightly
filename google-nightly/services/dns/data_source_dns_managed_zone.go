@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -120,4 +121,13 @@ func dataSourceDnsManagedZoneRead(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_dns_managed_zone",
+		ProductName: "dns",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceDnsManagedZone(),
+	}.Register()
 }

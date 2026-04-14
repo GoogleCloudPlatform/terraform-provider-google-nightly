@@ -140,6 +140,9 @@ func ResourceChronicleNativeDashboard() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"display_name": {
@@ -469,6 +472,8 @@ func resourceChronicleNativeDashboardCreate(d *schema.ResourceData, meta interfa
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating NativeDashboard %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if dashboardIdValue, ok := d.GetOk("dashboard_id"); ok && dashboardIdValue.(string) != "" {
@@ -494,8 +499,6 @@ func resourceChronicleNativeDashboardCreate(d *schema.ResourceData, meta interfa
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating NativeDashboard %q: %#v", d.Id(), res)
 
 	return resourceChronicleNativeDashboardRead(d, meta)
 }

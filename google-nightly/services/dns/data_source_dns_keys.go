@@ -21,6 +21,7 @@ import (
 	"log"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"google.golang.org/api/dns/v1"
@@ -244,4 +245,13 @@ func dataSourceDNSKeysRead(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_dns_keys",
+		ProductName: "dns",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceDNSKeys(),
+	}.Register()
 }

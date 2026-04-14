@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -138,4 +139,13 @@ func dataSourceGoogleComputeSubnetworksRead(d *schema.ResourceData, meta interfa
 	))
 
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_compute_subnetworks",
+		ProductName: "compute",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceGoogleComputeSubnetworks(),
+	}.Register()
 }

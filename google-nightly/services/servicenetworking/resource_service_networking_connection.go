@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -462,4 +463,13 @@ func formatParentService(service string) string {
 	} else {
 		return service
 	}
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_service_networking_connection",
+		ProductName: "servicenetworking",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceServiceNetworkingConnection(),
+	}.Register()
 }

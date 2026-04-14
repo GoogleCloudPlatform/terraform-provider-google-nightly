@@ -124,6 +124,9 @@ func ResourceLoggingFolderSettings() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"folder": {
@@ -232,6 +235,8 @@ func resourceLoggingFolderSettingsCreate(d *schema.ResourceData, meta interface{
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating FolderSettings %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if folderValue, ok := d.GetOk("folder"); ok && folderValue.(string) != "" {
@@ -242,8 +247,6 @@ func resourceLoggingFolderSettingsCreate(d *schema.ResourceData, meta interface{
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating FolderSettings %q: %#v", d.Id(), res)
 
 	return resourceLoggingFolderSettingsRead(d, meta)
 }

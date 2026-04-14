@@ -136,6 +136,9 @@ func ResourceCloudIdsEndpoint() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -288,6 +291,18 @@ func resourceCloudIdsEndpointCreate(d *schema.ResourceData, meta interface{}) er
 	}
 	d.SetId(id)
 
+	err = CloudIdsOperationWaitTime(
+		config, res, project, "Creating Endpoint", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Endpoint: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Endpoint %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -308,18 +323,6 @@ func resourceCloudIdsEndpointCreate(d *schema.ResourceData, meta interface{}) er
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = CloudIdsOperationWaitTime(
-		config, res, project, "Creating Endpoint", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Endpoint: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Endpoint %q: %#v", d.Id(), res)
 
 	return resourceCloudIdsEndpointRead(d, meta)
 }

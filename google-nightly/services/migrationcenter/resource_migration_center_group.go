@@ -137,6 +137,9 @@ func ResourceMigrationCenterGroup() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"group_id": {
@@ -277,6 +280,18 @@ func resourceMigrationCenterGroupCreate(d *schema.ResourceData, meta interface{}
 	}
 	d.SetId(id)
 
+	err = MigrationCenterOperationWaitTime(
+		config, res, project, "Creating Group", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Group: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Group %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -297,18 +312,6 @@ func resourceMigrationCenterGroupCreate(d *schema.ResourceData, meta interface{}
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = MigrationCenterOperationWaitTime(
-		config, res, project, "Creating Group", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Group: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Group %q: %#v", d.Id(), res)
 
 	return resourceMigrationCenterGroupRead(d, meta)
 }

@@ -138,6 +138,9 @@ func ResourceComputeInstanceGroupMembership() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"instance": {
@@ -240,6 +243,18 @@ func resourceComputeInstanceGroupMembershipCreate(d *schema.ResourceData, meta i
 	}
 	d.SetId(id)
 
+	err = ComputeOperationWaitTime(
+		config, res, project, "Creating InstanceGroupMembership", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create InstanceGroupMembership: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating InstanceGroupMembership %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if instanceValue, ok := d.GetOk("instance"); ok && instanceValue.(string) != "" {
@@ -265,18 +280,6 @@ func resourceComputeInstanceGroupMembershipCreate(d *schema.ResourceData, meta i
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = ComputeOperationWaitTime(
-		config, res, project, "Creating InstanceGroupMembership", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create InstanceGroupMembership: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating InstanceGroupMembership %q: %#v", d.Id(), res)
 
 	return resourceComputeInstanceGroupMembershipRead(d, meta)
 }

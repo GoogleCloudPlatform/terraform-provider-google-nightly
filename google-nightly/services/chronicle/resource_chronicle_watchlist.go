@@ -140,6 +140,9 @@ func ResourceChronicleWatchlist() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"display_name": {
@@ -363,6 +366,8 @@ func resourceChronicleWatchlistCreate(d *schema.ResourceData, meta interface{}) 
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Watchlist %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -388,8 +393,6 @@ func resourceChronicleWatchlistCreate(d *schema.ResourceData, meta interface{}) 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Watchlist %q: %#v", d.Id(), res)
 
 	return resourceChronicleWatchlistRead(d, meta)
 }

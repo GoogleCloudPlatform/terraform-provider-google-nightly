@@ -144,6 +144,9 @@ func ResourceDiscoveryEngineWidgetConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"engine_id": {
@@ -613,6 +616,8 @@ func resourceDiscoveryEngineWidgetConfigCreate(d *schema.ResourceData, meta inte
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating WidgetConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -643,8 +648,6 @@ func resourceDiscoveryEngineWidgetConfigCreate(d *schema.ResourceData, meta inte
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating WidgetConfig %q: %#v", d.Id(), res)
 
 	return resourceDiscoveryEngineWidgetConfigRead(d, meta)
 }

@@ -128,6 +128,9 @@ func ResourceResourceManager3Capability() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"capability_name": {
@@ -200,6 +203,18 @@ func resourceResourceManager3CapabilityCreate(d *schema.ResourceData, meta inter
 	}
 	d.SetId(id)
 
+	err = ResourceManager3OperationWaitTime(
+		config, res, "Creating Capability", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Capability: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Capability %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if parentValue, ok := d.GetOk("parent"); ok && parentValue.(string) != "" {
@@ -215,18 +230,6 @@ func resourceResourceManager3CapabilityCreate(d *schema.ResourceData, meta inter
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = ResourceManager3OperationWaitTime(
-		config, res, "Creating Capability", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Capability: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Capability %q: %#v", d.Id(), res)
 
 	return resourceResourceManager3CapabilityRead(d, meta)
 }

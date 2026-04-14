@@ -137,6 +137,9 @@ func ResourceGKEHub2ScopeRBACRoleBinding() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"role": {
@@ -338,6 +341,18 @@ func resourceGKEHub2ScopeRBACRoleBindingCreate(d *schema.ResourceData, meta inte
 	}
 	d.SetId(id)
 
+	err = GKEHub2OperationWaitTime(
+		config, res, project, "Creating ScopeRBACRoleBinding", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create ScopeRBACRoleBinding: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating ScopeRBACRoleBinding %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if scopeRbacRoleBindingIdValue, ok := d.GetOk("scope_rbac_role_binding_id"); ok && scopeRbacRoleBindingIdValue.(string) != "" {
@@ -358,18 +373,6 @@ func resourceGKEHub2ScopeRBACRoleBindingCreate(d *schema.ResourceData, meta inte
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = GKEHub2OperationWaitTime(
-		config, res, project, "Creating ScopeRBACRoleBinding", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create ScopeRBACRoleBinding: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating ScopeRBACRoleBinding %q: %#v", d.Id(), res)
 
 	return resourceGKEHub2ScopeRBACRoleBindingRead(d, meta)
 }

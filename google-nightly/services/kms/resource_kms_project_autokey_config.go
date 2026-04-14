@@ -128,6 +128,9 @@ func ResourceKMSProjectAutokeyConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"key_project_resolution_mode": {
@@ -208,6 +211,11 @@ func resourceKMSProjectAutokeyConfigCreate(d *schema.ResourceData, meta interfac
 	}
 	d.SetId(id)
 
+	// custom code to sleep for 10 seconds to allow the KMS key to be fully available before proceeding with any operations that depend on it
+	time.Sleep(10 * time.Second)
+
+	log.Printf("[DEBUG] Finished creating ProjectAutokeyConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
@@ -218,11 +226,6 @@ func resourceKMSProjectAutokeyConfigCreate(d *schema.ResourceData, meta interfac
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	// custom code to sleep for 10 seconds to allow the KMS key to be fully available before proceeding with any operations that depend on it
-	time.Sleep(10 * time.Second)
-
-	log.Printf("[DEBUG] Finished creating ProjectAutokeyConfig %q: %#v", d.Id(), res)
 
 	return resourceKMSProjectAutokeyConfigRead(d, meta)
 }

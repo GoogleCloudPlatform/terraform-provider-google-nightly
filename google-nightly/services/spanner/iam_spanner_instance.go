@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgiamresource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -202,4 +203,31 @@ func extractSpannerInstanceId(id string) (*SpannerInstanceId, error) {
 		Project:  parts[0],
 		Instance: parts[1],
 	}, nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_spanner_instance_iam_member",
+		ProductName: "spanner",
+		Type:        registry.SchemaTypeIAMResource,
+		Schema:      tpgiamresource.ResourceIamMember(IamSpannerInstanceSchema, NewSpannerInstanceIamUpdater, SpannerInstanceIdParseFunc),
+	}.Register()
+	registry.Schema{
+		Name:        "google_spanner_instance_iam_binding",
+		ProductName: "spanner",
+		Type:        registry.SchemaTypeIAMResource,
+		Schema:      tpgiamresource.ResourceIamBinding(IamSpannerInstanceSchema, NewSpannerInstanceIamUpdater, SpannerInstanceIdParseFunc),
+	}.Register()
+	registry.Schema{
+		Name:        "google_spanner_instance_iam_policy",
+		ProductName: "spanner",
+		Type:        registry.SchemaTypeIAMResource,
+		Schema:      tpgiamresource.ResourceIamPolicy(IamSpannerInstanceSchema, NewSpannerInstanceIamUpdater, SpannerInstanceIdParseFunc),
+	}.Register()
+	registry.Schema{
+		Name:        "google_spanner_instance_iam_policy",
+		ProductName: "spanner",
+		Type:        registry.SchemaTypeIAMDataSource,
+		Schema:      tpgiamresource.DataSourceIamPolicy(IamSpannerInstanceSchema, NewSpannerInstanceIamUpdater),
+	}.Register()
 }

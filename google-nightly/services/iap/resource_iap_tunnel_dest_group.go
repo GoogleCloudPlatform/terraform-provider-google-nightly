@@ -136,6 +136,9 @@ func ResourceIapTunnelDestGroup() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"group_name": {
@@ -245,6 +248,8 @@ func resourceIapTunnelDestGroupCreate(d *schema.ResourceData, meta interface{}) 
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating TunnelDestGroup %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if regionValue, ok := d.GetOk("region"); ok && regionValue.(string) != "" {
@@ -265,8 +270,6 @@ func resourceIapTunnelDestGroupCreate(d *schema.ResourceData, meta interface{}) 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating TunnelDestGroup %q: %#v", d.Id(), res)
 
 	return resourceIapTunnelDestGroupRead(d, meta)
 }

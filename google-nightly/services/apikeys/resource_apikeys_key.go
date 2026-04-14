@@ -24,6 +24,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgdclresource"
 	dcl "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgdclresource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
@@ -710,4 +711,13 @@ func flattenApikeysKeyRestrictionsServerKeyRestrictions(obj *KeyRestrictionsServ
 
 	return []interface{}{transformed}
 
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_apikeys_key",
+		ProductName: "apikeys",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceApikeysKey(),
+	}.Register()
 }

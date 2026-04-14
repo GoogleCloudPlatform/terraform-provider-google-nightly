@@ -137,6 +137,9 @@ func ResourceNetworkSecurityServerTlsPolicy() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -400,6 +403,18 @@ func resourceNetworkSecurityServerTlsPolicyCreate(d *schema.ResourceData, meta i
 	}
 	d.SetId(id)
 
+	err = NetworkSecurityOperationWaitTime(
+		config, res, project, "Creating ServerTlsPolicy", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create ServerTlsPolicy: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating ServerTlsPolicy %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -420,18 +435,6 @@ func resourceNetworkSecurityServerTlsPolicyCreate(d *schema.ResourceData, meta i
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetworkSecurityOperationWaitTime(
-		config, res, project, "Creating ServerTlsPolicy", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create ServerTlsPolicy: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating ServerTlsPolicy %q: %#v", d.Id(), res)
 
 	return resourceNetworkSecurityServerTlsPolicyRead(d, meta)
 }

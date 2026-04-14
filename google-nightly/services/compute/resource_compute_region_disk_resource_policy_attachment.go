@@ -138,6 +138,9 @@ func ResourceComputeRegionDiskResourcePolicyAttachment() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"disk": {
@@ -234,6 +237,18 @@ func resourceComputeRegionDiskResourcePolicyAttachmentCreate(d *schema.ResourceD
 	}
 	d.SetId(id)
 
+	err = ComputeOperationWaitTime(
+		config, res, project, "Creating RegionDiskResourcePolicyAttachment", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create RegionDiskResourcePolicyAttachment: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating RegionDiskResourcePolicyAttachment %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -259,18 +274,6 @@ func resourceComputeRegionDiskResourcePolicyAttachmentCreate(d *schema.ResourceD
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = ComputeOperationWaitTime(
-		config, res, project, "Creating RegionDiskResourcePolicyAttachment", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create RegionDiskResourcePolicyAttachment: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating RegionDiskResourcePolicyAttachment %q: %#v", d.Id(), res)
 
 	return resourceComputeRegionDiskResourcePolicyAttachmentRead(d, meta)
 }

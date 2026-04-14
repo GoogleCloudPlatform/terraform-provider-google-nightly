@@ -132,6 +132,9 @@ func ResourceCloudSecurityComplianceCloudControl() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"cloud_control_id": {
@@ -1085,6 +1088,8 @@ func resourceCloudSecurityComplianceCloudControlCreate(d *schema.ResourceData, m
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating CloudControl %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if organizationValue, ok := d.GetOk("organization"); ok && organizationValue.(string) != "" {
@@ -1105,8 +1110,6 @@ func resourceCloudSecurityComplianceCloudControlCreate(d *schema.ResourceData, m
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating CloudControl %q: %#v", d.Id(), res)
 
 	return resourceCloudSecurityComplianceCloudControlRead(d, meta)
 }

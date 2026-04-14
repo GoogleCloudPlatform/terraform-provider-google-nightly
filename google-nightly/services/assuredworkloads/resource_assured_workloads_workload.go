@@ -24,6 +24,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	dcl "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgdclresource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -982,4 +983,13 @@ func flattenAssuredWorkloadsWorkloadSaaEnrollmentResponseSetupErrorsArray(obj []
 		items = append(items, string(item))
 	}
 	return items
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_assured_workloads_workload",
+		ProductName: "assuredworkloads",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceAssuredWorkloadsWorkload(),
+	}.Register()
 }

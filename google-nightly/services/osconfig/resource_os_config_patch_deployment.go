@@ -130,6 +130,9 @@ func ResourceOSConfigPatchDeployment() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"instance_filter": {
@@ -1158,6 +1161,8 @@ func resourceOSConfigPatchDeploymentCreate(d *schema.ResourceData, meta interfac
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating PatchDeployment %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -1173,8 +1178,6 @@ func resourceOSConfigPatchDeploymentCreate(d *schema.ResourceData, meta interfac
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating PatchDeployment %q: %#v", d.Id(), res)
 
 	return resourceOSConfigPatchDeploymentRead(d, meta)
 }

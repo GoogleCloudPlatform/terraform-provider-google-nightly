@@ -138,6 +138,9 @@ func ResourceClouddeployCustomTargetType() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -414,6 +417,18 @@ func resourceClouddeployCustomTargetTypeCreate(d *schema.ResourceData, meta inte
 	}
 	d.SetId(id)
 
+	err = ClouddeployOperationWaitTime(
+		config, res, project, "Creating CustomTargetType", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create CustomTargetType: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating CustomTargetType %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -434,18 +449,6 @@ func resourceClouddeployCustomTargetTypeCreate(d *schema.ResourceData, meta inte
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = ClouddeployOperationWaitTime(
-		config, res, project, "Creating CustomTargetType", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create CustomTargetType: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating CustomTargetType %q: %#v", d.Id(), res)
 
 	return resourceClouddeployCustomTargetTypeRead(d, meta)
 }

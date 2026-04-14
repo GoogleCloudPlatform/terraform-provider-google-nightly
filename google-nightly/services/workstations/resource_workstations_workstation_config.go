@@ -142,6 +142,9 @@ func ResourceWorkstationsWorkstationConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -902,6 +905,18 @@ func resourceWorkstationsWorkstationConfigCreate(d *schema.ResourceData, meta in
 	}
 	d.SetId(id)
 
+	err = WorkstationsOperationWaitTime(
+		config, res, project, "Creating WorkstationConfig", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create WorkstationConfig: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating WorkstationConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if workstationConfigIdValue, ok := d.GetOk("workstation_config_id"); ok && workstationConfigIdValue.(string) != "" {
@@ -927,18 +942,6 @@ func resourceWorkstationsWorkstationConfigCreate(d *schema.ResourceData, meta in
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = WorkstationsOperationWaitTime(
-		config, res, project, "Creating WorkstationConfig", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create WorkstationConfig: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating WorkstationConfig %q: %#v", d.Id(), res)
 
 	return resourceWorkstationsWorkstationConfigRead(d, meta)
 }

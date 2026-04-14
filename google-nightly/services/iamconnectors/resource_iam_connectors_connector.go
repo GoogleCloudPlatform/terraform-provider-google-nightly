@@ -138,6 +138,9 @@ func ResourceIamConnectorsConnector() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"connector_id": {
@@ -421,6 +424,13 @@ func resourceIamConnectorsConnectorCreate(d *schema.ResourceData, meta interface
 	}
 	d.SetId(id)
 
+	err = transport_tpg.PollingWaitTime(resourceIamConnectorsConnectorPollRead(d, meta), transport_tpg.PollCheckForExistence, "Creating Connector", d.Timeout(schema.TimeoutCreate), 5)
+	if err != nil {
+		return fmt.Errorf("Error waiting to create Connector: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Connector %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -441,13 +451,6 @@ func resourceIamConnectorsConnectorCreate(d *schema.ResourceData, meta interface
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = transport_tpg.PollingWaitTime(resourceIamConnectorsConnectorPollRead(d, meta), transport_tpg.PollCheckForExistence, "Creating Connector", d.Timeout(schema.TimeoutCreate), 5)
-	if err != nil {
-		return fmt.Errorf("Error waiting to create Connector: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Connector %q: %#v", d.Id(), res)
 
 	return resourceIamConnectorsConnectorRead(d, meta)
 }

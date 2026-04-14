@@ -140,6 +140,9 @@ func ResourceDataformRepositoryWorkflowConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -366,6 +369,8 @@ func resourceDataformRepositoryWorkflowConfigCreate(d *schema.ResourceData, meta
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating RepositoryWorkflowConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -391,8 +396,6 @@ func resourceDataformRepositoryWorkflowConfigCreate(d *schema.ResourceData, meta
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating RepositoryWorkflowConfig %q: %#v", d.Id(), res)
 
 	return resourceDataformRepositoryWorkflowConfigRead(d, meta)
 }

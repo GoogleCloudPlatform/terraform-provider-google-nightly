@@ -209,6 +209,9 @@ func ResourceBigqueryDataTransferConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"data_source_id": {
@@ -542,6 +545,8 @@ func resourceBigqueryDataTransferConfigCreate(d *schema.ResourceData, meta inter
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Config %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -557,8 +562,6 @@ func resourceBigqueryDataTransferConfigCreate(d *schema.ResourceData, meta inter
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Config %q: %#v", d.Id(), res)
 
 	return resourceBigqueryDataTransferConfigRead(d, meta)
 }

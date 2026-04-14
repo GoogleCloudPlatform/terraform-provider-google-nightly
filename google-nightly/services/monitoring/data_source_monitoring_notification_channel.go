@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -132,4 +133,13 @@ func dataSourceMonitoringNotificationChannelRead(d *schema.ResourceData, meta in
 	d.SetId(name)
 
 	return resourceMonitoringNotificationChannelRead(d, meta)
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_monitoring_notification_channel",
+		ProductName: "monitoring",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceMonitoringNotificationChannel(),
+	}.Register()
 }

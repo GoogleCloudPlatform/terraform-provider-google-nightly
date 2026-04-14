@@ -128,6 +128,9 @@ func ResourceStorageBucketAccessControl() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"bucket": {
@@ -247,6 +250,8 @@ func resourceStorageBucketAccessControlCreate(d *schema.ResourceData, meta inter
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating BucketAccessControl %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if bucketValue, ok := d.GetOk("bucket"); ok && bucketValue.(string) != "" {
@@ -262,8 +267,6 @@ func resourceStorageBucketAccessControlCreate(d *schema.ResourceData, meta inter
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating BucketAccessControl %q: %#v", d.Id(), res)
 
 	return resourceStorageBucketAccessControlRead(d, meta)
 }

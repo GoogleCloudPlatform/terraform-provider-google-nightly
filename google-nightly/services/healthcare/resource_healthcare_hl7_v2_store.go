@@ -132,6 +132,9 @@ func ResourceHealthcareHl7V2Store() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"dataset": {
@@ -382,6 +385,8 @@ func resourceHealthcareHl7V2StoreCreate(d *schema.ResourceData, meta interface{}
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Hl7V2Store %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -397,8 +402,6 @@ func resourceHealthcareHl7V2StoreCreate(d *schema.ResourceData, meta interface{}
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Hl7V2Store %q: %#v", d.Id(), res)
 
 	return resourceHealthcareHl7V2StoreRead(d, meta)
 }

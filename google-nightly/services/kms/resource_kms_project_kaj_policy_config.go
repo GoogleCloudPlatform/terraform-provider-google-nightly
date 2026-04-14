@@ -128,6 +128,9 @@ func ResourceKMSProjectKajPolicyConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"default_key_access_justification_policy": {
@@ -220,6 +223,13 @@ func resourceKMSProjectKajPolicyConfigCreate(d *schema.ResourceData, meta interf
 	}
 	d.SetId(id)
 
+	// This is useful if the resource in question doesn't have a perfectly consistent API
+	// That is, the Operation for Create might return before the Get operation shows the
+	// completed state of the resource.
+	time.Sleep(1 * time.Minute)
+
+	log.Printf("[DEBUG] Finished creating ProjectKajPolicyConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
@@ -230,13 +240,6 @@ func resourceKMSProjectKajPolicyConfigCreate(d *schema.ResourceData, meta interf
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	// This is useful if the resource in question doesn't have a perfectly consistent API
-	// That is, the Operation for Create might return before the Get operation shows the
-	// completed state of the resource.
-	time.Sleep(1 * time.Minute)
-
-	log.Printf("[DEBUG] Finished creating ProjectKajPolicyConfig %q: %#v", d.Id(), res)
 
 	return resourceKMSProjectKajPolicyConfigRead(d, meta)
 }

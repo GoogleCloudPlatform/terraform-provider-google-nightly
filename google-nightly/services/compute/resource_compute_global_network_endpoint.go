@@ -142,6 +142,9 @@ func ResourceComputeGlobalNetworkEndpoint() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"global_network_endpoint_group": {
@@ -263,6 +266,18 @@ func resourceComputeGlobalNetworkEndpointCreate(d *schema.ResourceData, meta int
 	}
 	d.SetId(id)
 
+	err = ComputeOperationWaitTime(
+		config, res, project, "Creating GlobalNetworkEndpoint", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create GlobalNetworkEndpoint: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating GlobalNetworkEndpoint %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if _, ok := d.GetOk("port"); ok {
@@ -294,18 +309,6 @@ func resourceComputeGlobalNetworkEndpointCreate(d *schema.ResourceData, meta int
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = ComputeOperationWaitTime(
-		config, res, project, "Creating GlobalNetworkEndpoint", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create GlobalNetworkEndpoint: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating GlobalNetworkEndpoint %q: %#v", d.Id(), res)
 
 	return resourceComputeGlobalNetworkEndpointRead(d, meta)
 }

@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -229,4 +230,13 @@ func vflattenDatasourceGoogleCloudAssetResourcesSearchAllList(v interface{}) []m
 	}
 
 	return results
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_cloud_asset_resources_search_all",
+		ProductName: "cloudasset",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceGoogleCloudAssetResourcesSearchAll(),
+	}.Register()
 }

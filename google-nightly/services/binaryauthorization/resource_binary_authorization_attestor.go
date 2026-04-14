@@ -160,6 +160,9 @@ func ResourceBinaryAuthorizationAttestor() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"attestation_authority_note": {
@@ -364,6 +367,8 @@ func resourceBinaryAuthorizationAttestorCreate(d *schema.ResourceData, meta inte
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Attestor %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -379,8 +384,6 @@ func resourceBinaryAuthorizationAttestorCreate(d *schema.ResourceData, meta inte
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Attestor %q: %#v", d.Id(), res)
 
 	return resourceBinaryAuthorizationAttestorRead(d, meta)
 }

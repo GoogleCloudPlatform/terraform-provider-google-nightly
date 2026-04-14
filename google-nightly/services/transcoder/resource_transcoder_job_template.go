@@ -137,6 +137,9 @@ func ResourceTranscoderJobTemplate() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"job_template_id": {
@@ -916,6 +919,8 @@ func resourceTranscoderJobTemplateCreate(d *schema.ResourceData, meta interface{
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating JobTemplate %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if jobTemplateIdValue, ok := d.GetOk("job_template_id"); ok && jobTemplateIdValue.(string) != "" {
@@ -936,8 +941,6 @@ func resourceTranscoderJobTemplateCreate(d *schema.ResourceData, meta interface{
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating JobTemplate %q: %#v", d.Id(), res)
 
 	return resourceTranscoderJobTemplateRead(d, meta)
 }

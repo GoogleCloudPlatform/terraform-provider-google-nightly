@@ -136,6 +136,9 @@ func ResourceContactCenterInsightsView() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -250,6 +253,8 @@ func resourceContactCenterInsightsViewCreate(d *schema.ResourceData, meta interf
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating View %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -270,8 +275,6 @@ func resourceContactCenterInsightsViewCreate(d *schema.ResourceData, meta interf
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating View %q: %#v", d.Id(), res)
 
 	return resourceContactCenterInsightsViewRead(d, meta)
 }

@@ -134,6 +134,9 @@ func ResourceBigqueryAnalyticsHubListingSubscription() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"data_exchange_id": {
@@ -417,6 +420,8 @@ func resourceBigqueryAnalyticsHubListingSubscriptionCreate(d *schema.ResourceDat
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating ListingSubscription %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if subscriptionIdValue, ok := d.GetOk("subscription_id"); ok && subscriptionIdValue.(string) != "" {
@@ -437,8 +442,6 @@ func resourceBigqueryAnalyticsHubListingSubscriptionCreate(d *schema.ResourceDat
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating ListingSubscription %q: %#v", d.Id(), res)
 
 	return resourceBigqueryAnalyticsHubListingSubscriptionRead(d, meta)
 }

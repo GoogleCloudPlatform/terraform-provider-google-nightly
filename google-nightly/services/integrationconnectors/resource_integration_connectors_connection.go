@@ -156,6 +156,9 @@ func ResourceIntegrationConnectorsConnection() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"connector_version": {
@@ -1347,6 +1350,22 @@ func resourceIntegrationConnectorsConnectionCreate(d *schema.ResourceData, meta 
 	}
 	d.SetId(id)
 
+	err = IntegrationConnectorsOperationWaitTime(
+		config, res, project, "Creating Connection", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Connection: %s", err)
+	}
+
+	if err := waitforConnectionReady(d, config, d.Timeout(schema.TimeoutCreate)-time.Minute); err != nil {
+		return fmt.Errorf("Error waiting for Connection %q to finish being in CREATING state during creation: %q", d.Get("name").(string), err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Connection %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -1367,22 +1386,6 @@ func resourceIntegrationConnectorsConnectionCreate(d *schema.ResourceData, meta 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = IntegrationConnectorsOperationWaitTime(
-		config, res, project, "Creating Connection", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Connection: %s", err)
-	}
-
-	if err := waitforConnectionReady(d, config, d.Timeout(schema.TimeoutCreate)-time.Minute); err != nil {
-		return fmt.Errorf("Error waiting for Connection %q to finish being in CREATING state during creation: %q", d.Get("name").(string), err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Connection %q: %#v", d.Id(), res)
 
 	return resourceIntegrationConnectorsConnectionRead(d, meta)
 }

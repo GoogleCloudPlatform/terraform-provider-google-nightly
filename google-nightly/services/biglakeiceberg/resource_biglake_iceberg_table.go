@@ -156,6 +156,9 @@ func ResourceBiglakeIcebergIcebergTable() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"catalog": {
@@ -395,6 +398,8 @@ func resourceBiglakeIcebergIcebergTableCreate(d *schema.ResourceData, meta inter
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating IcebergTable %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -420,8 +425,6 @@ func resourceBiglakeIcebergIcebergTableCreate(d *schema.ResourceData, meta inter
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating IcebergTable %q: %#v", d.Id(), res)
 
 	return resourceBiglakeIcebergIcebergTableRead(d, meta)
 }
