@@ -180,6 +180,9 @@ func ResourceNetappVolume() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"capacity_gib": {
@@ -1186,6 +1189,18 @@ func resourceNetappVolumeCreate(d *schema.ResourceData, meta interface{}) error 
 	}
 	d.SetId(id)
 
+	err = NetappOperationWaitTime(
+		config, res, project, "Creating Volume", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Volume: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Volume %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -1206,18 +1221,6 @@ func resourceNetappVolumeCreate(d *schema.ResourceData, meta interface{}) error 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetappOperationWaitTime(
-		config, res, project, "Creating Volume", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Volume: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Volume %q: %#v", d.Id(), res)
 
 	return resourceNetappVolumeRead(d, meta)
 }

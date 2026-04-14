@@ -132,6 +132,9 @@ func ResourceDNSResponsePolicy() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"response_policy_name": {
@@ -264,6 +267,8 @@ func resourceDNSResponsePolicyCreate(d *schema.ResourceData, meta interface{}) e
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating ResponsePolicy %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if responsePolicyNameValue, ok := d.GetOk("response_policy_name"); ok && responsePolicyNameValue.(string) != "" {
@@ -279,8 +284,6 @@ func resourceDNSResponsePolicyCreate(d *schema.ResourceData, meta interface{}) e
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating ResponsePolicy %q: %#v", d.Id(), res)
 
 	return resourceDNSResponsePolicyRead(d, meta)
 }

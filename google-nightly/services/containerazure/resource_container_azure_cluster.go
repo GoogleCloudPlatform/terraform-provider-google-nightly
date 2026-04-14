@@ -24,6 +24,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	dcl "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgdclresource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -1424,4 +1425,13 @@ func expandContainerAzureClusterLoggingConfigComponentConfigEnableComponentsArra
 		items = append(items, *i)
 	}
 	return items
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_container_azure_cluster",
+		ProductName: "containerazure",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceContainerAzureCluster(),
+	}.Register()
 }

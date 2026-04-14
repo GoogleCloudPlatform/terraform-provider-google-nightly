@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -179,4 +180,13 @@ func flattenDataSourceGoogleFoldersList(v interface{}) []map[string]interface{} 
 	}
 
 	return folders
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_folders",
+		ProductName: "resourcemanager",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceGoogleFolders(),
+	}.Register()
 }

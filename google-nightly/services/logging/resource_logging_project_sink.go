@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -241,4 +242,13 @@ func resourceLoggingProjectSinkDelete(d *schema.ResourceData, meta interface{}) 
 
 	d.SetId("")
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_logging_project_sink",
+		ProductName: "logging",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceLoggingProjectSink(),
+	}.Register()
 }

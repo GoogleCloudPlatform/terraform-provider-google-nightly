@@ -124,6 +124,9 @@ func ResourceSecurityCenterV2OrganizationNotificationConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"config_id": {
@@ -282,6 +285,8 @@ func resourceSecurityCenterV2OrganizationNotificationConfigCreate(d *schema.Reso
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating OrganizationNotificationConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -292,8 +297,6 @@ func resourceSecurityCenterV2OrganizationNotificationConfigCreate(d *schema.Reso
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating OrganizationNotificationConfig %q: %#v", d.Id(), res)
 
 	return resourceSecurityCenterV2OrganizationNotificationConfigRead(d, meta)
 }

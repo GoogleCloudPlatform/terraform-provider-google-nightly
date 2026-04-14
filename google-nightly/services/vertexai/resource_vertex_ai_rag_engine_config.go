@@ -132,6 +132,9 @@ func ResourceVertexAIRagEngineConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"rag_managed_db_config": {
@@ -255,6 +258,18 @@ func resourceVertexAIRagEngineConfigCreate(d *schema.ResourceData, meta interfac
 	}
 	d.SetId(id)
 
+	err = VertexAIOperationWaitTime(
+		config, res, project, "Creating RagEngineConfig", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create RagEngineConfig: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating RagEngineConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if regionValue, ok := d.GetOk("region"); ok && regionValue.(string) != "" {
@@ -270,18 +285,6 @@ func resourceVertexAIRagEngineConfigCreate(d *schema.ResourceData, meta interfac
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = VertexAIOperationWaitTime(
-		config, res, project, "Creating RagEngineConfig", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create RagEngineConfig: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating RagEngineConfig %q: %#v", d.Id(), res)
 
 	return resourceVertexAIRagEngineConfigRead(d, meta)
 }

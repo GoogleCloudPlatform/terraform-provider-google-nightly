@@ -132,6 +132,9 @@ func ResourceMonitoringMetricDescriptor() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"metric_kind": {
@@ -385,6 +388,13 @@ func resourceMonitoringMetricDescriptorCreate(d *schema.ResourceData, meta inter
 	}
 	d.SetId(id)
 
+	err = transport_tpg.PollingWaitTime(resourceMonitoringMetricDescriptorPollRead(d, meta), transport_tpg.PollCheckForExistence, "Creating MetricDescriptor", d.Timeout(schema.TimeoutCreate), 20)
+	if err != nil {
+		return fmt.Errorf("Error waiting to create MetricDescriptor: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating MetricDescriptor %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -400,13 +410,6 @@ func resourceMonitoringMetricDescriptorCreate(d *schema.ResourceData, meta inter
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = transport_tpg.PollingWaitTime(resourceMonitoringMetricDescriptorPollRead(d, meta), transport_tpg.PollCheckForExistence, "Creating MetricDescriptor", d.Timeout(schema.TimeoutCreate), 20)
-	if err != nil {
-		return fmt.Errorf("Error waiting to create MetricDescriptor: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating MetricDescriptor %q: %#v", d.Id(), res)
 
 	return resourceMonitoringMetricDescriptorRead(d, meta)
 }

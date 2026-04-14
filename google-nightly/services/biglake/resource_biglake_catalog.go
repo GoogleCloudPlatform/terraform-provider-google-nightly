@@ -134,6 +134,9 @@ func ResourceBiglakeCatalog() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -239,6 +242,8 @@ func resourceBiglakeCatalogCreate(d *schema.ResourceData, meta interface{}) erro
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Catalog %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -259,8 +264,6 @@ func resourceBiglakeCatalogCreate(d *schema.ResourceData, meta interface{}) erro
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Catalog %q: %#v", d.Id(), res)
 
 	return resourceBiglakeCatalogRead(d, meta)
 }

@@ -134,6 +134,9 @@ func ResourceComputeRegionNetworkEndpointGroup() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -528,6 +531,18 @@ func resourceComputeRegionNetworkEndpointGroupCreate(d *schema.ResourceData, met
 	}
 	d.SetId(id)
 
+	err = ComputeOperationWaitTime(
+		config, res, project, "Creating RegionNetworkEndpointGroup", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create RegionNetworkEndpointGroup: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating RegionNetworkEndpointGroup %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -548,18 +563,6 @@ func resourceComputeRegionNetworkEndpointGroupCreate(d *schema.ResourceData, met
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = ComputeOperationWaitTime(
-		config, res, project, "Creating RegionNetworkEndpointGroup", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create RegionNetworkEndpointGroup: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating RegionNetworkEndpointGroup %q: %#v", d.Id(), res)
 
 	return resourceComputeRegionNetworkEndpointGroupRead(d, meta)
 }

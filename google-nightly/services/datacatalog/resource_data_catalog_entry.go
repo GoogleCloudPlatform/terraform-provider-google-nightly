@@ -126,6 +126,9 @@ func ResourceDataCatalogEntry() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"entry_group": {
@@ -439,6 +442,8 @@ func resourceDataCatalogEntryCreate(d *schema.ResourceData, meta interface{}) er
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Entry %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -449,8 +454,6 @@ func resourceDataCatalogEntryCreate(d *schema.ResourceData, meta interface{}) er
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Entry %q: %#v", d.Id(), res)
 
 	return resourceDataCatalogEntryRead(d, meta)
 }

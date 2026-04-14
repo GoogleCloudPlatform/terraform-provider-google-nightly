@@ -137,6 +137,9 @@ func ResourceOracleDatabaseAutonomousDatabase() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"autonomous_database_id": {
@@ -1222,6 +1225,18 @@ func resourceOracleDatabaseAutonomousDatabaseCreate(d *schema.ResourceData, meta
 	}
 	d.SetId(id)
 
+	err = OracleDatabaseOperationWaitTime(
+		config, res, project, "Creating AutonomousDatabase", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create AutonomousDatabase: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating AutonomousDatabase %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -1242,18 +1257,6 @@ func resourceOracleDatabaseAutonomousDatabaseCreate(d *schema.ResourceData, meta
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = OracleDatabaseOperationWaitTime(
-		config, res, project, "Creating AutonomousDatabase", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create AutonomousDatabase: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating AutonomousDatabase %q: %#v", d.Id(), res)
 
 	return resourceOracleDatabaseAutonomousDatabaseRead(d, meta)
 }

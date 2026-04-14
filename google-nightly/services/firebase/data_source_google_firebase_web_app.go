@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -61,4 +62,13 @@ func dataSourceGoogleFirebaseWebAppRead(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("%s not found", name)
 	}
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_firebase_web_app",
+		ProductName: "firebase",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceGoogleFirebaseWebApp(),
+	}.Register()
 }

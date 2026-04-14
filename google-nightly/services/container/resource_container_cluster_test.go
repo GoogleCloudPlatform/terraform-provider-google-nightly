@@ -1567,6 +1567,104 @@ resource "google_container_cluster" "with_managed_opentelemetry" {
 }
 `, clusterName, networkName, subnetworkName, scope)
 }
+func TestAccContainerCluster_withManagedMLDiagnosticsConfig(t *testing.T) {
+	t.Parallel()
+
+	clusterName := fmt.Sprintf("tf-test-cluster-%s", acctest.RandString(t, 10))
+	networkName := acctest.BootstrapSharedTestNetwork(t, "gke-cluster")
+	subnetworkName := acctest.BootstrapSubnet(t, "gke-cluster", networkName)
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckContainerClusterDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccContainerCluster_withManagedMLDiagnosticsConfig(clusterName, networkName, subnetworkName, true),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("google_container_cluster.managed_ml_diagnostics",
+						"managed_machine_learning_diagnostics_config.0.enabled", "true"),
+				),
+			},
+			{
+				ResourceName:            "google_container_cluster.managed_ml_diagnostics",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"min_master_version", "deletion_protection"},
+			},
+			{
+				Config: testAccContainerCluster_withManagedMLDiagnosticsConfig(clusterName, networkName, subnetworkName, false),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("google_container_cluster.managed_ml_diagnostics",
+						"managed_machine_learning_diagnostics_config.0.enabled", "false"),
+				),
+			},
+			{
+				ResourceName:            "google_container_cluster.managed_ml_diagnostics",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"min_master_version", "deletion_protection"},
+			},
+			{
+				Config: testAccContainerCluster_withManagedMLDiagnosticsConfig(clusterName, networkName, subnetworkName, true),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("google_container_cluster.managed_ml_diagnostics",
+						"managed_machine_learning_diagnostics_config.0.enabled", "true"),
+				),
+			},
+			{
+				ResourceName:            "google_container_cluster.managed_ml_diagnostics",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"min_master_version", "deletion_protection"},
+			},
+		},
+	})
+}
+
+func testAccContainerCluster_withManagedMLDiagnosticsConfig(clusterName, networkName, subnetworkName string, enabled bool) string {
+	return fmt.Sprintf(`
+data "google_container_engine_versions" "uscentral1a" {
+  location       = "us-central1-a"
+  version_prefix = "1.35."
+}
+
+resource "google_container_cluster" "managed_ml_diagnostics" {
+  name               = "%s"
+  location           = "us-central1-a"
+  initial_node_count = 1
+  network            = "%s"
+  subnetwork         = "%s"
+  min_master_version = data.google_container_engine_versions.uscentral1a.latest_master_version
+
+  managed_machine_learning_diagnostics_config {
+    enabled = %t
+  }
+
+  deletion_protection = false
+}
+`, clusterName, networkName, subnetworkName, enabled)
+}
+
+func testAccContainerCluster_withoutManagedMLDiagnosticsConfig(clusterName, networkName, subnetworkName string) string {
+	return fmt.Sprintf(`
+data "google_container_engine_versions" "uscentral1a" {
+  location       = "us-central1-a"
+  version_prefix = "1.35."
+}
+
+resource "google_container_cluster" "managed_ml_diagnostics" {
+  name               = "%s"
+  location           = "us-central1-a"
+  initial_node_count = 1
+  network            = "%s"
+  subnetwork         = "%s"
+  min_master_version = data.google_container_engine_versions.uscentral1a.latest_master_version
+
+  deletion_protection = false
+}
+`, clusterName, networkName, subnetworkName)
+}
 
 func TestAccContainerCluster_withMasterAuthorizedNetworksConfig(t *testing.T) {
 	t.Parallel()
@@ -17142,7 +17240,7 @@ resource "google_container_cluster" "primary" {
       max_node_count = 1
     }
     node_config {
-      machine_type = "a3-highgpu-8g"
+      machine_type = "a3-edgegpu-8g"
       guest_accelerator {
         type  = "nvidia-h100-80gb"
         count = 8
@@ -17186,7 +17284,7 @@ func TestAccContainerCluster_nodePool_acceleratorNetworkProfile(t *testing.T) {
 					resource.TestCheckResourceAttr(resourceName, "name", clusterName),
 					resource.TestCheckResourceAttr(resourceName, "node_pool.#", "1"),
 					resource.TestCheckResourceAttr(resourceName, "node_pool.0.name", "anp-pool"),
-					resource.TestCheckResourceAttr(resourceName, "node_pool.0.node_config.0.machine_type", "a3-highgpu-8g"),
+					resource.TestCheckResourceAttr(resourceName, "node_pool.0.node_config.0.machine_type", "a3-edgegpu-8g"),
 					resource.TestCheckResourceAttr(resourceName, "node_pool.0.network_config.0.accelerator_network_profile", "auto"),
 					resource.TestCheckResourceAttrSet(resourceName, "node_pool.0.network_config.0.additional_node_network_configs.0.network"),
 					resource.TestCheckResourceAttrSet(resourceName, "node_pool.0.network_config.0.additional_node_network_configs.0.subnetwork"),
@@ -17260,7 +17358,7 @@ resource "google_container_cluster" "primary" {
     }
     
 	node_config {
-		machine_type = "a3-highgpu-8g"
+		machine_type = "a3-edgegpu-8g"
 		oauth_scopes = [ "https://www.googleapis.com/auth/cloud-platform" ]
 		guest_accelerator {
 			type = "nvidia-h100-80gb"
@@ -17333,7 +17431,7 @@ resource "google_container_cluster" "primary" {
     }
     
 	node_config {
-		machine_type = "a3-highgpu-8g"
+		machine_type = "a3-edgegpu-8g"
 		oauth_scopes = [ "https://www.googleapis.com/auth/cloud-platform" ]
 		guest_accelerator {
 			type = "nvidia-h100-80gb"
@@ -17399,7 +17497,7 @@ resource "google_container_cluster" "primary" {
     }
     
 	node_config {
-		machine_type = "a3-highgpu-8g"
+		machine_type = "a3-edgegpu-8g"
 		oauth_scopes = [ "https://www.googleapis.com/auth/cloud-platform" ]
 		guest_accelerator {
 			type = "nvidia-h100-80gb"

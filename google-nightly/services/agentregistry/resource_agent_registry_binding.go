@@ -137,6 +137,9 @@ func ResourceAgentRegistryBinding() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"auth_provider_binding": {
@@ -308,6 +311,18 @@ func resourceAgentRegistryBindingCreate(d *schema.ResourceData, meta interface{}
 	}
 	d.SetId(id)
 
+	err = AgentRegistryOperationWaitTime(
+		config, res, project, "Creating Binding", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Binding: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Binding %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -328,18 +343,6 @@ func resourceAgentRegistryBindingCreate(d *schema.ResourceData, meta interface{}
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = AgentRegistryOperationWaitTime(
-		config, res, project, "Creating Binding", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Binding: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Binding %q: %#v", d.Id(), res)
 
 	return resourceAgentRegistryBindingRead(d, meta)
 }

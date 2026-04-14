@@ -149,6 +149,9 @@ func ResourceBiglakeIcebergIcebergNamespace() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"catalog": {
@@ -248,6 +251,8 @@ func resourceBiglakeIcebergIcebergNamespaceCreate(d *schema.ResourceData, meta i
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating IcebergNamespace %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if namespaceIdValue, ok := d.GetOk("namespace_id"); ok && namespaceIdValue.(string) != "" {
@@ -268,8 +273,6 @@ func resourceBiglakeIcebergIcebergNamespaceCreate(d *schema.ResourceData, meta i
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating IcebergNamespace %q: %#v", d.Id(), res)
 
 	return resourceBiglakeIcebergIcebergNamespaceRead(d, meta)
 }

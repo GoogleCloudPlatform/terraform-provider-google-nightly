@@ -132,6 +132,9 @@ func ResourceSecurityCenterProjectSccBigQueryExport() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"big_query_export_id": {
@@ -293,6 +296,8 @@ func resourceSecurityCenterProjectSccBigQueryExportCreate(d *schema.ResourceData
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating ProjectSccBigQueryExport %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if bigQueryExportIdValue, ok := d.GetOk("big_query_export_id"); ok && bigQueryExportIdValue.(string) != "" {
@@ -308,8 +313,6 @@ func resourceSecurityCenterProjectSccBigQueryExportCreate(d *schema.ResourceData
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating ProjectSccBigQueryExport %q: %#v", d.Id(), res)
 
 	return resourceSecurityCenterProjectSccBigQueryExportRead(d, meta)
 }

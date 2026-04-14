@@ -138,6 +138,9 @@ func ResourceSaasRuntimeUnitKind() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -151,7 +154,7 @@ func ResourceSaasRuntimeUnitKind() *schema.Resource {
 				Required: true,
 				ForceNew: true,
 				Description: `A reference to the Saas that defines the product (managed service) that
-the producer wants to manage with SaaS Runtime. Part of the SaaS Runtime
+the producer wants to manage with App Lifecycle Manager. Part of the App Lifecycle Manager
 common data model. Immutable once set.`,
 			},
 			"unit_kind_id": {
@@ -256,7 +259,7 @@ inputVariables. Maximum 100.`,
 									"ignore_for_lookup": {
 										Type:        schema.TypeBool,
 										Optional:    true,
-										Description: `Tells SaaS Runtime if this mapping should be used during lookup or not`,
+										Description: `Tells App Lifecycle Manager if this mapping should be used during lookup or not`,
 									},
 								},
 							},
@@ -326,7 +329,7 @@ outputVariables. Maximum 100.`,
 									"ignore_for_lookup": {
 										Type:        schema.TypeBool,
 										Optional:    true,
-										Description: `Tells SaaS Runtime if this mapping should be used during lookup or not`,
+										Description: `Tells App Lifecycle Manager if this mapping should be used during lookup or not`,
 									},
 								},
 							},
@@ -492,6 +495,8 @@ func resourceSaasRuntimeUnitKindCreate(d *schema.ResourceData, meta interface{})
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating UnitKind %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -512,8 +517,6 @@ func resourceSaasRuntimeUnitKindCreate(d *schema.ResourceData, meta interface{})
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating UnitKind %q: %#v", d.Id(), res)
 
 	return resourceSaasRuntimeUnitKindRead(d, meta)
 }

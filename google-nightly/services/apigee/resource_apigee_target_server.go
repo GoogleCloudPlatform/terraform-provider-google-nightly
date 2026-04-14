@@ -128,6 +128,9 @@ func ResourceApigeeTargetServer() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"env_id": {
@@ -293,7 +296,7 @@ func resourceApigeeTargetServerCreate(d *schema.ResourceData, meta interface{}) 
 	isEnabledProp, err := expandApigeeTargetServerIsEnabled(d.Get("is_enabled"), d, config)
 	if err != nil {
 		return err
-	} else if v, ok := d.GetOkExists("is_enabled"); !tpgresource.IsEmptyValue(reflect.ValueOf(isEnabledProp)) && (ok || !reflect.DeepEqual(v, isEnabledProp)) {
+	} else if v, ok := d.GetOkExists("is_enabled"); ok || !reflect.DeepEqual(v, isEnabledProp) {
 		obj["isEnabled"] = isEnabledProp
 	}
 	sSLInfoProp, err := expandApigeeTargetServerSSLInfo(d.Get("s_sl_info"), d, config)
@@ -344,6 +347,8 @@ func resourceApigeeTargetServerCreate(d *schema.ResourceData, meta interface{}) 
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating TargetServer %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -359,8 +364,6 @@ func resourceApigeeTargetServerCreate(d *schema.ResourceData, meta interface{}) 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating TargetServer %q: %#v", d.Id(), res)
 
 	return resourceApigeeTargetServerRead(d, meta)
 }
@@ -494,7 +497,7 @@ func resourceApigeeTargetServerUpdate(d *schema.ResourceData, meta interface{}) 
 	isEnabledProp, err := expandApigeeTargetServerIsEnabled(d.Get("is_enabled"), d, config)
 	if err != nil {
 		return err
-	} else if v, ok := d.GetOkExists("is_enabled"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, isEnabledProp)) {
+	} else if v, ok := d.GetOkExists("is_enabled"); ok || !reflect.DeepEqual(v, isEnabledProp) {
 		obj["isEnabled"] = isEnabledProp
 	}
 	sSLInfoProp, err := expandApigeeTargetServerSSLInfo(d.Get("s_sl_info"), d, config)

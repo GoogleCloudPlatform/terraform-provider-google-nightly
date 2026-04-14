@@ -128,6 +128,9 @@ func ResourceDialogflowVersion() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"description": {
@@ -218,6 +221,8 @@ func resourceDialogflowVersionCreate(d *schema.ResourceData, meta interface{}) e
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Version %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if parentValue, ok := d.GetOk("parent"); ok && parentValue.(string) != "" {
@@ -233,8 +238,6 @@ func resourceDialogflowVersionCreate(d *schema.ResourceData, meta interface{}) e
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Version %q: %#v", d.Id(), res)
 
 	return resourceDialogflowVersionRead(d, meta)
 }

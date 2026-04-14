@@ -137,6 +137,9 @@ func ResourcePrivatecaCertificateTemplate() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -724,6 +727,18 @@ func resourcePrivatecaCertificateTemplateCreate(d *schema.ResourceData, meta int
 	}
 	d.SetId(id)
 
+	err = PrivatecaOperationWaitTime(
+		config, res, tpgresource.GetResourceNameFromSelfLink(project), "Creating CertificateTemplate", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create CertificateTemplate: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating CertificateTemplate %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -744,18 +759,6 @@ func resourcePrivatecaCertificateTemplateCreate(d *schema.ResourceData, meta int
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = PrivatecaOperationWaitTime(
-		config, res, tpgresource.GetResourceNameFromSelfLink(project), "Creating CertificateTemplate", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create CertificateTemplate: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating CertificateTemplate %q: %#v", d.Id(), res)
 
 	return resourcePrivatecaCertificateTemplateRead(d, meta)
 }

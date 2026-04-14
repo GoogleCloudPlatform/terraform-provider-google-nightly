@@ -161,6 +161,9 @@ func ResourceNotebooksRuntime() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -823,6 +826,18 @@ func resourceNotebooksRuntimeCreate(d *schema.ResourceData, meta interface{}) er
 	}
 	d.SetId(id)
 
+	err = NotebooksOperationWaitTime(
+		config, res, project, "Creating Runtime", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Runtime: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Runtime %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -843,18 +858,6 @@ func resourceNotebooksRuntimeCreate(d *schema.ResourceData, meta interface{}) er
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NotebooksOperationWaitTime(
-		config, res, project, "Creating Runtime", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Runtime: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Runtime %q: %#v", d.Id(), res)
 
 	return resourceNotebooksRuntimeRead(d, meta)
 }

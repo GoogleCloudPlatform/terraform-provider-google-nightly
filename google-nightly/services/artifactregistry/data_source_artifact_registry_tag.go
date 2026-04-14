@@ -22,6 +22,7 @@ import (
 	"net/url"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -135,4 +136,13 @@ func DataSourceArtifactRegistryTagRead(d *schema.ResourceData, meta interface{})
 	d.SetId(name)
 
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_artifact_registry_tag",
+		ProductName: "artifactregistry",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceArtifactRegistryTag(),
+	}.Register()
 }

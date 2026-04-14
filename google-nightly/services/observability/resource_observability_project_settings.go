@@ -132,6 +132,9 @@ func ResourceObservabilityProjectSettings() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -247,6 +250,18 @@ func resourceObservabilityProjectSettingsCreate(d *schema.ResourceData, meta int
 	}
 	d.SetId(id)
 
+	err = ObservabilityOperationWaitTime(
+		config, res, project, "Creating ProjectSettings", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create ProjectSettings: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating ProjectSettings %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -262,18 +277,6 @@ func resourceObservabilityProjectSettingsCreate(d *schema.ResourceData, meta int
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = ObservabilityOperationWaitTime(
-		config, res, project, "Creating ProjectSettings", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create ProjectSettings: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating ProjectSettings %q: %#v", d.Id(), res)
 
 	return resourceObservabilityProjectSettingsRead(d, meta)
 }

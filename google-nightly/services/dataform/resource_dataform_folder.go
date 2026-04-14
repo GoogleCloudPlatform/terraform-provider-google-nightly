@@ -136,6 +136,9 @@ func ResourceDataformFolder() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"display_name": {
@@ -244,6 +247,11 @@ func resourceDataformFolderCreate(d *schema.ResourceData, meta interface{}) erro
 	}
 	d.SetId(id)
 
+	// Store the name as ID
+	d.SetId(res["name"].(string))
+
+	log.Printf("[DEBUG] Finished creating Folder %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if folderIdValue, ok := d.GetOk("folder_id"); ok && folderIdValue.(string) != "" {
@@ -264,11 +272,6 @@ func resourceDataformFolderCreate(d *schema.ResourceData, meta interface{}) erro
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	// Store the name as ID
-	d.SetId(res["name"].(string))
-
-	log.Printf("[DEBUG] Finished creating Folder %q: %#v", d.Id(), res)
 
 	return resourceDataformFolderRead(d, meta)
 }

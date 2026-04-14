@@ -19,6 +19,7 @@ package cloudidentity
 import (
 	"fmt"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -188,4 +189,13 @@ func flattenCloudIdentityGroupsEntityKeyList(entityKeys []*cloudidentity.EntityK
 	}
 
 	return transformed
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_cloud_identity_group_transitive_memberships",
+		ProductName: "cloudidentity",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceGoogleCloudIdentityGroupTransitiveMemberships(),
+	}.Register()
 }

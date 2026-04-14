@@ -138,6 +138,9 @@ func ResourceDiscoveryEngineSchema() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"data_store_id": {
@@ -243,6 +246,18 @@ func resourceDiscoveryEngineSchemaCreate(d *schema.ResourceData, meta interface{
 	}
 	d.SetId(id)
 
+	err = DiscoveryEngineOperationWaitTime(
+		config, res, project, "Creating Schema", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Schema: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Schema %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -268,18 +283,6 @@ func resourceDiscoveryEngineSchemaCreate(d *schema.ResourceData, meta interface{
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = DiscoveryEngineOperationWaitTime(
-		config, res, project, "Creating Schema", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Schema: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Schema %q: %#v", d.Id(), res)
 
 	return resourceDiscoveryEngineSchemaRead(d, meta)
 }

@@ -141,6 +141,9 @@ func ResourceNetworkConnectivityGatewayAdvertisedRoute() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -328,6 +331,18 @@ func resourceNetworkConnectivityGatewayAdvertisedRouteCreate(d *schema.ResourceD
 	}
 	d.SetId(id)
 
+	err = NetworkConnectivityOperationWaitTime(
+		config, res, project, "Creating GatewayAdvertisedRoute", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create GatewayAdvertisedRoute: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating GatewayAdvertisedRoute %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -353,18 +368,6 @@ func resourceNetworkConnectivityGatewayAdvertisedRouteCreate(d *schema.ResourceD
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetworkConnectivityOperationWaitTime(
-		config, res, project, "Creating GatewayAdvertisedRoute", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create GatewayAdvertisedRoute: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating GatewayAdvertisedRoute %q: %#v", d.Id(), res)
 
 	return resourceNetworkConnectivityGatewayAdvertisedRouteRead(d, meta)
 }

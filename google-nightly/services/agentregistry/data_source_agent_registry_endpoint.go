@@ -24,6 +24,7 @@ import (
 	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -272,4 +273,13 @@ func flattenAgentRegistryEndpointAttributes(v interface{}, d *schema.ResourceDat
 	}
 
 	return transformed
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_agent_registry_endpoint",
+		ProductName: "agentregistry",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceAgentRegistryEndpoint(),
+	}.Register()
 }

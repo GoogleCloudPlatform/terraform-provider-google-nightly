@@ -142,6 +142,9 @@ func ResourceDeveloperConnectGitRepositoryLink() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"clone_uri": {
@@ -335,6 +338,18 @@ func resourceDeveloperConnectGitRepositoryLinkCreate(d *schema.ResourceData, met
 	}
 	d.SetId(id)
 
+	err = DeveloperConnectOperationWaitTime(
+		config, res, project, "Creating GitRepositoryLink", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create GitRepositoryLink: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating GitRepositoryLink %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -360,18 +375,6 @@ func resourceDeveloperConnectGitRepositoryLinkCreate(d *schema.ResourceData, met
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = DeveloperConnectOperationWaitTime(
-		config, res, project, "Creating GitRepositoryLink", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create GitRepositoryLink: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating GitRepositoryLink %q: %#v", d.Id(), res)
 
 	return resourceDeveloperConnectGitRepositoryLinkRead(d, meta)
 }

@@ -137,6 +137,9 @@ func ResourceIAM3ProjectsPolicyBinding() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -393,6 +396,18 @@ func resourceIAM3ProjectsPolicyBindingCreate(d *schema.ResourceData, meta interf
 	}
 	d.SetId(id)
 
+	err = IAM3OperationWaitTime(
+		config, res, project, "Creating ProjectsPolicyBinding", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create ProjectsPolicyBinding: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating ProjectsPolicyBinding %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -413,18 +428,6 @@ func resourceIAM3ProjectsPolicyBindingCreate(d *schema.ResourceData, meta interf
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = IAM3OperationWaitTime(
-		config, res, project, "Creating ProjectsPolicyBinding", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create ProjectsPolicyBinding: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating ProjectsPolicyBinding %q: %#v", d.Id(), res)
 
 	return resourceIAM3ProjectsPolicyBindingRead(d, meta)
 }

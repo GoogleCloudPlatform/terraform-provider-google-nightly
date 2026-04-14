@@ -136,6 +136,9 @@ func ResourceIAM3FoldersPolicyBinding() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"folder": {
@@ -378,6 +381,18 @@ func resourceIAM3FoldersPolicyBindingCreate(d *schema.ResourceData, meta interfa
 	}
 	d.SetId(id)
 
+	err = IAM3OperationWaitTime(
+		config, res, project, "Creating FoldersPolicyBinding", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create FoldersPolicyBinding: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating FoldersPolicyBinding %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if folderValue, ok := d.GetOk("folder"); ok && folderValue.(string) != "" {
@@ -398,18 +413,6 @@ func resourceIAM3FoldersPolicyBindingCreate(d *schema.ResourceData, meta interfa
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = IAM3OperationWaitTime(
-		config, res, project, "Creating FoldersPolicyBinding", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create FoldersPolicyBinding: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating FoldersPolicyBinding %q: %#v", d.Id(), res)
 
 	return resourceIAM3FoldersPolicyBindingRead(d, meta)
 }
