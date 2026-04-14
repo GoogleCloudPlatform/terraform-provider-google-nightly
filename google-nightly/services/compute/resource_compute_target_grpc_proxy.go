@@ -132,6 +132,9 @@ func ResourceComputeTargetGrpcProxy() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -291,6 +294,18 @@ func resourceComputeTargetGrpcProxyCreate(d *schema.ResourceData, meta interface
 	}
 	d.SetId(id)
 
+	err = ComputeOperationWaitTime(
+		config, res, project, "Creating TargetGrpcProxy", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create TargetGrpcProxy: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating TargetGrpcProxy %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -306,18 +321,6 @@ func resourceComputeTargetGrpcProxyCreate(d *schema.ResourceData, meta interface
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = ComputeOperationWaitTime(
-		config, res, project, "Creating TargetGrpcProxy", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create TargetGrpcProxy: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating TargetGrpcProxy %q: %#v", d.Id(), res)
 
 	return resourceComputeTargetGrpcProxyRead(d, meta)
 }

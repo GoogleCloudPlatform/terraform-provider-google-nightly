@@ -128,6 +128,9 @@ func ResourceVmwareengineSubnet() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"ip_cidr_range": {
@@ -275,6 +278,18 @@ func resourceVmwareengineSubnetCreate(d *schema.ResourceData, meta interface{}) 
 	}
 	d.SetId(id)
 
+	err = VmwareengineOperationWaitTime(
+		config, res, project, "Creating Subnet", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Subnet: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Subnet %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if parentValue, ok := d.GetOk("parent"); ok && parentValue.(string) != "" {
@@ -290,18 +305,6 @@ func resourceVmwareengineSubnetCreate(d *schema.ResourceData, meta interface{}) 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = VmwareengineOperationWaitTime(
-		config, res, project, "Creating Subnet", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Subnet: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Subnet %q: %#v", d.Id(), res)
 
 	return resourceVmwareengineSubnetRead(d, meta)
 }

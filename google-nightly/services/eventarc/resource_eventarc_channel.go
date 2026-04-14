@@ -137,6 +137,9 @@ func ResourceEventarcChannel() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -302,6 +305,18 @@ func resourceEventarcChannelCreate(d *schema.ResourceData, meta interface{}) err
 	}
 	d.SetId(id)
 
+	err = EventarcOperationWaitTime(
+		config, res, tpgresource.GetResourceNameFromSelfLink(project), "Creating Channel", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Channel: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Channel %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -322,18 +337,6 @@ func resourceEventarcChannelCreate(d *schema.ResourceData, meta interface{}) err
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = EventarcOperationWaitTime(
-		config, res, tpgresource.GetResourceNameFromSelfLink(project), "Creating Channel", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Channel: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Channel %q: %#v", d.Id(), res)
 
 	return resourceEventarcChannelRead(d, meta)
 }

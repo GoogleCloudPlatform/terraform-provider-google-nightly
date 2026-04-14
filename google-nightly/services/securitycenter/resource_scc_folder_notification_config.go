@@ -128,6 +128,9 @@ func ResourceSecurityCenterFolderNotificationConfig() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"config_id": {
@@ -272,6 +275,8 @@ func resourceSecurityCenterFolderNotificationConfigCreate(d *schema.ResourceData
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating FolderNotificationConfig %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if folderValue, ok := d.GetOk("folder"); ok && folderValue.(string) != "" {
@@ -287,8 +292,6 @@ func resourceSecurityCenterFolderNotificationConfigCreate(d *schema.ResourceData
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating FolderNotificationConfig %q: %#v", d.Id(), res)
 
 	return resourceSecurityCenterFolderNotificationConfigRead(d, meta)
 }

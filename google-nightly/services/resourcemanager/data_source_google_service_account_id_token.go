@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/verify"
@@ -139,4 +140,13 @@ func dataSourceGoogleServiceAccountIdTokenRead(d *schema.ResourceData, meta inte
 	}
 
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_service_account_id_token",
+		ProductName: "resourcemanager",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceGoogleServiceAccountIdToken(),
+	}.Register()
 }

@@ -136,6 +136,9 @@ func ResourceDialogflowEnvironment() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"environmentid": {
@@ -407,6 +410,8 @@ func resourceDialogflowEnvironmentCreate(d *schema.ResourceData, meta interface{
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Environment %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if environmentidValue, ok := d.GetOk("environmentid"); ok && environmentidValue.(string) != "" {
@@ -427,8 +432,6 @@ func resourceDialogflowEnvironmentCreate(d *schema.ResourceData, meta interface{
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Environment %q: %#v", d.Id(), res)
 
 	return resourceDialogflowEnvironmentRead(d, meta)
 }

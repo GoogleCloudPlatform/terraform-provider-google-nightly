@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -129,4 +130,13 @@ func flattenStorageBucketObjectGeneration(v interface{}, d *schema.ResourceData,
 	}
 
 	return v // let terraform core handle it otherwise
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_storage_bucket_object",
+		ProductName: "storage",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceGoogleStorageBucketObject(),
+	}.Register()
 }

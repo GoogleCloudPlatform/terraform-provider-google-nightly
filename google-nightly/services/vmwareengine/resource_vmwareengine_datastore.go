@@ -136,6 +136,9 @@ func ResourceVmwareengineDatastore() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -339,6 +342,18 @@ func resourceVmwareengineDatastoreCreate(d *schema.ResourceData, meta interface{
 	}
 	d.SetId(id)
 
+	err = VmwareengineOperationWaitTime(
+		config, res, project, "Creating Datastore", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Datastore: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Datastore %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -359,18 +374,6 @@ func resourceVmwareengineDatastoreCreate(d *schema.ResourceData, meta interface{
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = VmwareengineOperationWaitTime(
-		config, res, project, "Creating Datastore", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Datastore: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Datastore %q: %#v", d.Id(), res)
 
 	return resourceVmwareengineDatastoreRead(d, meta)
 }

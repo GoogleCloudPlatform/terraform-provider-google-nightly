@@ -149,6 +149,9 @@ func ResourceDiscoveryEngineDataConnector() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"collection_display_name": {
@@ -671,6 +674,18 @@ func resourceDiscoveryEngineDataConnectorCreate(d *schema.ResourceData, meta int
 	}
 	d.SetId(id)
 
+	err = DiscoveryEngineOperationWaitTime(
+		config, res, project, "Creating DataConnector", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create DataConnector: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating DataConnector %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -691,18 +706,6 @@ func resourceDiscoveryEngineDataConnectorCreate(d *schema.ResourceData, meta int
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = DiscoveryEngineOperationWaitTime(
-		config, res, project, "Creating DataConnector", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create DataConnector: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating DataConnector %q: %#v", d.Id(), res)
 
 	return resourceDiscoveryEngineDataConnectorRead(d, meta)
 }

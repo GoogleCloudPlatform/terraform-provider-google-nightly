@@ -124,6 +124,9 @@ func ResourceAccessContextManagerServicePerimeters() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"parent": {
@@ -1089,17 +1092,6 @@ func resourceAccessContextManagerServicePerimetersCreate(d *schema.ResourceData,
 	}
 	d.SetId(id)
 
-	identity, err := d.Identity()
-	if err == nil && identity != nil {
-		if parentValue, ok := d.GetOk("parent"); ok && parentValue.(string) != "" {
-			if err = identity.Set("parent", parentValue.(string)); err != nil {
-				return fmt.Errorf("Error setting parent: %s", err)
-			}
-		}
-	} else {
-		log.Printf("[DEBUG] (Create) identity not set: %s", err)
-	}
-
 	err = AccessContextManagerOperationWaitTime(
 		config, res, "Creating ServicePerimeters", userAgent,
 		d.Timeout(schema.TimeoutCreate))
@@ -1111,6 +1103,17 @@ func resourceAccessContextManagerServicePerimetersCreate(d *schema.ResourceData,
 	}
 
 	log.Printf("[DEBUG] Finished creating ServicePerimeters %q: %#v", d.Id(), res)
+
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if parentValue, ok := d.GetOk("parent"); ok && parentValue.(string) != "" {
+			if err = identity.Set("parent", parentValue.(string)); err != nil {
+				return fmt.Errorf("Error setting parent: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Create) identity not set: %s", err)
+	}
 
 	return resourceAccessContextManagerServicePerimetersRead(d, meta)
 }

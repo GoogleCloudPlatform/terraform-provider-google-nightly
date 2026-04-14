@@ -19,6 +19,7 @@ package iambeta
 import (
 	"fmt"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -55,4 +56,13 @@ func dataSourceIAMBetaWorkloadIdentityPoolRead(d *schema.ResourceData, meta inte
 	}
 
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_iam_workload_identity_pool",
+		ProductName: "iambeta",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceIAMBetaWorkloadIdentityPool(),
+	}.Register()
 }

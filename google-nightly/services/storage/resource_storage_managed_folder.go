@@ -128,6 +128,9 @@ func ResourceStorageManagedFolder() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"bucket": {
@@ -235,6 +238,8 @@ func resourceStorageManagedFolderCreate(d *schema.ResourceData, meta interface{}
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating ManagedFolder %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if bucketValue, ok := d.GetOk("bucket"); ok && bucketValue.(string) != "" {
@@ -250,8 +255,6 @@ func resourceStorageManagedFolderCreate(d *schema.ResourceData, meta interface{}
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating ManagedFolder %q: %#v", d.Id(), res)
 
 	return resourceStorageManagedFolderRead(d, meta)
 }

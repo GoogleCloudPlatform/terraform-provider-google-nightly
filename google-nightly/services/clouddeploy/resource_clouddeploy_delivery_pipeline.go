@@ -27,6 +27,7 @@ import (
 
 	dcl "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgdclresource"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgdclresource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -1802,4 +1803,13 @@ func flattenClouddeployDeliveryPipelineAnnotations(v map[string]string, d *schem
 	}
 
 	return transformed
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_clouddeploy_delivery_pipeline",
+		ProductName: "clouddeploy",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceClouddeployDeliveryPipeline(),
+	}.Register()
 }

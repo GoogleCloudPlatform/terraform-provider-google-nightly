@@ -33,6 +33,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/verify"
@@ -1387,6 +1388,22 @@ func ResourceContainerCluster() *schema.Resource {
 							ValidateFunc:     validation.StringInSlice([]string{"VULNERABILITY_DISABLED", "VULNERABILITY_BASIC", "VULNERABILITY_ENTERPRISE", "VULNERABILITY_MODE_UNSPECIFIED"}, false),
 							Description:      `Sets the mode of the Kubernetes security posture API's workload vulnerability scanning. Available options include VULNERABILITY_DISABLED, VULNERABILITY_BASIC and VULNERABILITY_ENTERPRISE.`,
 							DiffSuppressFunc: tpgresource.EmptyOrDefaultStringSuppress("VULNERABILITY_MODE_UNSPECIFIED"),
+						},
+					},
+				},
+			},
+			"managed_machine_learning_diagnostics_config": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Computed:    true,
+				MaxItems:    1,
+				Description: `Configuration for the GKE Managed Machine Learning Diagnostics pipeline.`,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"enabled": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							Description: `Enable Managed Machine Learning Diagnostics.`,
 						},
 					},
 				},
@@ -2970,19 +2987,20 @@ func resourceContainerClusterCreate(d *schema.ResourceData, meta interface{}) er
 			Enabled:         d.Get("enable_legacy_abac").(bool),
 			ForceSendFields: []string{"Enabled"},
 		},
-		LoggingService:             d.Get("logging_service").(string),
-		MonitoringService:          d.Get("monitoring_service").(string),
-		NetworkPolicy:              expandNetworkPolicy(d.Get("network_policy")),
-		AddonsConfig:               expandClusterAddonsConfig(d.Get("addons_config")),
-		ManagedOpentelemetryConfig: expandManagedOpenTelemetryConfig(d.Get("managed_opentelemetry_config")),
-		EnableKubernetesAlpha:      d.Get("enable_kubernetes_alpha").(bool),
-		IpAllocationPolicy:         ipAllocationBlock,
-		PodSecurityPolicyConfig:    expandPodSecurityPolicyConfig(d.Get("pod_security_policy_config")),
-		PodAutoscaling:             expandPodAutoscaling(d.Get("pod_autoscaling")),
-		SecretManagerConfig:        expandSecretManagerConfig(d.Get("secret_manager_config")),
-		SecretSyncConfig:           expandSecretSyncConfig(d.Get("secret_sync_config")),
-		Autoscaling:                expandClusterAutoscaling(d.Get("cluster_autoscaling"), d),
-		BinaryAuthorization:        expandBinaryAuthorization(d.Get("binary_authorization")),
+		LoggingService:                          d.Get("logging_service").(string),
+		MonitoringService:                       d.Get("monitoring_service").(string),
+		NetworkPolicy:                           expandNetworkPolicy(d.Get("network_policy")),
+		AddonsConfig:                            expandClusterAddonsConfig(d.Get("addons_config")),
+		ManagedMachineLearningDiagnosticsConfig: expandManagedMachineLearningDiagnosticsConfig(d.Get("managed_machine_learning_diagnostics_config")),
+		ManagedOpentelemetryConfig:              expandManagedOpenTelemetryConfig(d.Get("managed_opentelemetry_config")),
+		EnableKubernetesAlpha:                   d.Get("enable_kubernetes_alpha").(bool),
+		IpAllocationPolicy:                      ipAllocationBlock,
+		PodSecurityPolicyConfig:                 expandPodSecurityPolicyConfig(d.Get("pod_security_policy_config")),
+		PodAutoscaling:                          expandPodAutoscaling(d.Get("pod_autoscaling")),
+		SecretManagerConfig:                     expandSecretManagerConfig(d.Get("secret_manager_config")),
+		SecretSyncConfig:                        expandSecretSyncConfig(d.Get("secret_sync_config")),
+		Autoscaling:                             expandClusterAutoscaling(d.Get("cluster_autoscaling"), d),
+		BinaryAuthorization:                     expandBinaryAuthorization(d.Get("binary_authorization")),
 		Autopilot: &container.Autopilot{
 			Enabled:                   d.Get("enable_autopilot").(bool),
 			WorkloadPolicyConfig:      workloadPolicyConfig,
@@ -3747,6 +3765,10 @@ func resourceContainerClusterRead(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	if err := d.Set("monitoring_config", flattenMonitoringConfig(cluster.MonitoringConfig)); err != nil {
+		return err
+	}
+
+	if err := d.Set("managed_machine_learning_diagnostics_config", flattenManagedMachineLearningDiagnosticsConfig(cluster.ManagedMachineLearningDiagnosticsConfig)); err != nil {
 		return err
 	}
 
@@ -5045,6 +5067,21 @@ func resourceContainerClusterUpdate(d *schema.ResourceData, meta interface{}) er
 		}
 
 		log.Printf("[INFO] GKE cluster %s monitoring config has been updated", d.Id())
+	}
+
+	if d.HasChange("managed_machine_learning_diagnostics_config") {
+		req := &container.UpdateClusterRequest{
+			Update: &container.ClusterUpdate{
+				DesiredManagedMachineLearningDiagnosticsConfig: expandManagedMachineLearningDiagnosticsConfig(d.Get("managed_machine_learning_diagnostics_config")),
+			},
+		}
+		updateF := updateFunc(req, "updating GKE cluster managed machine learning diagnostics config")
+		// Call update serially.
+		if err := transport_tpg.LockedCall(lockKey, updateF); err != nil {
+			return err
+		}
+
+		log.Printf("[INFO] GKE cluster %s managed machine learning diagnostics config has been updated", d.Id())
 	}
 
 	if d.HasChange("managed_opentelemetry_config") {
@@ -6564,6 +6601,27 @@ func expandManCidrBlocks(configured interface{}) []*container.CidrBlock {
 		})
 	}
 	return result
+}
+func expandManagedMachineLearningDiagnosticsConfig(configured interface{}) *container.ManagedMachineLearningDiagnosticsConfig {
+	l := configured.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil
+	}
+	config := l[0].(map[string]interface{})
+	return &container.ManagedMachineLearningDiagnosticsConfig{
+		Enabled: config["enabled"].(bool),
+	}
+}
+
+func flattenManagedMachineLearningDiagnosticsConfig(c *container.ManagedMachineLearningDiagnosticsConfig) []map[string]interface{} {
+	if c == nil {
+		return nil
+	}
+	return []map[string]interface{}{
+		{
+			"enabled": c.Enabled,
+		},
+	}
 }
 func expandManagedOpenTelemetryConfig(configured interface{}) *container.ManagedOpenTelemetryConfig {
 	l := configured.([]interface{})
@@ -8952,4 +9010,13 @@ func clusterAcceleratorNetworkProfileCustomizeDiff(_ context.Context, diff *sche
 	}
 
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_container_cluster",
+		ProductName: "container",
+		Type:        registry.SchemaTypeResource,
+		Schema:      ResourceContainerCluster(),
+	}.Register()
 }

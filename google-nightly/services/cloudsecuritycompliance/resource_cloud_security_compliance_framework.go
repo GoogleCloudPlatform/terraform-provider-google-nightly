@@ -132,6 +132,9 @@ func ResourceCloudSecurityComplianceFramework() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"framework_id": {
@@ -426,6 +429,8 @@ func resourceCloudSecurityComplianceFrameworkCreate(d *schema.ResourceData, meta
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating Framework %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if organizationValue, ok := d.GetOk("organization"); ok && organizationValue.(string) != "" {
@@ -446,8 +451,6 @@ func resourceCloudSecurityComplianceFrameworkCreate(d *schema.ResourceData, meta
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating Framework %q: %#v", d.Id(), res)
 
 	return resourceCloudSecurityComplianceFrameworkRead(d, meta)
 }

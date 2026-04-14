@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -72,4 +73,13 @@ func dataSourceGoogleComputeForwardingRuleRead(d *schema.ResourceData, meta inte
 	}
 
 	return nil
+}
+
+func init() {
+	registry.Schema{
+		Name:        "google_compute_forwarding_rule",
+		ProductName: "compute",
+		Type:        registry.SchemaTypeDataSource,
+		Schema:      DataSourceGoogleComputeForwardingRule(),
+	}.Register()
 }

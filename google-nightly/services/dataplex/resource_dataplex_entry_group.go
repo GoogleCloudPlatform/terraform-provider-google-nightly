@@ -137,6 +137,9 @@ func ResourceDataplexEntryGroup() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"description": {
@@ -289,6 +292,18 @@ func resourceDataplexEntryGroupCreate(d *schema.ResourceData, meta interface{}) 
 	}
 	d.SetId(id)
 
+	err = DataplexOperationWaitTime(
+		config, res, project, "Creating EntryGroup", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create EntryGroup: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating EntryGroup %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -309,18 +324,6 @@ func resourceDataplexEntryGroupCreate(d *schema.ResourceData, meta interface{}) 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = DataplexOperationWaitTime(
-		config, res, project, "Creating EntryGroup", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create EntryGroup: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating EntryGroup %q: %#v", d.Id(), res)
 
 	return resourceDataplexEntryGroupRead(d, meta)
 }

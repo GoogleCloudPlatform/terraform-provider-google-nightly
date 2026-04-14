@@ -141,6 +141,9 @@ func ResourceEdgenetworkNetwork() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -297,6 +300,18 @@ func resourceEdgenetworkNetworkCreate(d *schema.ResourceData, meta interface{}) 
 	}
 	d.SetId(id)
 
+	err = EdgenetworkOperationWaitTime(
+		config, res, project, "Creating Network", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create Network: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating Network %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
@@ -322,18 +337,6 @@ func resourceEdgenetworkNetworkCreate(d *schema.ResourceData, meta interface{}) 
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = EdgenetworkOperationWaitTime(
-		config, res, project, "Creating Network", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create Network: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating Network %q: %#v", d.Id(), res)
 
 	return resourceEdgenetworkNetworkRead(d, meta)
 }

@@ -141,6 +141,9 @@ func ResourceGkeonpremVmwareNodePool() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"config": {
@@ -527,6 +530,17 @@ func resourceGkeonpremVmwareNodePoolCreate(d *schema.ResourceData, meta interfac
 	}
 	d.SetId(id)
 
+	err = GkeonpremOperationWaitTime(
+		config, res, project, "Creating VmwareNodePool", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+
+		return fmt.Errorf("Error waiting to create VmwareNodePool: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating VmwareNodePool %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -552,17 +566,6 @@ func resourceGkeonpremVmwareNodePoolCreate(d *schema.ResourceData, meta interfac
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = GkeonpremOperationWaitTime(
-		config, res, project, "Creating VmwareNodePool", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-
-		return fmt.Errorf("Error waiting to create VmwareNodePool: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating VmwareNodePool %q: %#v", d.Id(), res)
 
 	return resourceGkeonpremVmwareNodePoolRead(d, meta)
 }

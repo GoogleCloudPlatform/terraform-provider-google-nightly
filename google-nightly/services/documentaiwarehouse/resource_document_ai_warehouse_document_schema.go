@@ -130,6 +130,9 @@ func ResourceDocumentAIWarehouseDocumentSchema() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"display_name": {
@@ -579,6 +582,8 @@ func resourceDocumentAIWarehouseDocumentSchemaCreate(d *schema.ResourceData, met
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating DocumentSchema %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -599,8 +604,6 @@ func resourceDocumentAIWarehouseDocumentSchemaCreate(d *schema.ResourceData, met
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating DocumentSchema %q: %#v", d.Id(), res)
 
 	return resourceDocumentAIWarehouseDocumentSchemaRead(d, meta)
 }

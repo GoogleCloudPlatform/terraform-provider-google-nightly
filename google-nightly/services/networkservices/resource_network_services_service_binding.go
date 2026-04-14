@@ -144,6 +144,9 @@ func ResourceNetworkServicesServiceBinding() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"name": {
@@ -277,6 +280,18 @@ func resourceNetworkServicesServiceBindingCreate(d *schema.ResourceData, meta in
 	}
 	d.SetId(id)
 
+	err = NetworkServicesOperationWaitTime(
+		config, res, project, "Creating ServiceBinding", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create ServiceBinding: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating ServiceBinding %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -292,18 +307,6 @@ func resourceNetworkServicesServiceBindingCreate(d *schema.ResourceData, meta in
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = NetworkServicesOperationWaitTime(
-		config, res, project, "Creating ServiceBinding", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-		// The resource didn't actually create
-		d.SetId("")
-		return fmt.Errorf("Error waiting to create ServiceBinding: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating ServiceBinding %q: %#v", d.Id(), res)
 
 	return resourceNetworkServicesServiceBindingRead(d, meta)
 }

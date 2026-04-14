@@ -137,6 +137,9 @@ func ResourceGkeonpremVmwareAdminCluster() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"location": {
@@ -1151,6 +1154,17 @@ func resourceGkeonpremVmwareAdminClusterCreate(d *schema.ResourceData, meta inte
 	}
 	d.SetId(id)
 
+	err = GkeonpremOperationWaitTime(
+		config, res, project, "Creating VmwareAdminCluster", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+
+		return fmt.Errorf("Error waiting to create VmwareAdminCluster: %s", err)
+	}
+
+	log.Printf("[DEBUG] Finished creating VmwareAdminCluster %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -1171,17 +1185,6 @@ func resourceGkeonpremVmwareAdminClusterCreate(d *schema.ResourceData, meta inte
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	err = GkeonpremOperationWaitTime(
-		config, res, project, "Creating VmwareAdminCluster", userAgent,
-		d.Timeout(schema.TimeoutCreate))
-
-	if err != nil {
-
-		return fmt.Errorf("Error waiting to create VmwareAdminCluster: %s", err)
-	}
-
-	log.Printf("[DEBUG] Finished creating VmwareAdminCluster %q: %#v", d.Id(), res)
 
 	return resourceGkeonpremVmwareAdminClusterRead(d, meta)
 }

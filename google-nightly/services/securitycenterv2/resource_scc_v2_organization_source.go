@@ -128,6 +128,9 @@ func ResourceSecurityCenterV2OrganizationSource() *schema.Resource {
 				}
 			},
 		},
+		ResourceBehavior: schema.ResourceBehavior{
+			MutableIdentity: true,
+		},
 
 		Schema: map[string]*schema.Schema{
 			"display_name": {
@@ -226,6 +229,8 @@ func resourceSecurityCenterV2OrganizationSourceCreate(d *schema.ResourceData, me
 	}
 	d.SetId(id)
 
+	log.Printf("[DEBUG] Finished creating OrganizationSource %q: %#v", d.Id(), res)
+
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
 		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
@@ -241,8 +246,6 @@ func resourceSecurityCenterV2OrganizationSourceCreate(d *schema.ResourceData, me
 	} else {
 		log.Printf("[DEBUG] (Create) identity not set: %s", err)
 	}
-
-	log.Printf("[DEBUG] Finished creating OrganizationSource %q: %#v", d.Id(), res)
 
 	return resourceSecurityCenterV2OrganizationSourceRead(d, meta)
 }
