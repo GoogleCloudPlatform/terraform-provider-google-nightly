@@ -672,9 +672,9 @@ var handwrittenIAMDatasources = map[string]*schema.Resource{
 }
 
 // Resources
-// Generated resources: 813
+// Generated resources: 814
 // Generated IAM resources: 378
-// Total generated resources: 1191
+// Total generated resources: 1192
 var generatedResources = map[string]*schema.Resource{
 	"google_folder_access_approval_settings":                                     registry.Resource("google_folder_access_approval_settings"),
 	"google_organization_access_approval_settings":                               registry.Resource("google_organization_access_approval_settings"),
@@ -1322,6 +1322,7 @@ var generatedResources = map[string]*schema.Resource{
 	"google_firebase_hosting_site":                                               registry.Resource("google_firebase_hosting_site"),
 	"google_firebase_hosting_version":                                            registry.Resource("google_firebase_hosting_version"),
 	"google_firebase_storage_bucket":                                             registry.Resource("google_firebase_storage_bucket"),
+	"google_firebase_storage_default_bucket":                                     registry.Resource("google_firebase_storage_default_bucket"),
 	"google_firestore_backup_schedule":                                           registry.Resource("google_firestore_backup_schedule"),
 	"google_firestore_database":                                                  registry.Resource("google_firestore_database"),
 	"google_firestore_document":                                                  registry.Resource("google_firestore_document"),
