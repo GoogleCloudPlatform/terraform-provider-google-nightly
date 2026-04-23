@@ -194,7 +194,6 @@ func Provider() *schema.Provider {
 			},
 
 			// Handwritten Products / Versioned / Atypical Entries
-			transport_tpg.CloudBillingCustomEndpointEntryKey:      transport_tpg.CloudBillingCustomEndpointEntry,
 			transport_tpg.DataflowCustomEndpointEntryKey:          transport_tpg.DataflowCustomEndpointEntry,
 			transport_tpg.IamCredentialsCustomEndpointEntryKey:    transport_tpg.IamCredentialsCustomEndpointEntry,
 			transport_tpg.ResourceManagerV3CustomEndpointEntryKey: transport_tpg.ResourceManagerV3CustomEndpointEntry,
@@ -211,6 +210,20 @@ func Provider() *schema.Provider {
 			transport_tpg.RecaptchaEnterpriseEndpointEntryKey:  transport_tpg.RecaptchaEnterpriseEndpointEntry,
 			// Tombstoned - nonfunctional. https://github.com/hashicorp/terraform-provider-google/issues/26814
 			"runtimeconfig_custom_endpoint": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ValidateFunc: transport_tpg.ValidateCustomEndpoint,
+			},
+
+			// Tombstoned - nonfunctional. https://github.com/hashicorp/terraform-provider-google/issues/27037
+			"core_billing_custom_endpoint": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ValidateFunc: transport_tpg.ValidateCustomEndpoint,
+			},
+
+			// Tombstoned - nonfunctional. https://github.com/hashicorp/terraform-provider-google/issues/27038
+			"billing_custom_endpoint": {
 				Type:         schema.TypeString,
 				Optional:     true,
 				ValidateFunc: transport_tpg.ValidateCustomEndpoint,
@@ -426,13 +439,14 @@ func ProviderConfigure(ctx context.Context, d *schema.ResourceData, p *schema.Pr
 	config.BigqueryDataTransferBasePath = d.Get("bigquery_data_transfer_custom_endpoint").(string)
 	config.BigqueryReservationBasePath = d.Get("bigquery_reservation_custom_endpoint").(string)
 	config.BigtableBasePath = d.Get("bigtable_custom_endpoint").(string)
-	config.BillingBasePath = d.Get("billing_custom_endpoint").(string)
+	config.BillingBudgetsBasePath = d.Get("billing_budgets_custom_endpoint").(string)
 	config.BinaryAuthorizationBasePath = d.Get("binary_authorization_custom_endpoint").(string)
 	config.BlockchainNodeEngineBasePath = d.Get("blockchain_node_engine_custom_endpoint").(string)
 	config.CertificateManagerBasePath = d.Get("certificate_manager_custom_endpoint").(string)
 	config.CESBasePath = d.Get("ces_custom_endpoint").(string)
 	config.ChronicleBasePath = d.Get("chronicle_custom_endpoint").(string)
 	config.CloudAssetBasePath = d.Get("cloud_asset_custom_endpoint").(string)
+	config.CloudBillingBasePath = d.Get("cloud_billing_custom_endpoint").(string)
 	config.CloudBuildBasePath = d.Get("cloud_build_custom_endpoint").(string)
 	config.Cloudbuildv2BasePath = d.Get("cloudbuildv2_custom_endpoint").(string)
 	config.ClouddeployBasePath = d.Get("clouddeploy_custom_endpoint").(string)
@@ -454,7 +468,6 @@ func ProviderConfigure(ctx context.Context, d *schema.ResourceData, p *schema.Pr
 	config.ContainerBasePath = d.Get("container_custom_endpoint").(string)
 	config.ContainerAnalysisBasePath = d.Get("container_analysis_custom_endpoint").(string)
 	config.ContainerAttachedBasePath = d.Get("container_attached_custom_endpoint").(string)
-	config.CoreBillingBasePath = d.Get("core_billing_custom_endpoint").(string)
 	config.DatabaseMigrationServiceBasePath = d.Get("database_migration_service_custom_endpoint").(string)
 	config.DataCatalogBasePath = d.Get("data_catalog_custom_endpoint").(string)
 	config.DataformBasePath = d.Get("dataform_custom_endpoint").(string)
@@ -487,6 +500,7 @@ func ProviderConfigure(ctx context.Context, d *schema.ResourceData, p *schema.Pr
 	config.FirebaseDataConnectBasePath = d.Get("firebase_data_connect_custom_endpoint").(string)
 	config.FirebaseExtensionsBasePath = d.Get("firebase_extensions_custom_endpoint").(string)
 	config.FirebaseHostingBasePath = d.Get("firebase_hosting_custom_endpoint").(string)
+	config.FirebaseRemoteConfigBasePath = d.Get("firebase_remote_config_custom_endpoint").(string)
 	config.FirebaseStorageBasePath = d.Get("firebase_storage_custom_endpoint").(string)
 	config.FirestoreBasePath = d.Get("firestore_custom_endpoint").(string)
 	config.GeminiBasePath = d.Get("gemini_custom_endpoint").(string)
@@ -577,7 +591,6 @@ func ProviderConfigure(ctx context.Context, d *schema.ResourceData, p *schema.Pr
 	config.WorkstationsBasePath = d.Get("workstations_custom_endpoint").(string)
 
 	// Handwritten Products / Versioned / Atypical Entries
-	config.CloudBillingBasePath = d.Get(transport_tpg.CloudBillingCustomEndpointEntryKey).(string)
 	config.DataflowBasePath = d.Get(transport_tpg.DataflowCustomEndpointEntryKey).(string)
 	config.IamCredentialsBasePath = d.Get(transport_tpg.IamCredentialsCustomEndpointEntryKey).(string)
 	config.ResourceManagerV3BasePath = d.Get(transport_tpg.ResourceManagerV3CustomEndpointEntryKey).(string)
