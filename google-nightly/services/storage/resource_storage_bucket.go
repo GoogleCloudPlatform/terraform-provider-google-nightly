@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
+	compute_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/verify"
@@ -2401,7 +2402,7 @@ func setStorageBucket(d *schema.ResourceData, config *transport_tpg.Config, res 
 	// from the projectNumber which is included in the bucket API response
 	if d.Get("project") == "" {
 		projectName, _ := tpgresource.GetProject(d, config)
-		proj, err := config.NewComputeClient(userAgent).Projects.Get(strconv.FormatUint(res.ProjectNumber, 10)).Do()
+		proj, err := compute_tpg.NewClient(config, userAgent).Projects.Get(strconv.FormatUint(res.ProjectNumber, 10)).Do()
 		if err != nil {
 			log.Printf("[ERROR] Missing Compute API permissions, fallback to provider/resource default")
 		}

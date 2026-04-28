@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	compute_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -98,7 +99,7 @@ func testAccCheckComputeTargetSslProxyExists(t *testing.T, n string, proxy *comp
 		config := acctest.GoogleProviderConfig(t)
 		name := rs.Primary.Attributes["name"]
 
-		found, err := config.NewComputeClient(config.UserAgent).TargetSslProxies.Get(
+		found, err := compute_tpg.NewClient(config, config.UserAgent).TargetSslProxies.Get(
 			config.Project, name).Do()
 		if err != nil {
 			return err
