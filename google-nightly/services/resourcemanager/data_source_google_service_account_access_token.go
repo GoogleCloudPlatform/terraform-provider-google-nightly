@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
+	iamcredentials_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamcredentials"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/verify"
@@ -84,7 +85,7 @@ func dataSourceGoogleServiceAccountAccessTokenRead(d *schema.ResourceData, meta 
 
 	log.Printf("[INFO] Acquire Service Account AccessToken for %s", d.Get("target_service_account").(string))
 
-	service := config.NewIamCredentialsClient(userAgent)
+	service := iamcredentials_tpg.NewClient(config, userAgent)
 
 	name := fmt.Sprintf("projects/-/serviceAccounts/%s", d.Get("target_service_account").(string))
 	tokenRequest := &iamcredentials.GenerateAccessTokenRequest{
