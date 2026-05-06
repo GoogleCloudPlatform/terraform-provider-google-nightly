@@ -28,6 +28,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/deploymentmanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iambeta"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -421,7 +422,7 @@ func testAccCheckDeploymentManagerDestroyInvalidDeployment(t *testing.T, deploym
 		}
 
 		config := acctest.GoogleProviderConfig(t)
-		url := fmt.Sprintf("%sprojects/%s/global/deployments/%s", config.DeploymentManagerBasePath, envvar.GetTestProjectFromEnv(), deploymentName)
+		url := fmt.Sprintf("%sprojects/%s/global/deployments/%s", transport_tpg.BaseUrl(deploymentmanager.Product, config), envvar.GetTestProjectFromEnv(), deploymentName)
 		_, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 			Config:    config,
 			Method:    "GET",

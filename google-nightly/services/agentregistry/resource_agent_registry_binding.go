@@ -270,7 +270,7 @@ func resourceAgentRegistryBindingCreate(d *schema.ResourceData, meta interface{}
 		obj["authProviderBinding"] = authProviderBindingProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/bindings?bindingId={{binding_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/bindings?bindingId={{binding_id}}"))
 	if err != nil {
 		return err
 	}
@@ -354,7 +354,7 @@ func resourceAgentRegistryBindingRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/bindings/{{binding_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/bindings/{{binding_id}}"))
 	if err != nil {
 		return err
 	}
@@ -490,7 +490,7 @@ func resourceAgentRegistryBindingUpdate(d *schema.ResourceData, meta interface{}
 		obj["authProviderBinding"] = authProviderBindingProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/bindings/{{binding_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/bindings/{{binding_id}}"))
 	if err != nil {
 		return err
 	}
@@ -575,8 +575,7 @@ func resourceAgentRegistryBindingDelete(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error fetching project for Binding: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/bindings/{{binding_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/bindings/{{binding_id}}"))
 	if err != nil {
 		return err
 	}

@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/osconfigv2"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = osconfigv2.Product
 )
 
 func TestAccOSConfigV2PolicyOrchestratorForFolder_osconfigv2PolicyOrchestratorForFolderBasicExample(t *testing.T) {
@@ -215,8 +217,7 @@ func testAccCheckOSConfigV2PolicyOrchestratorForFolderDestroyProducer(t *testing
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{OSConfigV2BasePath}}folders/{{folder_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(osconfigv2.Product, config), "folders/{{folder_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}"))
 			if err != nil {
 				return err
 			}

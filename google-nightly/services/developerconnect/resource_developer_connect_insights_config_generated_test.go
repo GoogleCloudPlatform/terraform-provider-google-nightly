@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/developerconnect"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = developerconnect.Product
 )
 
 func TestAccDeveloperConnectInsightsConfig_developerConnectInsightsConfigBasicExample(t *testing.T) {
@@ -408,8 +410,7 @@ func testAccCheckDeveloperConnectInsightsConfigDestroyProducer(t *testing.T) fun
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DeveloperConnectBasePath}}projects/{{project}}/locations/{{location}}/insightsConfigs/{{insights_config_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(developerconnect.Product, config), "projects/{{project}}/locations/{{location}}/insightsConfigs/{{insights_config_id}}"))
 			if err != nil {
 				return err
 			}

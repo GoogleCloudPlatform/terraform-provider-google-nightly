@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/clouddeploy"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = clouddeploy.Product
 )
 
 func TestAccClouddeployCustomTargetType_clouddeployCustomTargetTypeBasicExample(t *testing.T) {
@@ -341,8 +343,7 @@ func testAccCheckClouddeployCustomTargetTypeDestroyProducer(t *testing.T) func(s
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ClouddeployBasePath}}projects/{{project}}/locations/{{location}}/customTargetTypes/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(clouddeploy.Product, config), "projects/{{project}}/locations/{{location}}/customTargetTypes/{{name}}"))
 			if err != nil {
 				return err
 			}

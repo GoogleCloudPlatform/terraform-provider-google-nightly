@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/parametermanagerregional"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = parametermanagerregional.Product
 )
 
 func TestAccParameterManagerRegionalRegionalParameter_regionalParameterBasicExample(t *testing.T) {
@@ -253,8 +255,7 @@ func testAccCheckParameterManagerRegionalRegionalParameterDestroyProducer(t *tes
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ParameterManagerRegionalBasePath}}projects/{{project}}/locations/{{location}}/parameters/{{parameter_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(parametermanagerregional.Product, config), "projects/{{project}}/locations/{{location}}/parameters/{{parameter_id}}"))
 			if err != nil {
 				return err
 			}

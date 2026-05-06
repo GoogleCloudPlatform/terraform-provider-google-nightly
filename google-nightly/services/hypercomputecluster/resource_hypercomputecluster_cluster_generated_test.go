@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/hypercomputecluster"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = hypercomputecluster.Product
 )
 
 func TestAccHypercomputeclusterCluster_hypercomputeclusterClusterBasicExample(t *testing.T) {
@@ -160,8 +162,7 @@ func testAccCheckHypercomputeclusterClusterDestroyProducer(t *testing.T) func(s 
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{HypercomputeclusterBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(hypercomputecluster.Product, config), "projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}"))
 			if err != nil {
 				return err
 			}

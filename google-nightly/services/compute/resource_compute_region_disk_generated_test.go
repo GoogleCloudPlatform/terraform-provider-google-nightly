@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = compute.Product
 )
 
 func TestAccComputeRegionDisk_regionDiskBasicExample(t *testing.T) {
@@ -74,7 +76,7 @@ func TestAccComputeRegionDisk_regionDiskBasicExample(t *testing.T) {
 				ResourceName:            "google_compute_region_disk.regiondisk",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"erase_windows_vss_signature", "interface", "labels", "region", "snapshot", "terraform_labels", "type"},
+				ImportStateVerifyIgnore: []string{"erase_windows_vss_signature", "interface", "labels", "region", "snapshot", "source_image_encryption_key", "terraform_labels", "type"},
 			},
 			{
 				ResourceName:       "google_compute_region_disk.regiondisk",
@@ -137,7 +139,7 @@ func TestAccComputeRegionDisk_regionDiskAsyncExample(t *testing.T) {
 				ResourceName:            "google_compute_region_disk.primary",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"erase_windows_vss_signature", "interface", "labels", "region", "snapshot", "terraform_labels", "type"},
+				ImportStateVerifyIgnore: []string{"erase_windows_vss_signature", "interface", "labels", "region", "snapshot", "source_image_encryption_key", "terraform_labels", "type"},
 			},
 			{
 				ResourceName:       "google_compute_region_disk.primary",
@@ -197,7 +199,7 @@ func TestAccComputeRegionDisk_regionDiskFeaturesExample(t *testing.T) {
 				ResourceName:            "google_compute_region_disk.regiondisk",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"erase_windows_vss_signature", "interface", "labels", "region", "snapshot", "terraform_labels", "type"},
+				ImportStateVerifyIgnore: []string{"erase_windows_vss_signature", "interface", "labels", "region", "snapshot", "source_image_encryption_key", "terraform_labels", "type"},
 			},
 			{
 				ResourceName:       "google_compute_region_disk.regiondisk",
@@ -258,7 +260,7 @@ func TestAccComputeRegionDisk_regionDiskHyperdiskBalancedHaWriteManyExample(t *t
 				ResourceName:            "google_compute_region_disk.primary",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"erase_windows_vss_signature", "interface", "labels", "region", "snapshot", "terraform_labels", "type"},
+				ImportStateVerifyIgnore: []string{"erase_windows_vss_signature", "interface", "labels", "region", "snapshot", "source_image_encryption_key", "terraform_labels", "type"},
 			},
 			{
 				ResourceName:       "google_compute_region_disk.primary",
@@ -293,8 +295,7 @@ func testAccCheckComputeRegionDiskDestroyProducer(t *testing.T) func(s *terrafor
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/disks/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(compute.Product, config), "projects/{{project}}/regions/{{region}}/disks/{{name}}"))
 			if err != nil {
 				return err
 			}
