@@ -32,6 +32,12 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 )
 
+import (
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+)
+
+var _ = kms.Product
+
 var (
 	_ = fmt.Sprintf
 	_ = strings.Trim

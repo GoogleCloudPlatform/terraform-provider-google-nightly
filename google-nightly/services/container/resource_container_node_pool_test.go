@@ -28,6 +28,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/container"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 )
 
@@ -5567,7 +5568,7 @@ func TestAccContainerNodePool_withConfidentialBootDisk(t *testing.T) {
 
 	cluster := fmt.Sprintf("tf-test-cluster-%s", acctest.RandString(t, 10))
 	np := fmt.Sprintf("tf-test-np-%s", acctest.RandString(t, 10))
-	kms := acctest.BootstrapKMSKeyInLocation(t, "us-central1")
+	bootstrapped := kms.BootstrapKMSKeyInLocation(t, "us-central1")
 	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "gke-cluster")
 	subnetworkName := tpgcompute.BootstrapSubnet(t, "gke-cluster", networkName)
 
@@ -5584,7 +5585,7 @@ func TestAccContainerNodePool_withConfidentialBootDisk(t *testing.T) {
 		CheckDestroy:             testAccCheckContainerClusterDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccContainerNodePool_withConfidentialBootDisk(cluster, np, kms.CryptoKey.Name, networkName, subnetworkName),
+				Config: testAccContainerNodePool_withConfidentialBootDisk(cluster, np, bootstrapped.CryptoKey.Name, networkName, subnetworkName),
 			},
 			{
 				ResourceName:      "google_container_node_pool.with_confidential_boot_disk",
@@ -6027,6 +6028,9 @@ resource "google_container_node_pool" "np" {
 
 func TestAccContainerNodePool_writableCgroups(t *testing.T) {
 	t.Parallel()
+	// TODO(chrishenzie): Convert this to a negative test (expecting failure)
+	// once the API behavior change is fully rolled out.
+	t.Skip("Skipping due to API behavior change blocking writable cgroups modifications on node pools")
 
 	cluster := fmt.Sprintf("tf-test-cluster-%s", acctest.RandString(t, 10))
 	nodepool := fmt.Sprintf("tf-test-nodepool-%s", acctest.RandString(t, 10))
