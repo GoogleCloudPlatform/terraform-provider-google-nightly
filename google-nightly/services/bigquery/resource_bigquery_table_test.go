@@ -27,7 +27,14 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigqueryconnection"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquerydatapolicy"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigtable"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/datacatalog"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 )
 
 func TestAccBigQueryTable_Basic(t *testing.T) {

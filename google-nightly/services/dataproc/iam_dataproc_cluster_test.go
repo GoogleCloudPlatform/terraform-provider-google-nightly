@@ -24,6 +24,8 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataproc"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 )
 
 func TestAccDataprocClusterIamBinding(t *testing.T) {

@@ -32,10 +32,13 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/container"
 	dataproc_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataproc"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataprocmetastore"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 

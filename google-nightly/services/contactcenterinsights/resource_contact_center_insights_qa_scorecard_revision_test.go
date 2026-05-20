@@ -21,6 +21,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/contactcenterinsights"
 )
 
 func TestAccContactCenterInsightsQaScorecardRevision_qaScorecardRevisionOptional(t *testing.T) {

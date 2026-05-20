@@ -31,6 +31,10 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/apigee"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 

@@ -23,6 +23,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebase"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebaseappcheck"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebasedatabase"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 )
 
 func TestAccFirebaseAppCheckServiceConfig_firebaseAppCheckServiceConfigUpdate(t *testing.T) {

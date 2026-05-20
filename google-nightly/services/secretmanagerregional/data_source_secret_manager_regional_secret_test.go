@@ -22,6 +22,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanagerregional"
 )
 
 func TestAccDataSourceSecretManagerRegionalRegionalSecret_basic(t *testing.T) {

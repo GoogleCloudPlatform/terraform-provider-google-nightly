@@ -22,6 +22,9 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudbuild"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )

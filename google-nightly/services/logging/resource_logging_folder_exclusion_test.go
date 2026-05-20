@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/logging"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 )
 
 // Logging exclusions don't always work when making parallel requests, so run tests serially

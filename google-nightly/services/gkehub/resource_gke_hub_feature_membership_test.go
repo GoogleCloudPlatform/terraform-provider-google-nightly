@@ -27,7 +27,11 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/container"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/gkehub"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/gkehub2"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	dcl "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgdclresource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"

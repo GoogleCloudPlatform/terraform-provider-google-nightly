@@ -22,6 +22,8 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/container"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/gkebackup"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )

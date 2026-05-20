@@ -22,8 +22,10 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vertexai"
 )
 
 func TestAccVertexAIEndpoint_vertexAiEndpointNetwork(t *testing.T) {

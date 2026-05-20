@@ -23,7 +23,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/binaryauthorization"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudfunctions2"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 )
 
 func TestAccCloudFunctions2Function_update(t *testing.T) {

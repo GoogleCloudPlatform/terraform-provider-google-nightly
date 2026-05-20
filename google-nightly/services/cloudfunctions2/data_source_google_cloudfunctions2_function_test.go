@@ -22,6 +22,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudfunctions2"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 )
 
 func TestAccDataSourceGoogleCloudFunctions2Function_basic(t *testing.T) {

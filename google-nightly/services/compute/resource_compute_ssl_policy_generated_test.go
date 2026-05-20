@@ -109,6 +109,50 @@ resource "google_compute_ssl_policy" "custom-ssl-policy" {
 `, context)
 }
 
+func TestAccComputeSslPolicy_sslPolicyPostQuantumExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"post_quantum_ssl_policy_name": "tf-test-post-quantum-ssl-policy" + randomSuffix,
+		"random_suffix":                randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckComputeSslPolicyDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeSslPolicy_sslPolicyPostQuantumExample(context),
+			},
+			{
+				ResourceName:      "google_compute_ssl_policy.post-quantum-ssl-policy",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				ResourceName:       "google_compute_ssl_policy.post-quantum-ssl-policy",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccComputeSslPolicy_sslPolicyPostQuantumExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_compute_ssl_policy" "post-quantum-ssl-policy" {
+  name                         = "%{post_quantum_ssl_policy_name}"
+  profile                      = "MODERN"
+  min_tls_version              = "TLS_1_2"
+  post_quantum_key_exchange    = "ENABLED"
+}
+`, context)
+}
+
 func testAccCheckComputeSslPolicyDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {

@@ -24,6 +24,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/chronicle"
 )
 
 // TestAccChronicleNativeDashboard_chronicleNativedashboardUpdateExample tests updating a Native Dashboard and the layout/filter association of an existing Chart within it.

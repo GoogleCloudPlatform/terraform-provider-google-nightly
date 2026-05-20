@@ -27,6 +27,11 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudrunv2"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkservices"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vpcaccess"
 )
 
 func TestAccCloudRunV2WorkerPool_vpcAccess_basic(t *testing.T) {

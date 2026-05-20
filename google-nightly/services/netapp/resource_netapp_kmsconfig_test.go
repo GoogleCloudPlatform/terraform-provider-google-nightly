@@ -23,6 +23,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/netapp"
 )
 
 func TestAccNetappkmsconfig_kmsConfigCreateExample_Update(t *testing.T) {

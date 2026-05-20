@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workstations"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 )
 

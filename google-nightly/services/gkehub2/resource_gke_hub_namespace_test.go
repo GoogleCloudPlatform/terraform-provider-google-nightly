@@ -23,6 +23,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/gkehub2"
 )
 
 func TestAccGKEHub2Namespace_gkehubNamespaceBasicExample_update(t *testing.T) {

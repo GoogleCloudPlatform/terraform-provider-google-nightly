@@ -26,6 +26,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/composer"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 )
 
 func TestAccComposerUserWorkloadsConfigMap_composerUserWorkloadsConfigMapBasicExample_update(t *testing.T) {

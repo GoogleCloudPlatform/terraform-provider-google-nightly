@@ -26,6 +26,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudbuild"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/config"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"google.golang.org/api/googleapi"
 )

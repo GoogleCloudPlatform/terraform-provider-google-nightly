@@ -24,6 +24,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iambeta"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 )
 
 func TestAccEphemeralServiceAccountKey_create(t *testing.T) {
@@ -34,7 +35,7 @@ func TestAccEphemeralServiceAccountKey_create(t *testing.T) {
 	project := envvar.GetTestProjectFromEnv()
 	expectedServiceAccountEmail := fmt.Sprintf("%s@%s.iam.gserviceaccount.com", accountID, project)
 
-	resource.Test(t, resource.TestCase{
+	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
 		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories(t),
@@ -86,7 +87,7 @@ func TestAccEphemeralServiceAccountKey_upload(t *testing.T) {
 	project := envvar.GetTestProjectFromEnv()
 	expectedServiceAccountEmail := fmt.Sprintf("%s@%s.iam.gserviceaccount.com", accountID, project)
 
-	resource.Test(t, resource.TestCase{
+	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
 		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories(t),
@@ -145,7 +146,7 @@ func TestAccEphemeralServiceAccountKey_fetch(t *testing.T) {
 
 	serviceAccount := envvar.GetTestServiceAccountFromEnv(t)
 	targetServiceAccountEmail := iambeta.BootstrapServiceAccount(t, "key-basic", serviceAccount)
-	resource.Test(t, resource.TestCase{
+	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
 		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		ProtoV6ProviderFactories: acctest.ProtoV6ProviderFactories(t),

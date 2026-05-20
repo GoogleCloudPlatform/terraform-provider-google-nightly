@@ -35,6 +35,7 @@ import (
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	"github.com/stretchr/testify/assert"
 

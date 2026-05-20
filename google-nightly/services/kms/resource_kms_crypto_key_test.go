@@ -24,6 +24,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"

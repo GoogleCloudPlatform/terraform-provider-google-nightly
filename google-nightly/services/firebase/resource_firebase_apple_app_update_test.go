@@ -19,6 +19,8 @@ package firebase_test
 import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/apikeys"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebase"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"

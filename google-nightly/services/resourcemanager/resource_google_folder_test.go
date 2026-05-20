@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanagerv3"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 

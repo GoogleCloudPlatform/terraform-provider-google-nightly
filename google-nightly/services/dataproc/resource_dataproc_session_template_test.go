@@ -24,8 +24,11 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataproc"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataprocmetastore"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 )
 
 func TestAccDataprocSessionTemplate_update(t *testing.T) {

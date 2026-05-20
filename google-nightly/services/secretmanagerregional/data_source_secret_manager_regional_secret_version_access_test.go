@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanagerregional"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )

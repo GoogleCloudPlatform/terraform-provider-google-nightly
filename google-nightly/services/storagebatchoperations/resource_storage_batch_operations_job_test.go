@@ -23,6 +23,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storagebatchoperations"
 )
 
 func TestAccStorageBatchOperationsJobs_createJobWithPrefix(t *testing.T) {

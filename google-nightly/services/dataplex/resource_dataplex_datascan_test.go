@@ -24,6 +24,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataplex"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 )
 
 func TestAccDataplexDatascanDataplexDatascanFullQuality_update(t *testing.T) {

@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/certificatemanager"
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"

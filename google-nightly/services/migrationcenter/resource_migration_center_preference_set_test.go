@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/migrationcenter"
 )
 
 func TestAccMigrationCenterPreferenceSet_preferenceSetUpdate(t *testing.T) {

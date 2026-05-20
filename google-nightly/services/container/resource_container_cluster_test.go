@@ -28,10 +28,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/container"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/privateca"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 	cloudkms "google.golang.org/api/cloudkms/v1"
 )
 
@@ -300,6 +305,66 @@ func TestAccContainerCluster_withAddons(t *testing.T) {
 			},
 		},
 	})
+}
+
+func TestAccContainerCluster_agentSandbox(t *testing.T) {
+	t.Parallel()
+
+	clusterName := fmt.Sprintf("tf-test-cluster-%s", acctest.RandString(t, 10))
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "gke-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "gke-cluster", networkName)
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckContainerClusterDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccContainerCluster_agentSandbox(clusterName, networkName, subnetworkName, true),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("google_container_cluster.primary", "addons_config.0.agent_sandbox_config.0.enabled", "true"),
+				),
+			},
+			{
+				ResourceName:            "google_container_cluster.primary",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"deletion_protection"},
+			},
+			{
+				Config: testAccContainerCluster_agentSandbox(clusterName, networkName, subnetworkName, false),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr("google_container_cluster.primary", "addons_config.0.agent_sandbox_config.0.enabled", "false"),
+				),
+			},
+			{
+				ResourceName:            "google_container_cluster.primary",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"deletion_protection"},
+			},
+		},
+	})
+}
+
+func testAccContainerCluster_agentSandbox(clusterName, networkName, subnetworkName string, enabled bool) string {
+	return fmt.Sprintf(`
+resource "google_container_cluster" "primary" {
+  name               = "%s"
+  location           = "us-central1-a"
+  initial_node_count = 1
+  network            = "%s"
+  subnetwork         = "%s"
+
+  addons_config {
+    agent_sandbox_config {
+      enabled = %t
+    }
+  }
+
+  deletion_protection = false
+}
+`, clusterName, networkName, subnetworkName, enabled)
 }
 
 func TestAccContainerCluster_withDeletionProtection(t *testing.T) {

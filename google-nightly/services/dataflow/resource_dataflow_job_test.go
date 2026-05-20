@@ -34,6 +34,9 @@ import (
 	dataflowapi "google.golang.org/api/dataflow/v1b3"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 
 	compute "google.golang.org/api/compute/v0.beta"

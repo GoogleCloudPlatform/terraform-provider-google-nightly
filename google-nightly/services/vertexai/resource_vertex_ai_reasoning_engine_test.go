@@ -25,6 +25,9 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vertexai"
 )
 
 func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineUpdate(t *testing.T) {

@@ -23,6 +23,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/chronicle"
 )
 
 func TestAccChronicleDataAccessScope_chronicleDataaccessscopeBasicExample_update(t *testing.T) {

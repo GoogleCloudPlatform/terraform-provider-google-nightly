@@ -23,6 +23,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networksecurity"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 )
 
 func TestAccComputeFirewallPolicyWithRules_update(t *testing.T) {

@@ -30,7 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dialogflowcx"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/discoveryengine"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/integrationconnectors"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 

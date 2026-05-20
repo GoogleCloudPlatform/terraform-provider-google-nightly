@@ -24,7 +24,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
 	logging_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/logging"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"

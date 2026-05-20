@@ -25,9 +25,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/artifactregistry"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudbuild"
 	tpgcloudfunctions "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudfunctions"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vpcaccess"
 	"google.golang.org/api/cloudfunctions/v1"
 )
 

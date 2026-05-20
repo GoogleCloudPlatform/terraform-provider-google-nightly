@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/netapp"
 )
 
 func TestAccNetappHostGroup_HostGroupCreateExample_Update(t *testing.T) {
