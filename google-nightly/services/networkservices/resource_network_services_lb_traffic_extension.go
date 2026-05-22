@@ -408,7 +408,7 @@ func resourceNetworkServicesLbTrafficExtensionCreate(d *schema.ResourceData, met
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/lbTrafficExtensions?lbTrafficExtensionId={{name}}"))
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/lbTrafficExtensions?lbTrafficExtensionId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -492,7 +492,7 @@ func resourceNetworkServicesLbTrafficExtensionRead(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/lbTrafficExtensions/{{name}}"))
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/lbTrafficExtensions/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -654,7 +654,7 @@ func resourceNetworkServicesLbTrafficExtensionUpdate(d *schema.ResourceData, met
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/lbTrafficExtensions/{{name}}"))
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/lbTrafficExtensions/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -746,7 +746,7 @@ func resourceNetworkServicesLbTrafficExtensionDelete(d *schema.ResourceData, met
 		return fmt.Errorf("Error fetching project for LbTrafficExtension: %s", err)
 	}
 	billingProject = project
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/lbTrafficExtensions/{{name}}"))
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/lbTrafficExtensions/{{name}}")
 	if err != nil {
 		return err
 	}

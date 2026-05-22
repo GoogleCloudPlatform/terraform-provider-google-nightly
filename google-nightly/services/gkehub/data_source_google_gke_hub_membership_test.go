@@ -27,7 +27,8 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/container"
-	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/gkehub"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/gkehub"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/gkehub2"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -135,7 +136,7 @@ func testAccCheckGoogleGkeHubMembershipDestroyProducer(t *testing.T) func(s *ter
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{GKEHub2BasePath}}projects/{{project}}/locations/{{location}}/memberships/{{membership_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(gkehub.Product, config)+"projects/{{project}}/locations/{{location}}/memberships/{{membership_id}}")
 			if err != nil {
 				return fmt.Errorf("Error constructing URL for GKE Hub Membership: %s", err)
 			}

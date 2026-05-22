@@ -26,7 +26,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
-	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/securitycenter"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/securitycenter"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -121,7 +121,7 @@ func testAccSecurityCenterEventThreatDetectionCustomModuleDestroyProducer(t *tes
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{SecurityCenterBasePath}}organizations/{{organization}}/eventThreatDetectionSettings/customModules/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(securitycenter.Product, config)+"organizations/{{organization}}/eventThreatDetectionSettings/customModules/{{name}}")
 			if err != nil {
 				return err
 			}

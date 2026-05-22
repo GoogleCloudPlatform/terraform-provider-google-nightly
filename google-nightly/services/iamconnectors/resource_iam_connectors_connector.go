@@ -396,7 +396,7 @@ func resourceIamConnectorsConnectorCreate(d *schema.ResourceData, meta interface
 		obj["expireTime"] = expireTimeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/connectors?connectorId={{connector_id}}"))
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectors?connectorId={{connector_id}}")
 	if err != nil {
 		return err
 	}
@@ -472,7 +472,7 @@ func resourceIamConnectorsConnectorPollRead(d *schema.ResourceData, meta interfa
 	return func() (map[string]interface{}, error) {
 		config := meta.(*transport_tpg.Config)
 
-		url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}"))
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}")
 		if err != nil {
 			return nil, err
 		}
@@ -516,7 +516,7 @@ func resourceIamConnectorsConnectorRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}"))
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}")
 	if err != nil {
 		return err
 	}
@@ -690,7 +690,7 @@ func resourceIamConnectorsConnectorUpdate(d *schema.ResourceData, meta interface
 		obj["expireTime"] = expireTimeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}"))
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}")
 	if err != nil {
 		return err
 	}
@@ -783,7 +783,7 @@ func resourceIamConnectorsConnectorDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for Connector: %s", err)
 	}
 	billingProject = project
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(Product, config), "projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}"))
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectors/{{connector_id}}")
 	if err != nil {
 		return err
 	}

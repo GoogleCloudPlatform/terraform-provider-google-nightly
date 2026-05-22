@@ -33,6 +33,7 @@ import (
 	"google.golang.org/api/iam/v1"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iambeta"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -120,7 +121,7 @@ func ListServiceAccounts(config *transport_tpg.Config, project string, callback 
 			return fmt.Errorf("error setting project on temporary resource data: %w", err)
 		}
 	}
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAMBetaBasePath}}projects/{{project}}/serviceAccounts")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(iambeta.Product, config)+"projects/{{project}}/serviceAccounts")
 	if err != nil {
 		return err
 	}
