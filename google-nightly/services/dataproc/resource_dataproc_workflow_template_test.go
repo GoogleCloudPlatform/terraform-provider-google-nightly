@@ -25,6 +25,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataproc"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -98,7 +100,7 @@ func TestAccDataprocWorkflowTemplate_encryptionConfig(t *testing.T) {
 		"random_suffix": acctest.RandString(t, 10),
 		"project":       envvar.GetTestProjectFromEnv(),
 		"version":       "2.0.35-debian10",
-		"kms_key_name":  acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-dataproc-workflow").CryptoKey.Name,
+		"kms_key_name":  kms.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-dataproc-workflow").CryptoKey.Name,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{

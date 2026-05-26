@@ -115,6 +115,7 @@ func ResourceChronicleDashboardChart() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -1447,6 +1448,18 @@ func ResourceChronicleDashboardChart() *schema.Resource {
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1479,7 +1492,7 @@ func resourceChronicleDashboardChartCreate(d *schema.ResourceData, meta interfac
 		obj["dashboardChart"] = dashboardChartProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}{{native_dashboard}}:addChart")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{native_dashboard}}:addChart")
 	if err != nil {
 		return err
 	}
@@ -1564,7 +1577,7 @@ func resourceChronicleDashboardChartRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/dashboardCharts/{{chart_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/dashboardCharts/{{chart_id}}")
 	if err != nil {
 		return err
 	}
@@ -1609,18 +1622,26 @@ func resourceChronicleDashboardChartRead(d *schema.ResourceData, meta interface{
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DashboardChart: %s", err)
 	}
 
-	if err := d.Set("name", flattenChronicleDashboardChartName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DashboardChart: %s", err)
-	}
-	if err := d.Set("chart_id", flattenChronicleDashboardChartChartId(res["chartId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DashboardChart: %s", err)
-	}
-	if err := d.Set("dashboard_chart", flattenChronicleDashboardChartDashboardChart(res["dashboardChart"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DashboardChart: %s", err)
+	err = ResourceChronicleDashboardChartFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1657,6 +1678,19 @@ func resourceChronicleDashboardChartRead(d *schema.ResourceData, meta interface{
 }
 
 func resourceChronicleDashboardChartUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceChronicleDashboardChart().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceChronicleDashboardChartRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1721,7 +1755,7 @@ func resourceChronicleDashboardChartUpdate(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}{{native_dashboard}}:editChart")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{native_dashboard}}:editChart")
 	if err != nil {
 		return err
 	}
@@ -1745,7 +1779,7 @@ func resourceChronicleDashboardChartUpdate(d *schema.ResourceData, meta interfac
 	}
 
 	// 2. URL Formatting
-	baseUrl, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}")
+	baseUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config))
 	if err != nil {
 		return err
 	}
@@ -1800,6 +1834,13 @@ func resourceChronicleDashboardChartUpdate(d *schema.ResourceData, meta interfac
 }
 
 func resourceChronicleDashboardChartDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ChronicleDashboardChart without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DashboardChart %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1813,8 +1854,7 @@ func resourceChronicleDashboardChartDelete(d *schema.ResourceData, meta interfac
 		return fmt.Errorf("Error fetching project for DashboardChart: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}{{native_dashboard}}:removeChart")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{native_dashboard}}:removeChart")
 	if err != nil {
 		return err
 	}
@@ -6360,5 +6400,21 @@ func resourceChronicleDashboardChartPostCreateSetComputedFields(d *schema.Resour
 	if err := d.Set("chart_id", flattenChronicleDashboardChartChartId(res["chartId"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "chart_id": %s`, err)
 	}
+	return nil
+}
+
+func ResourceChronicleDashboardChartFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenChronicleDashboardChartName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DashboardChart: %s", err)
+	}
+	if err = d.Set("chart_id", flattenChronicleDashboardChartChartId(res["chartId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DashboardChart: %s", err)
+	}
+	if err = d.Set("dashboard_chart", flattenChronicleDashboardChartDashboardChart(res["dashboardChart"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DashboardChart: %s", err)
+	}
+
 	return nil
 }

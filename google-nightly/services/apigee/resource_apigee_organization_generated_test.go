@@ -30,6 +30,11 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/apigee"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +53,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = apigee.Product
 )
 
 func TestAccApigeeOrganization_apigeeOrganizationCloudBasicTestExample(t *testing.T) {
@@ -148,6 +154,10 @@ resource "google_service_networking_connection" "apigee_vpc_connection" {
   depends_on              = [google_project_service.servicenetworking]
 }
 
+resource "time_sleep" "wait_after_destroy" {
+  destroy_duration = "150s"
+}
+
 resource "google_apigee_organization" "org" {
   analytics_region   = "us-central1"
   project_id         = google_project.project.project_id
@@ -155,12 +165,8 @@ resource "google_apigee_organization" "org" {
   depends_on         = [
     google_service_networking_connection.apigee_vpc_connection,
     google_project_service.apigee,
+    time_sleep.wait_after_destroy,
   ]
-}
-
-resource "time_sleep" "wait_after_destroy" {
-  destroy_duration = "150s"
-  depends_on = [google_apigee_organization.org]
 }
 `, context)
 }
@@ -223,6 +229,9 @@ resource "time_sleep" "wait_300_seconds" {
   depends_on = [google_project_service.apigee]
 }
 
+resource "time_sleep" "wait_after_destroy" {
+  destroy_duration = "150s"
+}
 
 resource "google_apigee_organization" "org" {
   description         = "Terraform-provisioned basic Apigee Org without VPC Peering."
@@ -231,12 +240,8 @@ resource "google_apigee_organization" "org" {
   disable_vpc_peering = true
   depends_on          = [
     time_sleep.wait_300_seconds,
+    time_sleep.wait_after_destroy,
   ]
-}
-
-resource "time_sleep" "wait_after_destroy" {
-  destroy_duration = "150s"
-  depends_on = [google_apigee_organization.org]
 }
 `, context)
 }
@@ -281,6 +286,8 @@ func TestAccApigeeOrganization_apigeeOrganizationCloudBasicDataResidencyTestExam
 
 func testAccApigeeOrganization_apigeeOrganizationCloudBasicDataResidencyTestExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
+// For advanced data residency customers: To ensure advanced data residency compliance for data
+// in transit, you must use the appropriate regional endpoint for the 'apigee_custom_endpoint'.
 provider "google" {
   apigee_custom_endpoint = "https://eu-apigee.googleapis.com/v1/"
 }
@@ -303,6 +310,10 @@ resource "time_sleep" "wait_300_seconds" {
   depends_on = [google_project_service.apigee]
 }
 
+resource "time_sleep" "wait_after_destroy" {
+  destroy_duration = "150s"
+}
+
 resource "google_apigee_organization" "org" {
   description                = "Terraform-provisioned basic Apigee Org under European Union hosting jurisdiction."
   project_id                 = google_project.project.project_id
@@ -311,12 +322,8 @@ resource "google_apigee_organization" "org" {
   disable_vpc_peering        = true
   depends_on                 = [
     time_sleep.wait_300_seconds,
+    time_sleep.wait_after_destroy,
   ]
-}
-
-resource "time_sleep" "wait_after_destroy" {
-  destroy_duration = "150s"
-  depends_on = [google_apigee_organization.org]
 }
 `, context)
 }
@@ -478,6 +485,10 @@ resource "time_sleep" "wait_for_iam" {
   depends_on = [google_kms_crypto_key_iam_member.apigee_sa_keyuser]
 }
 
+resource "time_sleep" "wait_after_destroy" {
+  destroy_duration = "150s"
+}
+
 resource "google_apigee_organization" "org" {
   provider = google-beta
 
@@ -502,12 +513,8 @@ resource "google_apigee_organization" "org" {
   depends_on = [
     google_service_networking_connection.apigee_vpc_connection,
     time_sleep.wait_for_iam,
+    time_sleep.wait_after_destroy,
   ]
-}
-
-resource "time_sleep" "wait_after_destroy" {
-  destroy_duration = "150s"
-  depends_on = [google_apigee_organization.org]
 }
 `, context)
 }
@@ -633,6 +640,10 @@ resource "time_sleep" "wait_for_iam" {
   depends_on = [google_kms_crypto_key_iam_member.apigee_sa_keyuser]
 }
 
+resource "time_sleep" "wait_after_destroy" {
+  destroy_duration = "150s"
+}
+
 resource "google_apigee_organization" "org" {
   provider = google-beta
 
@@ -656,12 +667,8 @@ resource "google_apigee_organization" "org" {
 
   depends_on = [
     time_sleep.wait_for_iam,
+    time_sleep.wait_after_destroy,
   ]
-}
-
-resource "time_sleep" "wait_after_destroy" {
-  destroy_duration = "150s"
-  depends_on = [google_apigee_organization.org]
 }
 `, context)
 }
@@ -823,6 +830,10 @@ resource "time_sleep" "wait_for_iam" {
   depends_on = [google_kms_crypto_key_iam_member.apigee_sa_keyuser]
 }
 
+resource "time_sleep" "wait_after_destroy" {
+  destroy_duration = "150s"
+}
+
 resource "google_apigee_organization" "org" {
   provider = google-beta
 
@@ -837,12 +848,8 @@ resource "google_apigee_organization" "org" {
     google_service_networking_connection.apigee_vpc_connection,
     google_project_service.apigee,
     time_sleep.wait_for_iam,
+    time_sleep.wait_after_destroy,
   ]
-}
-
-resource "time_sleep" "wait_after_destroy" {
-  destroy_duration = "150s"
-  depends_on = [google_apigee_organization.org]
 }
 `, context)
 }
@@ -1008,6 +1015,10 @@ resource "time_sleep" "wait_for_iam" {
   depends_on = [google_kms_crypto_key_iam_member.apigee_sa_keyuser]
 }
 
+resource "time_sleep" "wait_after_destroy" {
+  destroy_duration = "150s"
+}
+
 resource "google_apigee_organization" "org" {
   provider = google-beta
 
@@ -1023,12 +1034,8 @@ resource "google_apigee_organization" "org" {
     google_service_networking_connection.apigee_vpc_connection,
     google_project_service.apigee,
     time_sleep.wait_for_iam,
+    time_sleep.wait_after_destroy,
   ]
-}
-
-resource "time_sleep" "wait_after_destroy" {
-  destroy_duration = "150s"
-  depends_on = [google_apigee_organization.org]
 }
 `, context)
 }
@@ -1044,8 +1051,7 @@ func testAccCheckApigeeOrganizationDestroyProducer(t *testing.T) func(s *terrafo
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ApigeeBasePath}}organizations/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(apigee.Product, config)+"organizations/{{name}}")
 			if err != nil {
 				return err
 			}

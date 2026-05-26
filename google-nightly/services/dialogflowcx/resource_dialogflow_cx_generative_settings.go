@@ -311,7 +311,7 @@ func resourceDialogflowCXGenerativeSettingsCreate(d *schema.ResourceData, meta i
 		obj["llmModelSettings"] = llmModelSettingsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}{{parent}}/generativeSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/generativeSettings")
 	if err != nil {
 		return err
 	}
@@ -403,7 +403,7 @@ func resourceDialogflowCXGenerativeSettingsRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}{{parent}}/generativeSettings?languageCode={{language_code}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/generativeSettings?languageCode={{language_code}}")
 	if err != nil {
 		return err
 	}
@@ -450,29 +450,16 @@ func resourceDialogflowCXGenerativeSettingsRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading DialogflowCXGenerativeSettings %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenDialogflowCXGenerativeSettingsName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
-	}
-	if err := d.Set("fallback_settings", flattenDialogflowCXGenerativeSettingsFallbackSettings(res["fallbackSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
-	}
-	if err := d.Set("generative_safety_settings", flattenDialogflowCXGenerativeSettingsGenerativeSafetySettings(res["generativeSafetySettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
-	}
-	if err := d.Set("knowledge_connector_settings", flattenDialogflowCXGenerativeSettingsKnowledgeConnectorSettings(res["knowledgeConnectorSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
-	}
-	if err := d.Set("language_code", flattenDialogflowCXGenerativeSettingsLanguageCode(res["languageCode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
-	}
-	if err := d.Set("llm_model_settings", flattenDialogflowCXGenerativeSettingsLlmModelSettings(res["llmModelSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
+	err = ResourceDialogflowCXGenerativeSettingsFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceDialogflowCXGenerativeSettingsUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -513,7 +500,7 @@ func resourceDialogflowCXGenerativeSettingsUpdate(d *schema.ResourceData, meta i
 		obj["llmModelSettings"] = llmModelSettingsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}{{parent}}/generativeSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/generativeSettings")
 	if err != nil {
 		return err
 	}
@@ -1065,4 +1052,29 @@ func expandDialogflowCXGenerativeSettingsLlmModelSettingsModel(v interface{}, d 
 
 func expandDialogflowCXGenerativeSettingsLlmModelSettingsPromptText(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceDialogflowCXGenerativeSettingsFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDialogflowCXGenerativeSettingsName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
+	}
+	if err = d.Set("fallback_settings", flattenDialogflowCXGenerativeSettingsFallbackSettings(res["fallbackSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
+	}
+	if err = d.Set("generative_safety_settings", flattenDialogflowCXGenerativeSettingsGenerativeSafetySettings(res["generativeSafetySettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
+	}
+	if err = d.Set("knowledge_connector_settings", flattenDialogflowCXGenerativeSettingsKnowledgeConnectorSettings(res["knowledgeConnectorSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
+	}
+	if err = d.Set("language_code", flattenDialogflowCXGenerativeSettingsLanguageCode(res["languageCode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
+	}
+	if err = d.Set("llm_model_settings", flattenDialogflowCXGenerativeSettingsLlmModelSettings(res["llmModelSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GenerativeSettings: %s", err)
+	}
+
+	return nil
 }

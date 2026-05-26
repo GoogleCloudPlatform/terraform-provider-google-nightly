@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
+	rmClient "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager/client"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"google.golang.org/api/cloudresourcemanager/v1"
@@ -45,6 +47,10 @@ func ResourceGoogleProjectOrganizationPolicy() *schema.Resource {
 			Delete: schema.DefaultTimeout(4 * time.Minute),
 		},
 
+		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
+		),
+
 		Schema: tpgresource.MergeSchemas(
 			schemaOrganizationPolicy,
 			map[string]*schema.Schema{
@@ -54,6 +60,9 @@ func ResourceGoogleProjectOrganizationPolicy() *schema.Resource {
 					ForceNew:    true,
 					Description: `The project ID.`,
 				},
+				//UDP schema start
+				"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+				//UDP schema end
 			},
 		),
 		UseJSONNumber: true,
@@ -104,7 +113,7 @@ func resourceGoogleProjectOrganizationPolicyRead(d *schema.ResourceData, meta in
 	var policy *cloudresourcemanager.OrgPolicy
 	err = transport_tpg.Retry(transport_tpg.RetryOptions{
 		RetryFunc: func() (readErr error) {
-			policy, readErr = config.NewResourceManagerClient(userAgent).Projects.GetOrgPolicy(project, &cloudresourcemanager.GetOrgPolicyRequest{
+			policy, readErr = rmClient.NewClient(config, userAgent).Projects.GetOrgPolicy(project, &cloudresourcemanager.GetOrgPolicyRequest{
 				Constraint: CanonicalOrgPolicyConstraint(d.Get("constraint").(string)),
 			}).Do()
 			return readErr
@@ -137,10 +146,19 @@ func resourceGoogleProjectOrganizationPolicyRead(d *schema.ResourceData, meta in
 		return fmt.Errorf("Error setting update_time: %s", err)
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func resourceGoogleProjectOrganizationPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+
+	if tpgresource.DeletionPolicyPreUpdate(d, ResourceGoogleProjectOrganizationPolicy) {
+		return ResourceGoogleProjectOrganizationPolicy().Read(d, meta)
+	}
+
 	if isOrganizationPolicyUnset(d) {
 		return resourceGoogleProjectOrganizationPolicyDelete(d, meta)
 	}
@@ -153,6 +171,13 @@ func resourceGoogleProjectOrganizationPolicyUpdate(d *schema.ResourceData, meta 
 }
 
 func resourceGoogleProjectOrganizationPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -162,7 +187,7 @@ func resourceGoogleProjectOrganizationPolicyDelete(d *schema.ResourceData, meta 
 
 	return transport_tpg.Retry(transport_tpg.RetryOptions{
 		RetryFunc: func() error {
-			_, err := config.NewResourceManagerClient(userAgent).Projects.ClearOrgPolicy(project, &cloudresourcemanager.ClearOrgPolicyRequest{
+			_, err := rmClient.NewClient(config, userAgent).Projects.ClearOrgPolicy(project, &cloudresourcemanager.ClearOrgPolicyRequest{
 				Constraint: CanonicalOrgPolicyConstraint(d.Get("constraint").(string)),
 			}).Do()
 			return err
@@ -192,7 +217,7 @@ func setProjectOrganizationPolicy(d *schema.ResourceData, meta interface{}) erro
 
 	return transport_tpg.Retry(transport_tpg.RetryOptions{
 		RetryFunc: func() error {
-			_, err := config.NewResourceManagerClient(userAgent).Projects.SetOrgPolicy(project, &cloudresourcemanager.SetOrgPolicyRequest{
+			_, err := rmClient.NewClient(config, userAgent).Projects.SetOrgPolicy(project, &cloudresourcemanager.SetOrgPolicyRequest{
 				Policy: &cloudresourcemanager.OrgPolicy{
 					Constraint:     CanonicalOrgPolicyConstraint(d.Get("constraint").(string)),
 					BooleanPolicy:  expandBooleanOrganizationPolicy(d.Get("boolean_policy").([]interface{})),

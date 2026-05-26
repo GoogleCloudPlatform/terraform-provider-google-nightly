@@ -22,17 +22,19 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firestore"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 )
 
 func TestAccFirestoreDatabase_tags(t *testing.T) {
 	t.Parallel()
 
 	// Bootstrap shared tag key and value
-	tagKey := acctest.BootstrapSharedTestProjectTagKey(t, "firestore-databases-tagkey", map[string]interface{}{})
+	tagKey := tags.BootstrapSharedTestProjectTagKey(t, "firestore-databases-tagkey", map[string]interface{}{})
 	context := map[string]interface{}{
 		"pid":           envvar.GetTestProjectFromEnv(),
 		"tagKey":        tagKey,
-		"tagValue":      acctest.BootstrapSharedTestProjectTagValue(t, "firestore-databases-tagvalue", tagKey),
+		"tagValue":      tags.BootstrapSharedTestProjectTagValue(t, "firestore-databases-tagvalue", tagKey),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 

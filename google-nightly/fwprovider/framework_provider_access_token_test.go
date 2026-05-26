@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebase"
 )
 
 // TestAccFwProvider_access_token is a series of acc tests asserting how the plugin-framework provider handles access_token arguments

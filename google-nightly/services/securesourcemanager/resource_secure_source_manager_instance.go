@@ -116,6 +116,7 @@ func ResourceSecureSourceManagerInstance() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("PREVENT"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -324,24 +325,23 @@ If unset, defaults to the Google OIDC IdP.`,
 				Computed:    true,
 				Description: `Time the Instance was updated in UTC.`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `The deletion policy for the instance. Setting 'ABANDON' allows the resource
-to be abandoned, rather than deleted. Setting 'DELETE' deletes the resource
-and all its contents. Setting 'PREVENT' prevents the resource from accidental
-deletion by erroring out during plan.
-Default is 'PREVENT'.  Possible values are:
-  * DELETE
-  * PREVENT
-  * ABANDON`,
-				Default: "PREVENT",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "PREVENT".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -381,7 +381,7 @@ func resourceSecureSourceManagerInstanceCreate(d *schema.ResourceData, meta inte
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/instances?instance_id={{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances?instance_id={{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -465,7 +465,7 @@ func resourceSecureSourceManagerInstanceRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -500,49 +500,24 @@ func resourceSecureSourceManagerInstanceRead(d *schema.ResourceData, meta interf
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "PREVENT"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "PREVENT"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Instance: %s", err)
 	}
 
-	if err := d.Set("name", flattenSecureSourceManagerInstanceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecureSourceManagerInstanceCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("update_time", flattenSecureSourceManagerInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("labels", flattenSecureSourceManagerInstanceLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("state", flattenSecureSourceManagerInstanceState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("host_config", flattenSecureSourceManagerInstanceHostConfig(res["hostConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("state_note", flattenSecureSourceManagerInstanceStateNote(res["stateNote"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("kms_key", flattenSecureSourceManagerInstanceKmsKey(res["kmsKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("private_config", flattenSecureSourceManagerInstancePrivateConfig(res["privateConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("workforce_identity_federation_config", flattenSecureSourceManagerInstanceWorkforceIdentityFederationConfig(res["workforceIdentityFederationConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenSecureSourceManagerInstanceTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenSecureSourceManagerInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+	err = ResourceSecureSourceManagerInstanceFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -573,11 +548,18 @@ func resourceSecureSourceManagerInstanceRead(d *schema.ResourceData, meta interf
 }
 
 func resourceSecureSourceManagerInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceSecureSourceManagerInstanceRead(d, meta)
 }
 
 func resourceSecureSourceManagerInstanceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecureSourceManagerInstance without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Instance %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -591,8 +573,7 @@ func resourceSecureSourceManagerInstanceDelete(d *schema.ResourceData, meta inte
 		return fmt.Errorf("Error fetching project for Instance: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -657,11 +638,6 @@ func resourceSecureSourceManagerInstanceImport(d *schema.ResourceData, meta inte
 		return nil, fmt.Errorf("Error constructing id: %s", err)
 	}
 	d.SetId(id)
-
-	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "PREVENT"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -1012,4 +988,47 @@ func expandSecureSourceManagerInstanceEffectiveLabels(v interface{}, d tpgresour
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceSecureSourceManagerInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecureSourceManagerInstanceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecureSourceManagerInstanceCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("update_time", flattenSecureSourceManagerInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("labels", flattenSecureSourceManagerInstanceLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("state", flattenSecureSourceManagerInstanceState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("host_config", flattenSecureSourceManagerInstanceHostConfig(res["hostConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("state_note", flattenSecureSourceManagerInstanceStateNote(res["stateNote"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("kms_key", flattenSecureSourceManagerInstanceKmsKey(res["kmsKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("private_config", flattenSecureSourceManagerInstancePrivateConfig(res["privateConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("workforce_identity_federation_config", flattenSecureSourceManagerInstanceWorkforceIdentityFederationConfig(res["workforceIdentityFederationConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenSecureSourceManagerInstanceTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenSecureSourceManagerInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+
+	return nil
 }

@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/privateca"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = privateca.Product
 )
 
 func TestAccPrivatecaCaPool_privatecaCapoolBasicExample(t *testing.T) {
@@ -107,7 +111,7 @@ func TestAccPrivatecaCaPool_privatecaCapoolAllFieldsExample(t *testing.T) {
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"cloud_kms_key": acctest.BootstrapKMSKeyWithPurposeInLocation(t, "ENCRYPT_DECRYPT", "us-central1").CryptoKey.Name,
+		"cloud_kms_key": kms.BootstrapKMSKeyWithPurposeInLocation(t, "ENCRYPT_DECRYPT", "us-central1").CryptoKey.Name,
 		"name":          "tf-test-my-pool" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
@@ -262,8 +266,7 @@ func testAccCheckPrivatecaCaPoolDestroyProducer(t *testing.T) func(s *terraform.
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{PrivatecaBasePath}}projects/{{project}}/locations/{{location}}/caPools/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(privateca.Product, config)+"projects/{{project}}/locations/{{location}}/caPools/{{name}}")
 			if err != nil {
 				return err
 			}

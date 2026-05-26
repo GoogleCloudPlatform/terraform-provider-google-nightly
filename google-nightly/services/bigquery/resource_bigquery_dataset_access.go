@@ -223,6 +223,7 @@ func ResourceBigQueryDatasetAccess() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceBigQueryDatasetAccessCreate,
 		Read:   resourceBigQueryDatasetAccessRead,
+		Update: resourceBigQueryDatasetAccessUpdate,
 		Delete: resourceBigQueryDatasetAccessDelete,
 
 		Timeouts: &schema.ResourceTimeout{
@@ -232,6 +233,7 @@ func ResourceBigQueryDatasetAccess() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -489,6 +491,18 @@ is 1,024 characters.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -576,7 +590,7 @@ func resourceBigQueryDatasetAccessCreate(d *schema.ResourceData, meta interface{
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigQueryBasePath}}projects/{{project}}/datasets/{{dataset_id}}?accessPolicyVersion=3")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/datasets/{{dataset_id}}?accessPolicyVersion=3")
 	if err != nil {
 		return err
 	}
@@ -679,7 +693,7 @@ func resourceBigQueryDatasetAccessRead(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigQueryBasePath}}projects/{{project}}/datasets/{{dataset_id}}?accessPolicyVersion=3")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/datasets/{{dataset_id}}?accessPolicyVersion=3")
 	if err != nil {
 		return err
 	}
@@ -725,39 +739,26 @@ func resourceBigQueryDatasetAccessRead(d *schema.ResourceData, meta interface{})
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DatasetAccess: %s", err)
 	}
 
-	if err := d.Set("role", flattenNestedBigQueryDatasetAccessRole(res["role"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
-	}
-	if err := d.Set("user_by_email", flattenNestedBigQueryDatasetAccessUserByEmail(res["userByEmail"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
-	}
-	if err := d.Set("group_by_email", flattenNestedBigQueryDatasetAccessGroupByEmail(res["groupByEmail"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
-	}
-	if err := d.Set("domain", flattenNestedBigQueryDatasetAccessDomain(res["domain"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
-	}
-	if err := d.Set("special_group", flattenNestedBigQueryDatasetAccessSpecialGroup(res["specialGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
-	}
-	if err := d.Set("iam_member", flattenNestedBigQueryDatasetAccessIamMember(res["iamMember"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
-	}
-	if err := d.Set("view", flattenNestedBigQueryDatasetAccessView(res["view"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
-	}
-	if err := d.Set("dataset", flattenNestedBigQueryDatasetAccessDataset(res["dataset"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
-	}
-	if err := d.Set("routine", flattenNestedBigQueryDatasetAccessRoutine(res["routine"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
-	}
-	if err := d.Set("condition", flattenNestedBigQueryDatasetAccessCondition(res["condition"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	err = ResourceBigQueryDatasetAccessFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -781,7 +782,19 @@ func resourceBigQueryDatasetAccessRead(d *schema.ResourceData, meta interface{})
 	return nil
 }
 
+func resourceBigQueryDatasetAccessUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceBigQueryDatasetAccessRead(d, meta)
+}
+
 func resourceBigQueryDatasetAccessDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BigQueryDatasetAccess without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DatasetAccess %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -802,8 +815,7 @@ func resourceBigQueryDatasetAccessDelete(d *schema.ResourceData, meta interface{
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigQueryBasePath}}projects/{{project}}/datasets/{{dataset_id}}?accessPolicyVersion=3")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/datasets/{{dataset_id}}?accessPolicyVersion=3")
 	if err != nil {
 		return err
 	}
@@ -1509,4 +1521,41 @@ func resourceBigQueryDatasetAccessListForPatch(d *schema.ResourceData, meta inte
 		return ls, nil
 	}
 	return nil, nil
+}
+
+func ResourceBigQueryDatasetAccessFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("role", flattenNestedBigQueryDatasetAccessRole(res["role"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+	if err = d.Set("user_by_email", flattenNestedBigQueryDatasetAccessUserByEmail(res["userByEmail"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+	if err = d.Set("group_by_email", flattenNestedBigQueryDatasetAccessGroupByEmail(res["groupByEmail"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+	if err = d.Set("domain", flattenNestedBigQueryDatasetAccessDomain(res["domain"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+	if err = d.Set("special_group", flattenNestedBigQueryDatasetAccessSpecialGroup(res["specialGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+	if err = d.Set("iam_member", flattenNestedBigQueryDatasetAccessIamMember(res["iamMember"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+	if err = d.Set("view", flattenNestedBigQueryDatasetAccessView(res["view"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+	if err = d.Set("dataset", flattenNestedBigQueryDatasetAccessDataset(res["dataset"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+	if err = d.Set("routine", flattenNestedBigQueryDatasetAccessRoutine(res["routine"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+	if err = d.Set("condition", flattenNestedBigQueryDatasetAccessCondition(res["condition"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DatasetAccess: %s", err)
+	}
+
+	return nil
 }

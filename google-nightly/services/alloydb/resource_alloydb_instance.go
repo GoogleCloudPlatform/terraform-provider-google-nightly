@@ -116,6 +116,7 @@ func ResourceAlloydbInstance() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.SetAnnotationsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Schema: map[string]*schema.Schema{
@@ -398,6 +399,12 @@ the same instance.`,
 							Optional:    true,
 							Description: `Track actively running queries. If not set, default value is "off".`,
 						},
+						"track_client_address": {
+							Type:        schema.TypeBool,
+							Computed:    true,
+							Optional:    true,
+							Description: `Track client address for an instance. If not set, default value is "off".`,
+						},
 						"track_wait_event_types": {
 							Type:        schema.TypeBool,
 							Computed:    true,
@@ -621,6 +628,19 @@ endpoint for an end-user application.`,
 				Computed:    true,
 				Description: `Time the Instance was updated in UTC.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -732,7 +752,7 @@ func resourceAlloydbInstanceCreate(d *schema.ResourceData, meta interface{}) err
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AlloydbBasePath}}{{cluster}}/instances?instanceId={{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{cluster}}/instances?instanceId={{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -794,7 +814,7 @@ func resourceAlloydbInstanceRead(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AlloydbBasePath}}{{cluster}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{cluster}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -821,92 +841,41 @@ func resourceAlloydbInstanceRead(d *schema.ResourceData, meta interface{}) error
 
 	log.Printf("[DEBUG] Finished reading AlloydbInstance %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenAlloydbInstanceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("create_time", flattenAlloydbInstanceCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("update_time", flattenAlloydbInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("uid", flattenAlloydbInstanceUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("labels", flattenAlloydbInstanceLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("annotations", flattenAlloydbInstanceAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("state", flattenAlloydbInstanceState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("gce_zone", flattenAlloydbInstanceGceZone(res["gceZone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("reconciling", flattenAlloydbInstanceReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("database_flags", flattenAlloydbInstanceDatabaseFlags(res["databaseFlags"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("availability_type", flattenAlloydbInstanceAvailabilityType(res["availabilityType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("activation_policy", flattenAlloydbInstanceActivationPolicy(res["activationPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("instance_type", flattenAlloydbInstanceInstanceType(res["instanceType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("ip_address", flattenAlloydbInstanceIpAddress(res["ipAddress"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("query_insights_config", flattenAlloydbInstanceQueryInsightsConfig(res["queryInsightsConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("observability_config", flattenAlloydbInstanceObservabilityConfig(res["observabilityConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("read_pool_config", flattenAlloydbInstanceReadPoolConfig(res["readPoolConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("machine_config", flattenAlloydbInstanceMachineConfig(res["machineConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("client_connection_config", flattenAlloydbInstanceClientConnectionConfig(res["clientConnectionConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("psc_instance_config", flattenAlloydbInstancePscInstanceConfig(res["pscInstanceConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("network_config", flattenAlloydbInstanceNetworkConfig(res["networkConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("public_ip_address", flattenAlloydbInstancePublicIpAddress(res["publicIpAddress"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("outbound_public_ip_addresses", flattenAlloydbInstanceOutboundPublicIpAddresses(res["outboundPublicIpAddresses"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("connection_pool_config", flattenAlloydbInstanceConnectionPoolConfig(res["connectionPoolConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenAlloydbInstanceTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenAlloydbInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenAlloydbInstanceEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+
+	err = ResourceAlloydbInstanceFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceAlloydbInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceAlloydbInstance().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceAlloydbInstanceRead(d, meta)
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -1008,7 +977,7 @@ func resourceAlloydbInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AlloydbBasePath}}{{cluster}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{cluster}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -1120,6 +1089,13 @@ func resourceAlloydbInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceAlloydbInstanceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy AlloydbInstance without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Instance %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -1129,7 +1105,7 @@ func resourceAlloydbInstanceDelete(d *schema.ResourceData, meta interface{}) err
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AlloydbBasePath}}{{cluster}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{cluster}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -1372,6 +1348,8 @@ func flattenAlloydbInstanceObservabilityConfig(v interface{}, d *schema.Resource
 		flattenAlloydbInstanceObservabilityConfigQueryPlansPerMinute(original["queryPlansPerMinute"], d, config)
 	transformed["track_active_queries"] =
 		flattenAlloydbInstanceObservabilityConfigTrackActiveQueries(original["trackActiveQueries"], d, config)
+	transformed["track_client_address"] =
+		flattenAlloydbInstanceObservabilityConfigTrackClientAddress(original["trackClientAddress"], d, config)
 	transformed["assistive_experiences_enabled"] =
 		flattenAlloydbInstanceObservabilityConfigAssistiveExperiencesEnabled(original["assistiveExperiencesEnabled"], d, config)
 	return []interface{}{transformed}
@@ -1431,6 +1409,10 @@ func flattenAlloydbInstanceObservabilityConfigQueryPlansPerMinute(v interface{},
 }
 
 func flattenAlloydbInstanceObservabilityConfigTrackActiveQueries(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenAlloydbInstanceObservabilityConfigTrackClientAddress(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1925,6 +1907,13 @@ func expandAlloydbInstanceObservabilityConfig(v interface{}, d tpgresource.Terra
 		transformed["trackActiveQueries"] = transformedTrackActiveQueries
 	}
 
+	transformedTrackClientAddress, err := expandAlloydbInstanceObservabilityConfigTrackClientAddress(original["track_client_address"], d, config)
+	if err != nil {
+		return nil, err
+	} else if transformedTrackClientAddress != nil {
+		transformed["trackClientAddress"] = transformedTrackClientAddress
+	}
+
 	transformedAssistiveExperiencesEnabled, err := expandAlloydbInstanceObservabilityConfigAssistiveExperiencesEnabled(original["assistive_experiences_enabled"], d, config)
 	if err != nil {
 		return nil, err
@@ -1964,6 +1953,10 @@ func expandAlloydbInstanceObservabilityConfigQueryPlansPerMinute(v interface{}, 
 }
 
 func expandAlloydbInstanceObservabilityConfigTrackActiveQueries(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandAlloydbInstanceObservabilityConfigTrackClientAddress(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -2416,4 +2409,92 @@ func expandAlloydbInstanceEffectiveAnnotations(v interface{}, d tpgresource.Terr
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceAlloydbInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenAlloydbInstanceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("create_time", flattenAlloydbInstanceCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("update_time", flattenAlloydbInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("uid", flattenAlloydbInstanceUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("labels", flattenAlloydbInstanceLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("annotations", flattenAlloydbInstanceAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("state", flattenAlloydbInstanceState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("gce_zone", flattenAlloydbInstanceGceZone(res["gceZone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("reconciling", flattenAlloydbInstanceReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("database_flags", flattenAlloydbInstanceDatabaseFlags(res["databaseFlags"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("availability_type", flattenAlloydbInstanceAvailabilityType(res["availabilityType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("activation_policy", flattenAlloydbInstanceActivationPolicy(res["activationPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("instance_type", flattenAlloydbInstanceInstanceType(res["instanceType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("ip_address", flattenAlloydbInstanceIpAddress(res["ipAddress"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("query_insights_config", flattenAlloydbInstanceQueryInsightsConfig(res["queryInsightsConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("observability_config", flattenAlloydbInstanceObservabilityConfig(res["observabilityConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("read_pool_config", flattenAlloydbInstanceReadPoolConfig(res["readPoolConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("machine_config", flattenAlloydbInstanceMachineConfig(res["machineConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("client_connection_config", flattenAlloydbInstanceClientConnectionConfig(res["clientConnectionConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("psc_instance_config", flattenAlloydbInstancePscInstanceConfig(res["pscInstanceConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("network_config", flattenAlloydbInstanceNetworkConfig(res["networkConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("public_ip_address", flattenAlloydbInstancePublicIpAddress(res["publicIpAddress"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("outbound_public_ip_addresses", flattenAlloydbInstanceOutboundPublicIpAddresses(res["outboundPublicIpAddresses"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("connection_pool_config", flattenAlloydbInstanceConnectionPoolConfig(res["connectionPoolConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenAlloydbInstanceTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenAlloydbInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenAlloydbInstanceEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+
+	return nil
 }

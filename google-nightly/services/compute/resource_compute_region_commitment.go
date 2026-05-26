@@ -221,6 +221,26 @@ Note that only MACHINE commitments should have a Type specified. Possible values
 					},
 				},
 			},
+			"params": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				ForceNew:    true,
+				Description: `Additional params passed with the request, but not persisted as part of resource payload`,
+				MaxItems:    1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"resource_manager_tags": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							ForceNew: true,
+							Description: `Resource manager tags to be bound to the commitment. Tag keys and values have the
+same definition as resource manager tags. Keys must be in the format tagKeys/{tag_key_id},
+and values are in the format tagValues/456.`,
+							Elem: &schema.Schema{Type: schema.TypeString},
+						},
+					},
+				},
+			},
 			"region": {
 				Type:             schema.TypeString,
 				Computed:         true,
@@ -381,6 +401,12 @@ func resourceComputeRegionCommitmentCreate(d *schema.ResourceData, meta interfac
 	} else if v, ok := d.GetOkExists("existing_reservations"); !tpgresource.IsEmptyValue(reflect.ValueOf(existingReservationsProp)) && (ok || !reflect.DeepEqual(v, existingReservationsProp)) {
 		obj["existingReservations"] = existingReservationsProp
 	}
+	paramsProp, err := expandComputeRegionCommitmentParams(d.Get("params"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("params"); !tpgresource.IsEmptyValue(reflect.ValueOf(paramsProp)) && (ok || !reflect.DeepEqual(v, paramsProp)) {
+		obj["params"] = paramsProp
+	}
 	regionProp, err := expandComputeRegionCommitmentRegion(d.Get("region"), d, config)
 	if err != nil {
 		return err
@@ -388,7 +414,7 @@ func resourceComputeRegionCommitmentCreate(d *schema.ResourceData, meta interfac
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/commitments")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/commitments")
 	if err != nil {
 		return err
 	}
@@ -472,7 +498,7 @@ func resourceComputeRegionCommitmentRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/commitments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/commitments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -509,56 +535,9 @@ func resourceComputeRegionCommitmentRead(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error reading RegionCommitment: %s", err)
 	}
 
-	if err := d.Set("commitment_id", flattenComputeRegionCommitmentCommitmentId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeRegionCommitmentCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("name", flattenComputeRegionCommitmentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("description", flattenComputeRegionCommitmentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("status", flattenComputeRegionCommitmentStatus(res["status"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("status_message", flattenComputeRegionCommitmentStatusMessage(res["statusMessage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("plan", flattenComputeRegionCommitmentPlan(res["plan"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("start_timestamp", flattenComputeRegionCommitmentStartTimestamp(res["startTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("end_timestamp", flattenComputeRegionCommitmentEndTimestamp(res["endTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("resources", flattenComputeRegionCommitmentResources(res["resources"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("type", flattenComputeRegionCommitmentType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("category", flattenComputeRegionCommitmentCategory(res["category"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("license_resource", flattenComputeRegionCommitmentLicenseResource(res["licenseResource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("auto_renew", flattenComputeRegionCommitmentAutoRenew(res["autoRenew"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("existing_reservations", flattenComputeRegionCommitmentExistingReservations(res["existingReservations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("region", flattenComputeRegionCommitmentRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	err = ResourceComputeRegionCommitmentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -878,10 +857,100 @@ func expandComputeRegionCommitmentExistingReservations(v interface{}, d tpgresou
 	return v, nil
 }
 
+func expandComputeRegionCommitmentParams(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedResourceManagerTags, err := expandComputeRegionCommitmentParamsResourceManagerTags(original["resource_manager_tags"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedResourceManagerTags); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["resourceManagerTags"] = transformedResourceManagerTags
+	}
+
+	return transformed, nil
+}
+
+func expandComputeRegionCommitmentParamsResourceManagerTags(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
+}
+
 func expandComputeRegionCommitmentRegion(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	f, err := tpgresource.ParseGlobalFieldValue("regions", v.(string), "project", d, config, true)
 	if err != nil {
 		return nil, fmt.Errorf("Invalid value for region: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeRegionCommitmentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("commitment_id", flattenComputeRegionCommitmentCommitmentId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeRegionCommitmentCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("name", flattenComputeRegionCommitmentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("description", flattenComputeRegionCommitmentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("status", flattenComputeRegionCommitmentStatus(res["status"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("status_message", flattenComputeRegionCommitmentStatusMessage(res["statusMessage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("plan", flattenComputeRegionCommitmentPlan(res["plan"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("start_timestamp", flattenComputeRegionCommitmentStartTimestamp(res["startTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("end_timestamp", flattenComputeRegionCommitmentEndTimestamp(res["endTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("resources", flattenComputeRegionCommitmentResources(res["resources"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("type", flattenComputeRegionCommitmentType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("category", flattenComputeRegionCommitmentCategory(res["category"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("license_resource", flattenComputeRegionCommitmentLicenseResource(res["licenseResource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("auto_renew", flattenComputeRegionCommitmentAutoRenew(res["autoRenew"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("existing_reservations", flattenComputeRegionCommitmentExistingReservations(res["existingReservations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("region", flattenComputeRegionCommitmentRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading RegionCommitment: %s", err)
+	}
+	return nil
 }

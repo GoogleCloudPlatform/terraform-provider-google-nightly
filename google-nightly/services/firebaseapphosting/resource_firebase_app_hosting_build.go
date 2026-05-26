@@ -483,7 +483,7 @@ func resourceFirebaseAppHostingBuildCreate(d *schema.ResourceData, meta interfac
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppHostingBasePath}}projects/{{project}}/locations/{{location}}/backends/{{backend}}/builds?buildId={{build_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backends/{{backend}}/builds?buildId={{build_id}}")
 	if err != nil {
 		return err
 	}
@@ -572,7 +572,7 @@ func resourceFirebaseAppHostingBuildRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppHostingBasePath}}projects/{{project}}/locations/{{location}}/backends/{{backend}}/builds/{{build_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backends/{{backend}}/builds/{{build_id}}")
 	if err != nil {
 		return err
 	}
@@ -609,59 +609,9 @@ func resourceFirebaseAppHostingBuildRead(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error reading Build: %s", err)
 	}
 
-	if err := d.Set("display_name", flattenFirebaseAppHostingBuildDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("annotations", flattenFirebaseAppHostingBuildAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("labels", flattenFirebaseAppHostingBuildLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("name", flattenFirebaseAppHostingBuildName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("create_time", flattenFirebaseAppHostingBuildCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("update_time", flattenFirebaseAppHostingBuildUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("etag", flattenFirebaseAppHostingBuildEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("uid", flattenFirebaseAppHostingBuildUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("image", flattenFirebaseAppHostingBuildImage(res["image"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("build_logs_uri", flattenFirebaseAppHostingBuildBuildLogsUri(res["buildLogsUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("state", flattenFirebaseAppHostingBuildState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("error_source", flattenFirebaseAppHostingBuildErrorSource(res["errorSource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("environment", flattenFirebaseAppHostingBuildEnvironment(res["environment"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("source", flattenFirebaseAppHostingBuildSource(res["source"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("error", flattenFirebaseAppHostingBuildError(res["error"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenFirebaseAppHostingBuildEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenFirebaseAppHostingBuildTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenFirebaseAppHostingBuildEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Build: %s", err)
+	err = ResourceFirebaseAppHostingBuildFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -698,7 +648,7 @@ func resourceFirebaseAppHostingBuildRead(d *schema.ResourceData, meta interface{
 }
 
 func resourceFirebaseAppHostingBuildUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceFirebaseAppHostingBuildRead(d, meta)
 }
 
@@ -1216,4 +1166,65 @@ func expandFirebaseAppHostingBuildEffectiveLabels(v interface{}, d tpgresource.T
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceFirebaseAppHostingBuildFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("display_name", flattenFirebaseAppHostingBuildDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("annotations", flattenFirebaseAppHostingBuildAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("labels", flattenFirebaseAppHostingBuildLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("name", flattenFirebaseAppHostingBuildName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("create_time", flattenFirebaseAppHostingBuildCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("update_time", flattenFirebaseAppHostingBuildUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("etag", flattenFirebaseAppHostingBuildEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("uid", flattenFirebaseAppHostingBuildUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("image", flattenFirebaseAppHostingBuildImage(res["image"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("build_logs_uri", flattenFirebaseAppHostingBuildBuildLogsUri(res["buildLogsUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("state", flattenFirebaseAppHostingBuildState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("error_source", flattenFirebaseAppHostingBuildErrorSource(res["errorSource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("environment", flattenFirebaseAppHostingBuildEnvironment(res["environment"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("source", flattenFirebaseAppHostingBuildSource(res["source"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("error", flattenFirebaseAppHostingBuildError(res["error"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenFirebaseAppHostingBuildEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenFirebaseAppHostingBuildTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenFirebaseAppHostingBuildEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Build: %s", err)
+	}
+
+	return nil
 }

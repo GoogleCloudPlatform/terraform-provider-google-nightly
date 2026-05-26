@@ -115,6 +115,7 @@ func ResourceCloudBuildBitbucketServerConfig() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -234,6 +235,18 @@ projects/{project}/global/networks/{network}, where {project} is a project numbe
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -312,7 +325,7 @@ func resourceCloudBuildBitbucketServerConfigCreate(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudBuildBasePath}}projects/{{project}}/locations/{{location}}/bitbucketServerConfigs?bitbucketServerConfigId={{config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/bitbucketServerConfigs?bitbucketServerConfigId={{config_id}}")
 	if err != nil {
 		return err
 	}
@@ -447,7 +460,7 @@ func resourceCloudBuildBitbucketServerConfigRead(d *schema.ResourceData, meta in
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudBuildBasePath}}projects/{{project}}/locations/{{location}}/bitbucketServerConfigs/{{config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/bitbucketServerConfigs/{{config_id}}")
 	if err != nil {
 		return err
 	}
@@ -480,36 +493,26 @@ func resourceCloudBuildBitbucketServerConfigRead(d *schema.ResourceData, meta in
 
 	log.Printf("[DEBUG] Finished reading CloudBuildBitbucketServerConfig %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
 	}
 
-	if err := d.Set("name", flattenCloudBuildBitbucketServerConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
-	}
-	if err := d.Set("host_uri", flattenCloudBuildBitbucketServerConfigHostUri(res["hostUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
-	}
-	if err := d.Set("secrets", flattenCloudBuildBitbucketServerConfigSecrets(res["secrets"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
-	}
-	if err := d.Set("username", flattenCloudBuildBitbucketServerConfigUsername(res["username"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
-	}
-	if err := d.Set("webhook_key", flattenCloudBuildBitbucketServerConfigWebhookKey(res["webhookKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
-	}
-	if err := d.Set("api_key", flattenCloudBuildBitbucketServerConfigApiKey(res["apiKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
-	}
-	if err := d.Set("connected_repositories", flattenCloudBuildBitbucketServerConfigConnectedRepositories(res["connectedRepositories"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
-	}
-	if err := d.Set("peered_network", flattenCloudBuildBitbucketServerConfigPeeredNetwork(res["peeredNetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
-	}
-	if err := d.Set("ssl_ca", flattenCloudBuildBitbucketServerConfigSslCa(res["sslCa"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	err = ResourceCloudBuildBitbucketServerConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -540,6 +543,19 @@ func resourceCloudBuildBitbucketServerConfigRead(d *schema.ResourceData, meta in
 }
 
 func resourceCloudBuildBitbucketServerConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCloudBuildBitbucketServerConfig().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCloudBuildBitbucketServerConfigRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -617,7 +633,7 @@ func resourceCloudBuildBitbucketServerConfigUpdate(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudBuildBasePath}}projects/{{project}}/locations/{{location}}/bitbucketServerConfigs/{{config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/bitbucketServerConfigs/{{config_id}}")
 	if err != nil {
 		return err
 	}
@@ -795,6 +811,13 @@ func resourceCloudBuildBitbucketServerConfigUpdate(d *schema.ResourceData, meta 
 }
 
 func resourceCloudBuildBitbucketServerConfigDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CloudBuildBitbucketServerConfig without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing BitbucketServerConfig %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -808,8 +831,7 @@ func resourceCloudBuildBitbucketServerConfigDelete(d *schema.ResourceData, meta 
 		return fmt.Errorf("Error fetching project for BitbucketServerConfig: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudBuildBasePath}}projects/{{project}}/locations/{{location}}/bitbucketServerConfigs/{{config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/bitbucketServerConfigs/{{config_id}}")
 	if err != nil {
 		return err
 	}
@@ -1067,4 +1089,38 @@ func resourceCloudBuildBitbucketServerConfigEncoder(d *schema.ResourceData, meta
 	// connectedRepositories is needed for batchCreate on the config after creation.
 	delete(obj, "connectedRepositories")
 	return obj, nil
+}
+
+func ResourceCloudBuildBitbucketServerConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenCloudBuildBitbucketServerConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	}
+	if err = d.Set("host_uri", flattenCloudBuildBitbucketServerConfigHostUri(res["hostUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	}
+	if err = d.Set("secrets", flattenCloudBuildBitbucketServerConfigSecrets(res["secrets"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	}
+	if err = d.Set("username", flattenCloudBuildBitbucketServerConfigUsername(res["username"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	}
+	if err = d.Set("webhook_key", flattenCloudBuildBitbucketServerConfigWebhookKey(res["webhookKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	}
+	if err = d.Set("api_key", flattenCloudBuildBitbucketServerConfigApiKey(res["apiKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	}
+	if err = d.Set("connected_repositories", flattenCloudBuildBitbucketServerConfigConnectedRepositories(res["connectedRepositories"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	}
+	if err = d.Set("peered_network", flattenCloudBuildBitbucketServerConfigPeeredNetwork(res["peeredNetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	}
+	if err = d.Set("ssl_ca", flattenCloudBuildBitbucketServerConfigSslCa(res["sslCa"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BitbucketServerConfig: %s", err)
+	}
+
+	return nil
 }

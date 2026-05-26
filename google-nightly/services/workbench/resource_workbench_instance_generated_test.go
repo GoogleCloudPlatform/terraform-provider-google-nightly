@@ -30,6 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workbench"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +52,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = workbench.Product
 )
 
 func TestAccWorkbenchInstance_workbenchInstanceBasicExample(t *testing.T) {
@@ -306,7 +311,7 @@ func TestAccWorkbenchInstance_workbenchInstanceFullExample(t *testing.T) {
 		"project_id":       envvar.GetTestProjectFromEnv(),
 		"service_account":  envvar.GetTestServiceAccountFromEnv(t),
 		"instance_name":    "tf-test-workbench-instance" + randomSuffix,
-		"key_name":         acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"key_name":         kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"network_name":     "tf-test-wbi-test-default" + randomSuffix,
 		"reservation_name": "tf-test-wbi-reservation" + randomSuffix,
 		"random_suffix":    randomSuffix,
@@ -611,8 +616,7 @@ func testAccCheckWorkbenchInstanceDestroyProducer(t *testing.T) func(s *terrafor
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{WorkbenchBasePath}}projects/{{project}}/locations/{{location}}/instances/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(workbench.Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{name}}")
 			if err != nil {
 				return err
 			}

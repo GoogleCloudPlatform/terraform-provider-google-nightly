@@ -117,6 +117,7 @@ func ResourceWorkstationsWorkstation() *schema.Resource {
 			tpgresource.SetLabelsDiff,
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -263,6 +264,18 @@ To send traffic to a different port, clients may prefix the host with the destin
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -307,7 +320,7 @@ func resourceWorkstationsWorkstationCreate(d *schema.ResourceData, meta interfac
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}/workstations?workstationId={{workstation_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}/workstations?workstationId={{workstation_id}}")
 	if err != nil {
 		return err
 	}
@@ -401,7 +414,7 @@ func resourceWorkstationsWorkstationRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}/workstations/{{workstation_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}/workstations/{{workstation_id}}")
 	if err != nil {
 		return err
 	}
@@ -434,48 +447,26 @@ func resourceWorkstationsWorkstationRead(d *schema.ResourceData, meta interface{
 
 	log.Printf("[DEBUG] Finished reading WorkstationsWorkstation %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Workstation: %s", err)
 	}
 
-	if err := d.Set("name", flattenWorkstationsWorkstationName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("uid", flattenWorkstationsWorkstationUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("display_name", flattenWorkstationsWorkstationDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("labels", flattenWorkstationsWorkstationLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("annotations", flattenWorkstationsWorkstationAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("env", flattenWorkstationsWorkstationEnv(res["env"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("create_time", flattenWorkstationsWorkstationCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("host", flattenWorkstationsWorkstationHost(res["host"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("state", flattenWorkstationsWorkstationState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("source_workstation", flattenWorkstationsWorkstationSourceWorkstation(res["sourceWorkstation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenWorkstationsWorkstationTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenWorkstationsWorkstationEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenWorkstationsWorkstationEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Workstation: %s", err)
+	err = ResourceWorkstationsWorkstationFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -518,6 +509,19 @@ func resourceWorkstationsWorkstationRead(d *schema.ResourceData, meta interface{
 }
 
 func resourceWorkstationsWorkstationUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceWorkstationsWorkstation().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceWorkstationsWorkstationRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -588,7 +592,7 @@ func resourceWorkstationsWorkstationUpdate(d *schema.ResourceData, meta interfac
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}/workstations/{{workstation_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}/workstations/{{workstation_id}}")
 	if err != nil {
 		return err
 	}
@@ -656,6 +660,13 @@ func resourceWorkstationsWorkstationUpdate(d *schema.ResourceData, meta interfac
 }
 
 func resourceWorkstationsWorkstationDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy WorkstationsWorkstation without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Workstation %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -669,8 +680,7 @@ func resourceWorkstationsWorkstationDelete(d *schema.ResourceData, meta interfac
 		return fmt.Errorf("Error fetching project for Workstation: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}/workstations/{{workstation_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}/workstations/{{workstation_id}}")
 	if err != nil {
 		return err
 	}
@@ -855,4 +865,50 @@ func expandWorkstationsWorkstationEffectiveAnnotations(v interface{}, d tpgresou
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceWorkstationsWorkstationFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenWorkstationsWorkstationName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("uid", flattenWorkstationsWorkstationUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("display_name", flattenWorkstationsWorkstationDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("labels", flattenWorkstationsWorkstationLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("annotations", flattenWorkstationsWorkstationAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("env", flattenWorkstationsWorkstationEnv(res["env"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("create_time", flattenWorkstationsWorkstationCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("host", flattenWorkstationsWorkstationHost(res["host"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("state", flattenWorkstationsWorkstationState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("source_workstation", flattenWorkstationsWorkstationSourceWorkstation(res["sourceWorkstation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenWorkstationsWorkstationTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenWorkstationsWorkstationEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenWorkstationsWorkstationEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Workstation: %s", err)
+	}
+
+	return nil
 }

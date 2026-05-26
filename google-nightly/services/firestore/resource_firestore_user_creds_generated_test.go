@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firestore"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = firestore.Product
 )
 
 func TestAccFirestoreUserCreds_firestoreUserCredsBasicExample(t *testing.T) {
@@ -187,8 +190,7 @@ func testAccCheckFirestoreUserCredsDestroyProducer(t *testing.T) func(s *terrafo
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{FirestoreBasePath}}projects/{{project}}/databases/{{database}}/userCreds/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(firestore.Product, config)+"projects/{{project}}/databases/{{database}}/userCreds/{{name}}")
 			if err != nil {
 				return err
 			}

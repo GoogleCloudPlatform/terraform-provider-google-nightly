@@ -115,6 +115,7 @@ func ResourceSecureSourceManagerBranchRule() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -226,6 +227,18 @@ func ResourceSecureSourceManagerBranchRule() *schema.Resource {
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -288,7 +301,7 @@ func resourceSecureSourceManagerBranchRuleCreate(d *schema.ResourceData, meta in
 		obj["requireLinearHistory"] = requireLinearHistoryProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/branchRules?branch_rule_id={{branch_rule_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/branchRules?branch_rule_id={{branch_rule_id}}")
 	if err != nil {
 		return err
 	}
@@ -377,7 +390,7 @@ func resourceSecureSourceManagerBranchRuleRead(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/branchRules/{{branch_rule_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/branchRules/{{branch_rule_id}}")
 	if err != nil {
 		return err
 	}
@@ -410,45 +423,26 @@ func resourceSecureSourceManagerBranchRuleRead(d *schema.ResourceData, meta inte
 
 	log.Printf("[DEBUG] Finished reading SecureSourceManagerBranchRule %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading BranchRule: %s", err)
 	}
 
-	if err := d.Set("name", flattenSecureSourceManagerBranchRuleName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("uid", flattenSecureSourceManagerBranchRuleUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecureSourceManagerBranchRuleCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("update_time", flattenSecureSourceManagerBranchRuleUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("include_pattern", flattenSecureSourceManagerBranchRuleIncludePattern(res["includePattern"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("disabled", flattenSecureSourceManagerBranchRuleDisabled(res["disabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("require_pull_request", flattenSecureSourceManagerBranchRuleRequirePullRequest(res["requirePullRequest"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("minimum_reviews_count", flattenSecureSourceManagerBranchRuleMinimumReviewsCount(res["minimumReviewsCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("minimum_approvals_count", flattenSecureSourceManagerBranchRuleMinimumApprovalsCount(res["minimumApprovalsCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("require_comments_resolved", flattenSecureSourceManagerBranchRuleRequireCommentsResolved(res["requireCommentsResolved"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("allow_stale_reviews", flattenSecureSourceManagerBranchRuleAllowStaleReviews(res["allowStaleReviews"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
-	}
-	if err := d.Set("require_linear_history", flattenSecureSourceManagerBranchRuleRequireLinearHistory(res["requireLinearHistory"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BranchRule: %s", err)
+	err = ResourceSecureSourceManagerBranchRuleFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -485,6 +479,19 @@ func resourceSecureSourceManagerBranchRuleRead(d *schema.ResourceData, meta inte
 }
 
 func resourceSecureSourceManagerBranchRuleUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecureSourceManagerBranchRule().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecureSourceManagerBranchRuleRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -574,7 +581,7 @@ func resourceSecureSourceManagerBranchRuleUpdate(d *schema.ResourceData, meta in
 		obj["requireLinearHistory"] = requireLinearHistoryProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/branchRules/{{branch_rule_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/branchRules/{{branch_rule_id}}")
 	if err != nil {
 		return err
 	}
@@ -651,6 +658,13 @@ func resourceSecureSourceManagerBranchRuleUpdate(d *schema.ResourceData, meta in
 }
 
 func resourceSecureSourceManagerBranchRuleDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecureSourceManagerBranchRule without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing BranchRule %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -664,8 +678,7 @@ func resourceSecureSourceManagerBranchRuleDelete(d *schema.ResourceData, meta in
 		return fmt.Errorf("Error fetching project for BranchRule: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/branchRules/{{branch_rule_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/branchRules/{{branch_rule_id}}")
 	if err != nil {
 		return err
 	}
@@ -831,4 +844,47 @@ func expandSecureSourceManagerBranchRuleAllowStaleReviews(v interface{}, d tpgre
 
 func expandSecureSourceManagerBranchRuleRequireLinearHistory(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceSecureSourceManagerBranchRuleFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecureSourceManagerBranchRuleName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("uid", flattenSecureSourceManagerBranchRuleUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecureSourceManagerBranchRuleCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("update_time", flattenSecureSourceManagerBranchRuleUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("include_pattern", flattenSecureSourceManagerBranchRuleIncludePattern(res["includePattern"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("disabled", flattenSecureSourceManagerBranchRuleDisabled(res["disabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("require_pull_request", flattenSecureSourceManagerBranchRuleRequirePullRequest(res["requirePullRequest"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("minimum_reviews_count", flattenSecureSourceManagerBranchRuleMinimumReviewsCount(res["minimumReviewsCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("minimum_approvals_count", flattenSecureSourceManagerBranchRuleMinimumApprovalsCount(res["minimumApprovalsCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("require_comments_resolved", flattenSecureSourceManagerBranchRuleRequireCommentsResolved(res["requireCommentsResolved"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("allow_stale_reviews", flattenSecureSourceManagerBranchRuleAllowStaleReviews(res["allowStaleReviews"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+	if err = d.Set("require_linear_history", flattenSecureSourceManagerBranchRuleRequireLinearHistory(res["requireLinearHistory"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BranchRule: %s", err)
+	}
+
+	return nil
 }

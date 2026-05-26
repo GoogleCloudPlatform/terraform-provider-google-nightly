@@ -135,6 +135,7 @@ func ResourceIntegrationConnectorsConnection() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -1211,6 +1212,18 @@ e.g. "projects/cloud-connectors-e2e-testing/locations/us-central1/namespaces/ist
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1309,7 +1322,7 @@ func resourceIntegrationConnectorsConnectionCreate(d *schema.ResourceData, meta 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IntegrationConnectorsBasePath}}projects/{{project}}/locations/{{location}}/connections?connectionId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections?connectionId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -1397,7 +1410,7 @@ func resourceIntegrationConnectorsConnectionRead(d *schema.ResourceData, meta in
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IntegrationConnectorsBasePath}}projects/{{project}}/locations/{{location}}/connections/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1430,84 +1443,26 @@ func resourceIntegrationConnectorsConnectionRead(d *schema.ResourceData, meta in
 
 	log.Printf("[DEBUG] Finished reading IntegrationConnectorsConnection %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Connection: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenIntegrationConnectorsConnectionCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("update_time", flattenIntegrationConnectorsConnectionUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("description", flattenIntegrationConnectorsConnectionDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("labels", flattenIntegrationConnectorsConnectionLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("connector_version", flattenIntegrationConnectorsConnectionConnectorVersion(res["connectorVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("status", flattenIntegrationConnectorsConnectionStatus(res["status"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("config_variable", flattenIntegrationConnectorsConnectionConfigVariable(res["configVariables"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("auth_config", flattenIntegrationConnectorsConnectionAuthConfig(res["authConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("lock_config", flattenIntegrationConnectorsConnectionLockConfig(res["lockConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("destination_config", flattenIntegrationConnectorsConnectionDestinationConfig(res["destinationConfigs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("service_account", flattenIntegrationConnectorsConnectionServiceAccount(res["serviceAccount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("service_directory", flattenIntegrationConnectorsConnectionServiceDirectory(res["serviceDirectory"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("suspended", flattenIntegrationConnectorsConnectionSuspended(res["suspended"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("node_config", flattenIntegrationConnectorsConnectionNodeConfig(res["nodeConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("log_config", flattenIntegrationConnectorsConnectionLogConfig(res["logConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("ssl_config", flattenIntegrationConnectorsConnectionSslConfig(res["sslConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("subscription_type", flattenIntegrationConnectorsConnectionSubscriptionType(res["subscriptionType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("connection_revision", flattenIntegrationConnectorsConnectionConnectionRevision(res["connectionRevision"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("eventing_enablement_type", flattenIntegrationConnectorsConnectionEventingEnablementType(res["eventingEnablementType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("eventing_config", flattenIntegrationConnectorsConnectionEventingConfig(res["eventingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("connector_version_launch_stage", flattenIntegrationConnectorsConnectionConnectorVersionLaunchStage(res["connectorVersionLaunchStage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("eventing_runtime_data", flattenIntegrationConnectorsConnectionEventingRuntimeData(res["eventingRuntimeData"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("connector_version_infra_config", flattenIntegrationConnectorsConnectionConnectorVersionInfraConfig(res["connectorVersionInfraConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenIntegrationConnectorsConnectionTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenIntegrationConnectorsConnectionEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
+	err = ResourceIntegrationConnectorsConnectionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1538,6 +1493,19 @@ func resourceIntegrationConnectorsConnectionRead(d *schema.ResourceData, meta in
 }
 
 func resourceIntegrationConnectorsConnectionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceIntegrationConnectorsConnection().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceIntegrationConnectorsConnectionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1658,7 +1626,7 @@ func resourceIntegrationConnectorsConnectionUpdate(d *schema.ResourceData, meta 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IntegrationConnectorsBasePath}}projects/{{project}}/locations/{{location}}/connections/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1769,6 +1737,13 @@ func resourceIntegrationConnectorsConnectionUpdate(d *schema.ResourceData, meta 
 }
 
 func resourceIntegrationConnectorsConnectionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy IntegrationConnectorsConnection without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Connection %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1782,8 +1757,7 @@ func resourceIntegrationConnectorsConnectionDelete(d *schema.ResourceData, meta 
 		return fmt.Errorf("Error fetching project for Connection: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{IntegrationConnectorsBasePath}}projects/{{project}}/locations/{{location}}/connections/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -5056,4 +5030,86 @@ func expandIntegrationConnectorsConnectionEffectiveLabels(v interface{}, d tpgre
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceIntegrationConnectorsConnectionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenIntegrationConnectorsConnectionCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("update_time", flattenIntegrationConnectorsConnectionUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("description", flattenIntegrationConnectorsConnectionDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("labels", flattenIntegrationConnectorsConnectionLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("connector_version", flattenIntegrationConnectorsConnectionConnectorVersion(res["connectorVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("status", flattenIntegrationConnectorsConnectionStatus(res["status"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("config_variable", flattenIntegrationConnectorsConnectionConfigVariable(res["configVariables"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("auth_config", flattenIntegrationConnectorsConnectionAuthConfig(res["authConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("lock_config", flattenIntegrationConnectorsConnectionLockConfig(res["lockConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("destination_config", flattenIntegrationConnectorsConnectionDestinationConfig(res["destinationConfigs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("service_account", flattenIntegrationConnectorsConnectionServiceAccount(res["serviceAccount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("service_directory", flattenIntegrationConnectorsConnectionServiceDirectory(res["serviceDirectory"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("suspended", flattenIntegrationConnectorsConnectionSuspended(res["suspended"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("node_config", flattenIntegrationConnectorsConnectionNodeConfig(res["nodeConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("log_config", flattenIntegrationConnectorsConnectionLogConfig(res["logConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("ssl_config", flattenIntegrationConnectorsConnectionSslConfig(res["sslConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("subscription_type", flattenIntegrationConnectorsConnectionSubscriptionType(res["subscriptionType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("connection_revision", flattenIntegrationConnectorsConnectionConnectionRevision(res["connectionRevision"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("eventing_enablement_type", flattenIntegrationConnectorsConnectionEventingEnablementType(res["eventingEnablementType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("eventing_config", flattenIntegrationConnectorsConnectionEventingConfig(res["eventingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("connector_version_launch_stage", flattenIntegrationConnectorsConnectionConnectorVersionLaunchStage(res["connectorVersionLaunchStage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("eventing_runtime_data", flattenIntegrationConnectorsConnectionEventingRuntimeData(res["eventingRuntimeData"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("connector_version_infra_config", flattenIntegrationConnectorsConnectionConnectorVersionInfraConfig(res["connectorVersionInfraConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenIntegrationConnectorsConnectionTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenIntegrationConnectorsConnectionEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+
+	return nil
 }

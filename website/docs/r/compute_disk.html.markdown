@@ -46,7 +46,7 @@ To get more information about Disk, see:
     * [Adding a persistent disk](https://cloud.google.com/compute/docs/disks/add-persistent-disk)
 
 ~> **Warning:** All arguments including the following potentially sensitive
-values will be stored in the raw state as plain text: `disk_encryption_key.raw_key`, `disk_encryption_key.rsa_encrypted_key`.
+values will be stored in the raw state as plain text: `source_image_encryption_key.raw_key`, `disk_encryption_key.raw_key`, `disk_encryption_key.rsa_encrypted_key`, `source_snapshot_encryption_key.raw_key`.
 [Read more about sensitive data in state](https://developer.hashicorp.com/terraform/language/manage-sensitive-data).
 
 <div class = "oics-button" style="float: right; margin: 0 0 -15px">
@@ -353,6 +353,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 * `create_snapshot_before_destroy` - (Optional) If set to true, a snapshot of the disk will be created before it is destroyed.
 If your disk is encrypted with customer managed encryption keys these will be reused for the snapshot creation.
 The name of the snapshot by default will be `{{disk-name}}-YYYYMMDD-HHmm`
@@ -367,6 +373,7 @@ The name of the snapshot by default will be `{{disk-name}}-YYYYMMDD-HHmm`
   (Optional)
   Specifies a 256-bit customer-supplied encryption key, encoded in
   RFC 4648 base64 to either encrypt or decrypt this resource.
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `sha256` -
   (Output)
@@ -425,6 +432,7 @@ The name of the snapshot by default will be `{{disk-name}}-YYYYMMDD-HHmm`
   (Optional)
   Specifies a 256-bit customer-supplied encryption key, encoded in
   RFC 4648 base64 to either encrypt or decrypt this resource.
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `kms_key_self_link` -
   (Optional)

@@ -116,6 +116,7 @@ func ResourceVectorSearchCollection() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -176,6 +177,28 @@ underscores, and hyphens.`,
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: `User-specified display name of the collection`,
+			},
+			"encryption_spec": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				Description: `Represents a customer-managed encryption key specification that can be
+applied to a Vector Search collection.`,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"crypto_key_name": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+							Description: `Resource name of the Cloud KMS key used to protect the resource.
+
+The Cloud KMS key must be in the same region as the resource. It must have
+the format
+'projects/{project}/locations/{location}/keyRings/{key_ring}/cryptoKeys/{crypto_key}'.`,
+						},
+					},
+				},
 			},
 			"labels": {
 				Type:     schema.TypeMap,
@@ -300,6 +323,18 @@ contain one or more references to fields in the DataObject, e.g.:
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -331,6 +366,12 @@ func resourceVectorSearchCollectionCreate(d *schema.ResourceData, meta interface
 	} else if v, ok := d.GetOkExists("display_name"); !tpgresource.IsEmptyValue(reflect.ValueOf(displayNameProp)) && (ok || !reflect.DeepEqual(v, displayNameProp)) {
 		obj["displayName"] = displayNameProp
 	}
+	encryptionSpecProp, err := expandVectorSearchCollectionEncryptionSpec(d.Get("encryption_spec"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("encryption_spec"); !tpgresource.IsEmptyValue(reflect.ValueOf(encryptionSpecProp)) && (ok || !reflect.DeepEqual(v, encryptionSpecProp)) {
+		obj["encryptionSpec"] = encryptionSpecProp
+	}
 	vectorSchemaProp, err := expandVectorSearchCollectionVectorSchema(d.Get("vector_schema"), d, config)
 	if err != nil {
 		return err
@@ -344,7 +385,7 @@ func resourceVectorSearchCollectionCreate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VectorSearchBasePath}}projects/{{project}}/locations/{{location}}/collections?collectionId={{collection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections?collectionId={{collection_id}}")
 	if err != nil {
 		return err
 	}
@@ -428,7 +469,7 @@ func resourceVectorSearchCollectionRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VectorSearchBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
 	if err != nil {
 		return err
 	}
@@ -461,39 +502,26 @@ func resourceVectorSearchCollectionRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading VectorSearchCollection %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Collection: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenVectorSearchCollectionCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
-	}
-	if err := d.Set("data_schema", flattenVectorSearchCollectionDataSchema(res["dataSchema"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
-	}
-	if err := d.Set("description", flattenVectorSearchCollectionDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
-	}
-	if err := d.Set("display_name", flattenVectorSearchCollectionDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
-	}
-	if err := d.Set("labels", flattenVectorSearchCollectionLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
-	}
-	if err := d.Set("name", flattenVectorSearchCollectionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
-	}
-	if err := d.Set("update_time", flattenVectorSearchCollectionUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
-	}
-	if err := d.Set("vector_schema", flattenVectorSearchCollectionVectorSchema(res["vectorSchema"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenVectorSearchCollectionTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenVectorSearchCollectionEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Collection: %s", err)
+	err = ResourceVectorSearchCollectionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -524,6 +552,19 @@ func resourceVectorSearchCollectionRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceVectorSearchCollectionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVectorSearchCollection().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVectorSearchCollectionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -590,7 +631,7 @@ func resourceVectorSearchCollectionUpdate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VectorSearchBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
 	if err != nil {
 		return err
 	}
@@ -662,6 +703,13 @@ func resourceVectorSearchCollectionUpdate(d *schema.ResourceData, meta interface
 }
 
 func resourceVectorSearchCollectionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VectorSearchCollection without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Collection %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -675,8 +723,7 @@ func resourceVectorSearchCollectionDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for Collection: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{VectorSearchBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
 	if err != nil {
 		return err
 	}
@@ -758,6 +805,23 @@ func flattenVectorSearchCollectionDescription(v interface{}, d *schema.ResourceD
 }
 
 func flattenVectorSearchCollectionDisplayName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenVectorSearchCollectionEncryptionSpec(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["crypto_key_name"] =
+		flattenVectorSearchCollectionEncryptionSpecCryptoKeyName(original["cryptoKeyName"], d, config)
+	return []interface{}{transformed}
+}
+func flattenVectorSearchCollectionEncryptionSpecCryptoKeyName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -908,6 +972,32 @@ func expandVectorSearchCollectionDisplayName(v interface{}, d tpgresource.Terraf
 	return v, nil
 }
 
+func expandVectorSearchCollectionEncryptionSpec(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedCryptoKeyName, err := expandVectorSearchCollectionEncryptionSpecCryptoKeyName(original["crypto_key_name"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedCryptoKeyName); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["cryptoKeyName"] = transformedCryptoKeyName
+	}
+
+	return transformed, nil
+}
+
+func expandVectorSearchCollectionEncryptionSpecCryptoKeyName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandVectorSearchCollectionVectorSchema(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]interface{}, error) {
 	if v == nil {
 		return map[string]interface{}{}, nil
@@ -1048,4 +1138,44 @@ func expandVectorSearchCollectionEffectiveLabels(v interface{}, d tpgresource.Te
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceVectorSearchCollectionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenVectorSearchCollectionCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("data_schema", flattenVectorSearchCollectionDataSchema(res["dataSchema"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("description", flattenVectorSearchCollectionDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("display_name", flattenVectorSearchCollectionDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("encryption_spec", flattenVectorSearchCollectionEncryptionSpec(res["encryptionSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("labels", flattenVectorSearchCollectionLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("name", flattenVectorSearchCollectionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("update_time", flattenVectorSearchCollectionUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("vector_schema", flattenVectorSearchCollectionVectorSchema(res["vectorSchema"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenVectorSearchCollectionTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenVectorSearchCollectionEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Collection: %s", err)
+	}
+
+	return nil
 }

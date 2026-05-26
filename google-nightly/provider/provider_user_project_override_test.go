@@ -24,6 +24,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	ptu "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/provider/testutils"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
 
 // TestAccSdkProvider_user_project_override is a series of acc tests asserting how the plugin-framework provider handles credentials arguments
@@ -258,7 +262,7 @@ data "google_provider_config_sdk" "default" {}
 func testAccProviderUserProjectOverride(t *testing.T) {
 	// Test cannot run in VCR mode due to use of aliases
 	// See: https://github.com/hashicorp/terraform-provider-google/issues/20019
-	// And also due to the resources made out of band in acctest.SetupProjectsAndGetAccessToken
+	// And also due to the resources made out of band in ptu.SetupProjectsAndGetAccessToken
 	acctest.SkipIfVcr(t)
 	t.Parallel()
 
@@ -267,8 +271,8 @@ func testAccProviderUserProjectOverride(t *testing.T) {
 	pid := "tf-test-" + acctest.RandString(t, 10)
 	topicName := "tf-test-topic-" + acctest.RandString(t, 10)
 
-	config := acctest.BootstrapConfig(t)
-	accessToken, err := acctest.SetupProjectsAndGetAccessToken(org, billing, pid, "pubsub", config)
+	config := transport_tpg.BootstrapConfig(t)
+	accessToken, err := ptu.SetupProjectsAndGetAccessToken(org, billing, pid, "pubsub", config)
 	if err != nil || accessToken == "" {
 		if err == nil {
 			t.Fatal("error when setting up projects and retrieving access token: access token is an empty string")
@@ -306,7 +310,7 @@ func testAccProviderUserProjectOverride(t *testing.T) {
 func testAccProviderIndirectUserProjectOverride(t *testing.T) {
 	// Test cannot run in VCR mode due to use of aliases
 	// See: https://github.com/hashicorp/terraform-provider-google/issues/20019
-	// And also due to the resources made out of band in acctest.SetupProjectsAndGetAccessToken
+	// And also due to the resources made out of band in ptu.SetupProjectsAndGetAccessToken
 	acctest.SkipIfVcr(t)
 	t.Parallel()
 
@@ -314,8 +318,8 @@ func testAccProviderIndirectUserProjectOverride(t *testing.T) {
 	billing := envvar.GetTestBillingAccountFromEnv(t)
 	pid := "tf-test-" + acctest.RandString(t, 10)
 
-	config := acctest.BootstrapConfig(t)
-	accessToken, err := acctest.SetupProjectsAndGetAccessToken(org, billing, pid, "cloudkms", config)
+	config := transport_tpg.BootstrapConfig(t)
+	accessToken, err := ptu.SetupProjectsAndGetAccessToken(org, billing, pid, "cloudkms", config)
 	if err != nil || accessToken == "" {
 		if err == nil {
 			t.Fatal("error when setting up projects and retrieving access token: access token is an empty string")

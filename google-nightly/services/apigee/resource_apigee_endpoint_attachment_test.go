@@ -26,6 +26,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/apigee"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -131,7 +135,7 @@ resource "google_compute_forwarding_rule" "psc_ilb_consumer" {
   target                = google_compute_service_attachment.psc_ilb_service_attachment.id
   load_balancing_scheme = "" # need to override EXTERNAL default when target is a service attachment
   network               = "default"
-  ip_address            = google_compute_address.psc_ilb_consumer_address.address
+  ip_address            = google_compute_address.psc_ilb_consumer_address.id
 
   project = google_project.project.project_id
 }
@@ -195,7 +199,7 @@ resource "google_compute_subnetwork" "psc_ilb_nat" {
 
   network       = google_compute_network.psc_ilb_network.id
   purpose       =  "PRIVATE_SERVICE_CONNECT"
-  ip_cidr_range = "10.0.1.0/24"
+  ip_cidr_range = "10.0.2.0/24"
 
   project = google_project.project.project_id
 }
@@ -244,7 +248,7 @@ func testAccCheckApigeeEndpointAttachmentDestroyProducer(t *testing.T) func(s *t
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ApigeeBasePath}}{{org_id}}/endpointAttachments/{{endpoint_attachment_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(apigee.Product, config)+"{{org_id}}/endpointAttachments/{{endpoint_attachment_id}}")
 			if err != nil {
 				return err
 			}

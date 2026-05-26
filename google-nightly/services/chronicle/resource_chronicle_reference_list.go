@@ -306,7 +306,7 @@ func resourceChronicleReferenceListCreate(d *schema.ResourceData, meta interface
 		obj["syntaxType"] = syntaxTypeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/referenceLists?referenceListId={{reference_list_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/referenceLists?referenceListId={{reference_list_id}}")
 	if err != nil {
 		return err
 	}
@@ -385,7 +385,7 @@ func resourceChronicleReferenceListRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/referenceLists/{{reference_list_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/referenceLists/{{reference_list_id}}")
 	if err != nil {
 		return err
 	}
@@ -422,32 +422,9 @@ func resourceChronicleReferenceListRead(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error reading ReferenceList: %s", err)
 	}
 
-	if err := d.Set("name", flattenChronicleReferenceListName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReferenceList: %s", err)
-	}
-	if err := d.Set("description", flattenChronicleReferenceListDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReferenceList: %s", err)
-	}
-	if err := d.Set("entries", flattenChronicleReferenceListEntries(res["entries"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReferenceList: %s", err)
-	}
-	if err := d.Set("scope_info", flattenChronicleReferenceListScopeInfo(res["scopeInfo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReferenceList: %s", err)
-	}
-	if err := d.Set("display_name", flattenChronicleReferenceListDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReferenceList: %s", err)
-	}
-	if err := d.Set("revision_create_time", flattenChronicleReferenceListRevisionCreateTime(res["revisionCreateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReferenceList: %s", err)
-	}
-	if err := d.Set("rules", flattenChronicleReferenceListRules(res["rules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReferenceList: %s", err)
-	}
-	if err := d.Set("syntax_type", flattenChronicleReferenceListSyntaxType(res["syntaxType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReferenceList: %s", err)
-	}
-	if err := d.Set("rule_associations_count", flattenChronicleReferenceListRuleAssociationsCount(res["ruleAssociationsCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	err = ResourceChronicleReferenceListFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -484,6 +461,7 @@ func resourceChronicleReferenceListRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceChronicleReferenceListUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -549,7 +527,7 @@ func resourceChronicleReferenceListUpdate(d *schema.ResourceData, meta interface
 		obj["syntaxType"] = syntaxTypeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/referenceLists/{{reference_list_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/referenceLists/{{reference_list_id}}")
 	if err != nil {
 		return err
 	}
@@ -814,4 +792,38 @@ func expandChronicleReferenceListScopeInfoReferenceListScopeScopeNames(v interfa
 
 func expandChronicleReferenceListSyntaxType(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceChronicleReferenceListFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenChronicleReferenceListName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	}
+	if err = d.Set("description", flattenChronicleReferenceListDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	}
+	if err = d.Set("entries", flattenChronicleReferenceListEntries(res["entries"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	}
+	if err = d.Set("scope_info", flattenChronicleReferenceListScopeInfo(res["scopeInfo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	}
+	if err = d.Set("display_name", flattenChronicleReferenceListDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	}
+	if err = d.Set("revision_create_time", flattenChronicleReferenceListRevisionCreateTime(res["revisionCreateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	}
+	if err = d.Set("rules", flattenChronicleReferenceListRules(res["rules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	}
+	if err = d.Set("syntax_type", flattenChronicleReferenceListSyntaxType(res["syntaxType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	}
+	if err = d.Set("rule_associations_count", flattenChronicleReferenceListRuleAssociationsCount(res["ruleAssociationsCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReferenceList: %s", err)
+	}
+
+	return nil
 }

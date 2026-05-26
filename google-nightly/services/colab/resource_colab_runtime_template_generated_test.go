@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/colab"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = colab.Product
 )
 
 func TestAccColabRuntimeTemplate_colabRuntimeTemplateBasicExample(t *testing.T) {
@@ -149,7 +153,7 @@ func TestAccColabRuntimeTemplate_colabRuntimeTemplateFullExample(t *testing.T) {
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"key_name":              acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"key_name":              kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"network_name":          "tf-test-colab-test-default" + randomSuffix,
 		"runtime_template_name": "tf-test-colab-runtime-template" + randomSuffix,
 		"random_suffix":         randomSuffix,
@@ -268,8 +272,7 @@ func testAccCheckColabRuntimeTemplateDestroyProducer(t *testing.T) func(s *terra
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ColabBasePath}}projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(colab.Product, config)+"projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates/{{name}}")
 			if err != nil {
 				return err
 			}

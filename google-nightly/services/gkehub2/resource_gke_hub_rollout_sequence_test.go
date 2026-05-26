@@ -29,6 +29,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/gkehub2"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -96,9 +97,22 @@ resource "google_gke_hub_rollout_sequence" "rollout_sequence" {
   provider = google-beta
   rollout_sequence_id = "tf-test-rs-basic-%{random_suffix}"
   display_name        = "Basic Rollout Sequence"
+  ignored_clusters_selector {
+        label_selector = "resource.labels.ignored == 'true'"
+        }
   stages {
     fleet_projects = ["projects/%{project_id}"]
     soak_duration  = "60s"
+  }
+  auto_upgrade_config {
+    rollout_creation_scope {
+      upgrade_types = [
+        "CONTROL_PLANE_MINOR",
+        "CONTROL_PLANE_PATCH",
+        "NODE_MINOR",
+        "NODE_PATCH"
+      ]
+    }
   }
 }
 `, context)
@@ -110,16 +124,27 @@ resource "google_gke_hub_rollout_sequence" "rollout_sequence" {
   provider = google-beta
   rollout_sequence_id = "tf-test-rs-basic-%{random_suffix}"
   display_name        = "Modified Rollout Sequence"
+  ignored_clusters_selector {
+        label_selector = "resource.labels.ignored == 'super_true'"
+        }
   stages {
-		fleet_projects = ["projects/%{project_id}"]
-		cluster_selector {
-		  label_selector = "resource.labels.canary=='true'"
-		}
-		soak_duration  = "30s"
+        fleet_projects = ["projects/%{project_id}"]
+        cluster_selector {
+          label_selector = "resource.labels.canary=='true'"
+        }
+        soak_duration  = "30s"
   }
   stages {
-		fleet_projects = ["projects/%{project_id}"]
-		soak_duration  = "60s"
+        fleet_projects = ["projects/%{project_id}"]
+        soak_duration  = "60s"
+  }
+  auto_upgrade_config {
+    rollout_creation_scope {
+      upgrade_types = [
+        "CONTROL_PLANE_PATCH",
+        "NODE_PATCH"
+      ]
+    }
   }
   labels = {
     some_key = "some_value"

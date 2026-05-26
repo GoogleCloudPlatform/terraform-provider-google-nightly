@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/healthcare"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
@@ -166,7 +167,7 @@ func testAccCheckGoogleHealthcareFhirStoreIamBindingExists(t *testing.T, binding
 			return err
 		}
 
-		p, err := config.NewHealthcareClient(config.UserAgent).Projects.Locations.Datasets.FhirStores.GetIamPolicy(fhirStoreId.FhirStoreId()).Do()
+		p, err := healthcare.NewClient(config, config.UserAgent).Projects.Locations.Datasets.FhirStores.GetIamPolicy(fhirStoreId.FhirStoreId()).Do()
 		if err != nil {
 			return err
 		}
@@ -202,7 +203,7 @@ func testAccCheckGoogleHealthcareFhirStoreIamMemberExists(t *testing.T, n, role,
 			return err
 		}
 
-		p, err := config.NewHealthcareClient(config.UserAgent).Projects.Locations.Datasets.FhirStores.GetIamPolicy(fhirStoreId.FhirStoreId()).Do()
+		p, err := healthcare.NewClient(config, config.UserAgent).Projects.Locations.Datasets.FhirStores.GetIamPolicy(fhirStoreId.FhirStoreId()).Do()
 		if err != nil {
 			return err
 		}
@@ -237,7 +238,7 @@ func testAccCheckGoogleHealthcareFhirStoreIamPolicyExists(t *testing.T, n, role,
 			return err
 		}
 
-		p, err := config.NewHealthcareClient(config.UserAgent).Projects.Locations.Datasets.FhirStores.GetIamPolicy(fhirStoreId.FhirStoreId()).Do()
+		p, err := healthcare.NewClient(config, config.UserAgent).Projects.Locations.Datasets.FhirStores.GetIamPolicy(fhirStoreId.FhirStoreId()).Do()
 		if err != nil {
 			return err
 		}

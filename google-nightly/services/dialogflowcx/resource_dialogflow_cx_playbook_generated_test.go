@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dialogflowcx"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = dialogflowcx.Product
 )
 
 func TestAccDialogflowCXPlaybook_dialogflowcxPlaybookBasicExample(t *testing.T) {
@@ -270,8 +273,7 @@ func testAccCheckDialogflowCXPlaybookDestroyProducer(t *testing.T) func(s *terra
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DialogflowCXBasePath}}{{parent}}/playbooks/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(dialogflowcx.Product, config)+"{{parent}}/playbooks/{{name}}")
 			if err != nil {
 				return err
 			}

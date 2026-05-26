@@ -116,6 +116,7 @@ func ResourceLustreInstance() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -628,6 +629,18 @@ squash uid.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -714,7 +727,7 @@ func resourceLustreInstanceCreate(d *schema.ResourceData, meta interface{}) erro
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LustreBasePath}}projects/{{project}}/locations/{{location}}/instances?instanceId={{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances?instanceId={{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -798,7 +811,7 @@ func resourceLustreInstanceRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LustreBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -831,75 +844,26 @@ func resourceLustreInstanceRead(d *schema.ResourceData, meta interface{}) error 
 
 	log.Printf("[DEBUG] Finished reading LustreInstance %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Instance: %s", err)
 	}
 
-	if err := d.Set("access_rules_options", flattenLustreInstanceAccessRulesOptions(res["accessRulesOptions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("capacity_gib", flattenLustreInstanceCapacityGib(res["capacityGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("create_time", flattenLustreInstanceCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("description", flattenLustreInstanceDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("dynamic_tier_options", flattenLustreInstanceDynamicTierOptions(res["dynamicTierOptions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("filesystem", flattenLustreInstanceFilesystem(res["filesystem"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("gke_support_enabled", flattenLustreInstanceGkeSupportEnabled(res["gkeSupportEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("kms_key", flattenLustreInstanceKmsKey(res["kmsKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("labels", flattenLustreInstanceLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("maintenance_policy", flattenLustreInstanceMaintenancePolicy(res["maintenancePolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("mount_point", flattenLustreInstanceMountPoint(res["mountPoint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("name", flattenLustreInstanceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("network", flattenLustreInstanceNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("per_unit_storage_throughput", flattenLustreInstancePerUnitStorageThroughput(res["perUnitStorageThroughput"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("placement_policy", flattenLustreInstancePlacementPolicy(res["placementPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("state", flattenLustreInstanceState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("state_reason", flattenLustreInstanceStateReason(res["stateReason"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("uid", flattenLustreInstanceUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("upcoming_maintenance_schedule", flattenLustreInstanceUpcomingMaintenanceSchedule(res["upcomingMaintenanceSchedule"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("update_time", flattenLustreInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenLustreInstanceTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenLustreInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+	err = ResourceLustreInstanceFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -930,6 +894,19 @@ func resourceLustreInstanceRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceLustreInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceLustreInstance().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceLustreInstanceRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1008,7 +985,7 @@ func resourceLustreInstanceUpdate(d *schema.ResourceData, meta interface{}) erro
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LustreBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -1088,6 +1065,13 @@ func resourceLustreInstanceUpdate(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceLustreInstanceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy LustreInstance without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Instance %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1101,8 +1085,7 @@ func resourceLustreInstanceDelete(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("Error fetching project for Instance: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{LustreBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -2245,4 +2228,77 @@ func expandLustreInstanceEffectiveLabels(v interface{}, d tpgresource.TerraformR
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceLustreInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("access_rules_options", flattenLustreInstanceAccessRulesOptions(res["accessRulesOptions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("capacity_gib", flattenLustreInstanceCapacityGib(res["capacityGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("create_time", flattenLustreInstanceCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("description", flattenLustreInstanceDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("dynamic_tier_options", flattenLustreInstanceDynamicTierOptions(res["dynamicTierOptions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("filesystem", flattenLustreInstanceFilesystem(res["filesystem"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("gke_support_enabled", flattenLustreInstanceGkeSupportEnabled(res["gkeSupportEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("kms_key", flattenLustreInstanceKmsKey(res["kmsKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("labels", flattenLustreInstanceLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("maintenance_policy", flattenLustreInstanceMaintenancePolicy(res["maintenancePolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("mount_point", flattenLustreInstanceMountPoint(res["mountPoint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("name", flattenLustreInstanceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("network", flattenLustreInstanceNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("per_unit_storage_throughput", flattenLustreInstancePerUnitStorageThroughput(res["perUnitStorageThroughput"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("placement_policy", flattenLustreInstancePlacementPolicy(res["placementPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("state", flattenLustreInstanceState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("state_reason", flattenLustreInstanceStateReason(res["stateReason"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("uid", flattenLustreInstanceUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("upcoming_maintenance_schedule", flattenLustreInstanceUpcomingMaintenanceSchedule(res["upcomingMaintenanceSchedule"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("update_time", flattenLustreInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenLustreInstanceTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenLustreInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+
+	return nil
 }

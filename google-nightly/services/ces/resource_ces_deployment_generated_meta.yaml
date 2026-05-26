@@ -4,7 +4,7 @@ resource: google_ces_deployment
 generation_type: mmv1
 source_file: products/ces/Deployment.yaml
 api_service_name: ces.googleapis.com
-api_version: v1
+api_version: v1beta
 api_resource_type_kind: Deployment
 autogen_status: true
 fields:
@@ -17,6 +17,10 @@ fields:
     - api_field: channelProfile.personaProperty.persona
     - api_field: channelProfile.profileId
     - api_field: channelProfile.webWidgetConfig.modality
+    - api_field: channelProfile.webWidgetConfig.securitySettings.allowedOrigins
+    - api_field: channelProfile.webWidgetConfig.securitySettings.enableOriginCheck
+    - api_field: channelProfile.webWidgetConfig.securitySettings.enablePublicAccess
+    - api_field: channelProfile.webWidgetConfig.securitySettings.enableRecaptcha
     - api_field: channelProfile.webWidgetConfig.theme
     - api_field: channelProfile.webWidgetConfig.webWidgetTitle
     - api_field: createTime
@@ -26,3 +30,5 @@ fields:
       provider_only: true
     - api_field: name
     - api_field: updateTime
+    - field: deletion_policy
+      provider_only: true

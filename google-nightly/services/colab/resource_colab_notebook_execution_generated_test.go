@@ -30,6 +30,13 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/colab"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataform"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +55,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = colab.Product
 )
 
 func TestAccColabNotebookExecution_colabNotebookExecutionBasicExample(t *testing.T) {
@@ -436,7 +444,7 @@ resource "google_colab_notebook_execution" "notebook-execution" {
 
 func TestAccColabNotebookExecution_colabNotebookExecutionDataformExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-dataform.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -450,7 +458,7 @@ func TestAccColabNotebookExecution_colabNotebookExecutionDataformExample(t *test
 		"service_account":       envvar.GetTestServiceAccountFromEnv(t),
 		"bucket":                "tf_test_my_bucket" + randomSuffix,
 		"dataform_repository":   "tf-test-dataform-repository" + randomSuffix,
-		"key_name":              acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"key_name":              kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"runtime_template_name": "tf-test-runtime-template-name" + randomSuffix,
 		"secret":                "secret" + randomSuffix,
 		"random_suffix":         randomSuffix,
@@ -585,8 +593,7 @@ func testAccCheckColabNotebookExecutionDestroyProducer(t *testing.T) func(s *ter
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ColabBasePath}}projects/{{project}}/locations/{{location}}/notebookExecutionJobs/{{notebook_execution_job_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(colab.Product, config)+"projects/{{project}}/locations/{{location}}/notebookExecutionJobs/{{notebook_execution_job_id}}")
 			if err != nil {
 				return err
 			}

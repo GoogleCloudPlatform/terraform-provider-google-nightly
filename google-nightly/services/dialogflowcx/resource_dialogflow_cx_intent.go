@@ -115,6 +115,7 @@ func ResourceDialogflowCXIntent() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -302,6 +303,19 @@ The Default Negative Intent cannot be deleted; deleting the 'google_dialogflow_c
 
 ~> Avoid having multiple 'google_dialogflow_cx_intent' resources linked to the same agent with 'is_default_negative_intent = true' because they will compete to control a single Default Negative Intent resource in GCP.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -364,7 +378,7 @@ func resourceDialogflowCXIntentCreate(d *schema.ResourceData, meta interface{}) 
 		obj["languageCode"] = languageCodeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}{{parent}}/intents")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/intents")
 	if err != nil {
 		return err
 	}
@@ -478,7 +492,7 @@ func resourceDialogflowCXIntentRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}{{parent}}/intents/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/intents/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -526,39 +540,22 @@ func resourceDialogflowCXIntentRead(d *schema.ResourceData, meta interface{}) er
 	log.Printf("[DEBUG] Finished reading DialogflowCXIntent %q: %#v", d.Id(), res)
 
 	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 
-	if err := d.Set("name", flattenDialogflowCXIntentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("display_name", flattenDialogflowCXIntentDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("training_phrases", flattenDialogflowCXIntentTrainingPhrases(res["trainingPhrases"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("parameters", flattenDialogflowCXIntentParameters(res["parameters"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("priority", flattenDialogflowCXIntentPriority(res["priority"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("is_fallback", flattenDialogflowCXIntentIsFallback(res["isFallback"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("labels", flattenDialogflowCXIntentLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("description", flattenDialogflowCXIntentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDialogflowCXIntentTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDialogflowCXIntentEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
-	}
-	if err := d.Set("language_code", flattenDialogflowCXIntentLanguageCode(res["languageCode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Intent: %s", err)
+	err = ResourceDialogflowCXIntentFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -583,6 +580,19 @@ func resourceDialogflowCXIntentRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceDialogflowCXIntentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDialogflowCXIntent().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDialogflowCXIntentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -650,7 +660,7 @@ func resourceDialogflowCXIntentUpdate(d *schema.ResourceData, meta interface{}) 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}{{parent}}/intents/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/intents/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -743,6 +753,13 @@ func resourceDialogflowCXIntentUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceDialogflowCXIntentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DialogflowCXIntent without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Intent %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -751,7 +768,7 @@ func resourceDialogflowCXIntentDelete(d *schema.ResourceData, meta interface{}) 
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}{{parent}}/intents/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/intents/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1202,5 +1219,45 @@ func resourceDialogflowCXIntentPostCreateSetComputedFields(d *schema.ResourceDat
 	if err := d.Set("name", flattenDialogflowCXIntentName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceDialogflowCXIntentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDialogflowCXIntentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("display_name", flattenDialogflowCXIntentDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("training_phrases", flattenDialogflowCXIntentTrainingPhrases(res["trainingPhrases"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("parameters", flattenDialogflowCXIntentParameters(res["parameters"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("priority", flattenDialogflowCXIntentPriority(res["priority"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("is_fallback", flattenDialogflowCXIntentIsFallback(res["isFallback"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("labels", flattenDialogflowCXIntentLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("description", flattenDialogflowCXIntentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDialogflowCXIntentTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDialogflowCXIntentEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+	if err = d.Set("language_code", flattenDialogflowCXIntentLanguageCode(res["languageCode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Intent: %s", err)
+	}
+
 	return nil
 }

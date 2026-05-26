@@ -173,6 +173,7 @@ func ResourceSpannerInstance() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -507,6 +508,18 @@ This must be set to true if you created a backup manually in the console.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -586,7 +599,7 @@ func resourceSpannerInstanceCreate(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SpannerBasePath}}projects/{{project}}/instances")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances")
 	if err != nil {
 		return err
 	}
@@ -695,7 +708,7 @@ func resourceSpannerInstanceRead(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SpannerBasePath}}projects/{{project}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -746,48 +759,25 @@ func resourceSpannerInstanceRead(d *schema.ResourceData, meta interface{}) error
 			return fmt.Errorf("Error setting force_destroy: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Instance: %s", err)
 	}
 
-	if err := d.Set("name", flattenSpannerInstanceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("config", flattenSpannerInstanceConfig(res["config"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("display_name", flattenSpannerInstanceDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("num_nodes", flattenSpannerInstanceNumNodes(res["nodeCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("processing_units", flattenSpannerInstanceProcessingUnits(res["processingUnits"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("labels", flattenSpannerInstanceLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("state", flattenSpannerInstanceState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("autoscaling_config", flattenSpannerInstanceAutoscalingConfig(res["autoscalingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("edition", flattenSpannerInstanceEdition(res["edition"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("instance_type", flattenSpannerInstanceInstanceType(res["instanceType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("default_backup_schedule_type", flattenSpannerInstanceDefaultBackupScheduleType(res["defaultBackupScheduleType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenSpannerInstanceTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenSpannerInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+	err = ResourceSpannerInstanceFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -812,6 +802,19 @@ func resourceSpannerInstanceRead(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceSpannerInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSpannerInstance().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSpannerInstanceRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -896,7 +899,7 @@ func resourceSpannerInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SpannerBasePath}}projects/{{project}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -946,6 +949,13 @@ func resourceSpannerInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceSpannerInstanceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SpannerInstance without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Instance %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -959,8 +969,7 @@ func resourceSpannerInstanceDelete(d *schema.ResourceData, meta interface{}) err
 		return fmt.Errorf("Error fetching project for Instance: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SpannerBasePath}}projects/{{project}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1989,4 +1998,50 @@ func resourceSpannerInstanceDecoder(d *schema.ResourceData, meta interface{}, re
 	}
 	d.SetId(id)
 	return res, nil
+}
+
+func ResourceSpannerInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSpannerInstanceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("config", flattenSpannerInstanceConfig(res["config"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("display_name", flattenSpannerInstanceDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("num_nodes", flattenSpannerInstanceNumNodes(res["nodeCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("processing_units", flattenSpannerInstanceProcessingUnits(res["processingUnits"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("labels", flattenSpannerInstanceLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("state", flattenSpannerInstanceState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("autoscaling_config", flattenSpannerInstanceAutoscalingConfig(res["autoscalingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("edition", flattenSpannerInstanceEdition(res["edition"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("instance_type", flattenSpannerInstanceInstanceType(res["instanceType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("default_backup_schedule_type", flattenSpannerInstanceDefaultBackupScheduleType(res["defaultBackupScheduleType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenSpannerInstanceTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenSpannerInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+
+	return nil
 }

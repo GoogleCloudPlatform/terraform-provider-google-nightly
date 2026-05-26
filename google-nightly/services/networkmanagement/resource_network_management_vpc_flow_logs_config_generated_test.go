@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkmanagement"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = networkmanagement.Product
 )
 
 func TestAccNetworkManagementVpcFlowLogsConfig_networkManagementVpcFlowLogsConfigInterconnectBasicExample(t *testing.T) {
@@ -357,8 +360,7 @@ func testAccCheckNetworkManagementVpcFlowLogsConfigDestroyProducer(t *testing.T)
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{NetworkManagementBasePath}}projects/{{project}}/locations/{{location}}/vpcFlowLogsConfigs/{{vpc_flow_logs_config_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(networkmanagement.Product, config)+"projects/{{project}}/locations/{{location}}/vpcFlowLogsConfigs/{{vpc_flow_logs_config_id}}")
 			if err != nil {
 				return err
 			}

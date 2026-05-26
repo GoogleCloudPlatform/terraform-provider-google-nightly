@@ -116,6 +116,7 @@ func ResourceGKEHub2Feature() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -847,6 +848,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -879,7 +892,7 @@ func resourceGKEHub2FeatureCreate(d *schema.ResourceData, meta interface{}) erro
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{GKEHub2BasePath}}projects/{{project}}/locations/{{location}}/features?featureId={{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/features?featureId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -988,7 +1001,7 @@ func resourceGKEHub2FeatureRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{GKEHub2BasePath}}projects/{{project}}/locations/{{location}}/features/{{name}}?return_partial_success=true")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/features/{{name}}?return_partial_success=true")
 	if err != nil {
 		return err
 	}
@@ -1021,39 +1034,26 @@ func resourceGKEHub2FeatureRead(d *schema.ResourceData, meta interface{}) error 
 
 	log.Printf("[DEBUG] Finished reading GKEHub2Feature %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Feature: %s", err)
 	}
 
-	if err := d.Set("labels", flattenGKEHub2FeatureLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
-	}
-	if err := d.Set("resource_state", flattenGKEHub2FeatureResourceState(res["resourceState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
-	}
-	if err := d.Set("spec", flattenGKEHub2FeatureSpec(res["spec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
-	}
-	if err := d.Set("fleet_default_member_config", flattenGKEHub2FeatureFleetDefaultMemberConfig(res["fleetDefaultMemberConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
-	}
-	if err := d.Set("state", flattenGKEHub2FeatureState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
-	}
-	if err := d.Set("create_time", flattenGKEHub2FeatureCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
-	}
-	if err := d.Set("update_time", flattenGKEHub2FeatureUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
-	}
-	if err := d.Set("delete_time", flattenGKEHub2FeatureDeleteTime(res["deleteTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenGKEHub2FeatureTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenGKEHub2FeatureEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Feature: %s", err)
+	err = ResourceGKEHub2FeatureFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1084,6 +1084,19 @@ func resourceGKEHub2FeatureRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceGKEHub2FeatureUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceGKEHub2Feature().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceGKEHub2FeatureRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1138,7 +1151,7 @@ func resourceGKEHub2FeatureUpdate(d *schema.ResourceData, meta interface{}) erro
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{GKEHub2BasePath}}projects/{{project}}/locations/{{location}}/features/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/features/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1202,6 +1215,13 @@ func resourceGKEHub2FeatureUpdate(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceGKEHub2FeatureDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy GKEHub2Feature without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Feature %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1215,8 +1235,7 @@ func resourceGKEHub2FeatureDelete(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("Error fetching project for Feature: %s", err)
 	}
 	billingProject = strings.TrimPrefix(project, "projects/")
-
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{GKEHub2BasePath}}projects/{{project}}/locations/{{location}}/features/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/features/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -3426,4 +3445,41 @@ func expandGKEHub2FeatureEffectiveLabels(v interface{}, d tpgresource.TerraformR
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceGKEHub2FeatureFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("labels", flattenGKEHub2FeatureLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+	if err = d.Set("resource_state", flattenGKEHub2FeatureResourceState(res["resourceState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+	if err = d.Set("spec", flattenGKEHub2FeatureSpec(res["spec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+	if err = d.Set("fleet_default_member_config", flattenGKEHub2FeatureFleetDefaultMemberConfig(res["fleetDefaultMemberConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+	if err = d.Set("state", flattenGKEHub2FeatureState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+	if err = d.Set("create_time", flattenGKEHub2FeatureCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+	if err = d.Set("update_time", flattenGKEHub2FeatureUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+	if err = d.Set("delete_time", flattenGKEHub2FeatureDeleteTime(res["deleteTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenGKEHub2FeatureTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenGKEHub2FeatureEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Feature: %s", err)
+	}
+
+	return nil
 }

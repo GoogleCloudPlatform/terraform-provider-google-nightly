@@ -105,6 +105,7 @@ func ResourceApphubServiceProjectAttachment() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceApphubServiceProjectAttachmentCreate,
 		Read:   resourceApphubServiceProjectAttachmentRead,
+		Update: resourceApphubServiceProjectAttachmentUpdate,
 		Delete: resourceApphubServiceProjectAttachmentDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -118,6 +119,7 @@ func ResourceApphubServiceProjectAttachment() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -181,6 +183,18 @@ are accepted. As output, this field will contain project number."`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -201,7 +215,7 @@ func resourceApphubServiceProjectAttachmentCreate(d *schema.ResourceData, meta i
 		obj["serviceProject"] = serviceProjectProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApphubBasePath}}projects/{{project}}/locations/global/serviceProjectAttachments?serviceProjectAttachmentId={{service_project_attachment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/serviceProjectAttachments?serviceProjectAttachmentId={{service_project_attachment_id}}")
 	if err != nil {
 		return err
 	}
@@ -280,7 +294,7 @@ func resourceApphubServiceProjectAttachmentRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApphubBasePath}}projects/{{project}}/locations/global/serviceProjectAttachments/{{service_project_attachment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/serviceProjectAttachments/{{service_project_attachment_id}}")
 	if err != nil {
 		return err
 	}
@@ -313,24 +327,26 @@ func resourceApphubServiceProjectAttachmentRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading ApphubServiceProjectAttachment %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
 	}
 
-	if err := d.Set("name", flattenApphubServiceProjectAttachmentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
-	}
-	if err := d.Set("service_project", flattenApphubServiceProjectAttachmentServiceProject(res["serviceProject"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
-	}
-	if err := d.Set("create_time", flattenApphubServiceProjectAttachmentCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
-	}
-	if err := d.Set("uid", flattenApphubServiceProjectAttachmentUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
-	}
-	if err := d.Set("state", flattenApphubServiceProjectAttachmentState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
+	err = ResourceApphubServiceProjectAttachmentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -354,7 +370,19 @@ func resourceApphubServiceProjectAttachmentRead(d *schema.ResourceData, meta int
 	return nil
 }
 
+func resourceApphubServiceProjectAttachmentUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceApphubServiceProjectAttachmentRead(d, meta)
+}
+
 func resourceApphubServiceProjectAttachmentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ApphubServiceProjectAttachment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ServiceProjectAttachment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -368,8 +396,7 @@ func resourceApphubServiceProjectAttachmentDelete(d *schema.ResourceData, meta i
 		return fmt.Errorf("Error fetching project for ServiceProjectAttachment: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApphubBasePath}}projects/{{project}}/locations/global/serviceProjectAttachments/{{service_project_attachment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/serviceProjectAttachments/{{service_project_attachment_id}}")
 	if err != nil {
 		return err
 	}
@@ -455,4 +482,26 @@ func expandApphubServiceProjectAttachmentServiceProject(v interface{}, d tpgreso
 	service_project := "projects/" + d.Get("service_project_attachment_id").(string)
 
 	return service_project, nil
+}
+
+func ResourceApphubServiceProjectAttachmentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenApphubServiceProjectAttachmentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
+	}
+	if err = d.Set("service_project", flattenApphubServiceProjectAttachmentServiceProject(res["serviceProject"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
+	}
+	if err = d.Set("create_time", flattenApphubServiceProjectAttachmentCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
+	}
+	if err = d.Set("uid", flattenApphubServiceProjectAttachmentUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
+	}
+	if err = d.Set("state", flattenApphubServiceProjectAttachmentState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServiceProjectAttachment: %s", err)
+	}
+
+	return nil
 }

@@ -30,6 +30,12 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/datastream"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/sql"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +54,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = datastream.Product
 )
 
 func TestAccDatastreamStream_datastreamStreamBasicExample(t *testing.T) {
@@ -241,7 +248,7 @@ func TestAccDatastreamStream_datastreamStreamFullExample(t *testing.T) {
 		"network_name":                      "tf-test-my-network" + randomSuffix,
 		"private_connection_id":             "tf-test-my-connection" + randomSuffix,
 		"source_connection_profile_id":      "tf-test-source-profile" + randomSuffix,
-		"stream_cmek":                       acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"stream_cmek":                       kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"stream_id":                         "tf-test-my-stream" + randomSuffix,
 		"random_suffix":                     randomSuffix,
 	}
@@ -639,7 +646,7 @@ func TestAccDatastreamStream_datastreamStreamBigqueryExample(t *testing.T) {
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"bigquery_destination_table_kms_key_name": acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"bigquery_destination_table_kms_key_name": kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"database_instance_name":                  "tf-test-my-instance" + randomSuffix,
 		"deletion_protection":                     false,
 		"destination_connection_profile_id":       "tf-test-destination-profile" + randomSuffix,
@@ -1141,8 +1148,7 @@ func testAccCheckDatastreamStreamDestroyProducer(t *testing.T) func(s *terraform
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DatastreamBasePath}}projects/{{project}}/locations/{{location}}/streams/{{stream_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(datastream.Product, config)+"projects/{{project}}/locations/{{location}}/streams/{{stream_id}}")
 			if err != nil {
 				return err
 			}

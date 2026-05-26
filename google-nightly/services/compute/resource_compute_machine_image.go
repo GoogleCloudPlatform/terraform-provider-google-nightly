@@ -100,6 +100,7 @@ func ResourceComputeMachineImage() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceComputeMachineImageCreate,
 		Read:   resourceComputeMachineImageRead,
+		Update: resourceComputeMachineImageUpdate,
 		Delete: resourceComputeMachineImageDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +114,7 @@ func ResourceComputeMachineImage() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -193,12 +195,33 @@ If absent, the Compute Engine Service Agent service account is used.`,
 							ForceNew: true,
 							Description: `Specifies a 256-bit customer-supplied encryption key, encoded in
 RFC 4648 base64 to either encrypt or decrypt this resource.`,
+							Sensitive: true,
 						},
 						"sha256": {
 							Type:     schema.TypeString,
 							Computed: true,
 							Description: `The RFC 4648 base64 encoded SHA-256 hash of the
 customer-supplied encryption key that protects this resource.`,
+						},
+					},
+				},
+			},
+			"params": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				ForceNew:    true,
+				Description: `Additional params passed with the request, but not persisted as part of resource payload.`,
+				MaxItems:    1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"resource_manager_tags": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							ForceNew: true,
+							Description: `Resource manager tags to be bound to the machine image. Tag keys and values have the
+same definition as resource manager tags. Keys must be in the format tagKeys/{tag_key_id},
+and values are in the format tagValues/456.`,
+							Elem: &schema.Schema{Type: schema.TypeString},
 						},
 					},
 				},
@@ -220,6 +243,18 @@ customer-supplied encryption key that protects this resource.`,
 			"self_link": {
 				Type:     schema.TypeString,
 				Computed: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -264,8 +299,14 @@ func resourceComputeMachineImageCreate(d *schema.ResourceData, meta interface{})
 	} else if v, ok := d.GetOkExists("machine_image_encryption_key"); !tpgresource.IsEmptyValue(reflect.ValueOf(machineImageEncryptionKeyProp)) && (ok || !reflect.DeepEqual(v, machineImageEncryptionKeyProp)) {
 		obj["machineImageEncryptionKey"] = machineImageEncryptionKeyProp
 	}
+	paramsProp, err := expandComputeMachineImageParams(d.Get("params"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("params"); !tpgresource.IsEmptyValue(reflect.ValueOf(paramsProp)) && (ok || !reflect.DeepEqual(v, paramsProp)) {
+		obj["params"] = paramsProp
+	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/machineImages")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/machineImages")
 	if err != nil {
 		return err
 	}
@@ -344,7 +385,7 @@ func resourceComputeMachineImageRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/machineImages/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/machineImages/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -377,30 +418,26 @@ func resourceComputeMachineImageRead(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[DEBUG] Finished reading ComputeMachineImage %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading MachineImage: %s", err)
 	}
 
-	if err := d.Set("name", flattenComputeMachineImageName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MachineImage: %s", err)
-	}
-	if err := d.Set("description", flattenComputeMachineImageDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MachineImage: %s", err)
-	}
-	if err := d.Set("source_instance", flattenComputeMachineImageSourceInstance(res["sourceInstance"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MachineImage: %s", err)
-	}
-	if err := d.Set("storage_locations", flattenComputeMachineImageStorageLocations(res["storageLocations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MachineImage: %s", err)
-	}
-	if err := d.Set("guest_flush", flattenComputeMachineImageGuestFlush(res["guestFlush"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MachineImage: %s", err)
-	}
-	if err := d.Set("machine_image_encryption_key", flattenComputeMachineImageMachineImageEncryptionKey(res["machineImageEncryptionKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MachineImage: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading MachineImage: %s", err)
+	err = ResourceComputeMachineImageFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -424,7 +461,19 @@ func resourceComputeMachineImageRead(d *schema.ResourceData, meta interface{}) e
 	return nil
 }
 
+func resourceComputeMachineImageUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceComputeMachineImageRead(d, meta)
+}
+
 func resourceComputeMachineImageDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeMachineImage without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing MachineImage %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -438,8 +487,7 @@ func resourceComputeMachineImageDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error fetching project for MachineImage: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/machineImages/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/machineImages/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -635,4 +683,64 @@ func expandComputeMachineImageMachineImageEncryptionKeyKmsKeyName(v interface{},
 
 func expandComputeMachineImageMachineImageEncryptionKeyKmsKeyServiceAccount(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func expandComputeMachineImageParams(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedResourceManagerTags, err := expandComputeMachineImageParamsResourceManagerTags(original["resource_manager_tags"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedResourceManagerTags); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["resourceManagerTags"] = transformedResourceManagerTags
+	}
+
+	return transformed, nil
+}
+
+func expandComputeMachineImageParamsResourceManagerTags(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
+}
+
+func ResourceComputeMachineImageFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenComputeMachineImageName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MachineImage: %s", err)
+	}
+	if err = d.Set("description", flattenComputeMachineImageDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MachineImage: %s", err)
+	}
+	if err = d.Set("source_instance", flattenComputeMachineImageSourceInstance(res["sourceInstance"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MachineImage: %s", err)
+	}
+	if err = d.Set("storage_locations", flattenComputeMachineImageStorageLocations(res["storageLocations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MachineImage: %s", err)
+	}
+	if err = d.Set("guest_flush", flattenComputeMachineImageGuestFlush(res["guestFlush"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MachineImage: %s", err)
+	}
+	if err = d.Set("machine_image_encryption_key", flattenComputeMachineImageMachineImageEncryptionKey(res["machineImageEncryptionKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MachineImage: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading MachineImage: %s", err)
+	}
+	return nil
 }

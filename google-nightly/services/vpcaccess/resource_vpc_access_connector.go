@@ -126,6 +126,7 @@ func ResourceVPCAccessConnector() *schema.Resource {
 			customdiff.ForceNewIfChange("min_instances", isInstanceShrinkage),
 			customdiff.ForceNewIfChange("max_instances", isInstanceShrinkage),
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -275,6 +276,18 @@ https://compute.googleapis.com/compute/v1/projects/{project}/regions/{region}/su
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -348,7 +361,7 @@ func resourceVPCAccessConnectorCreate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VPCAccessBasePath}}projects/{{project}}/locations/{{region}}/connectors?connectorId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/connectors?connectorId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -437,7 +450,7 @@ func resourceVPCAccessConnectorRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VPCAccessBasePath}}projects/{{project}}/locations/{{region}}/connectors/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/connectors/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -482,42 +495,26 @@ func resourceVPCAccessConnectorRead(d *schema.ResourceData, meta interface{}) er
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Connector: %s", err)
 	}
 
-	if err := d.Set("name", flattenVPCAccessConnectorName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("network", flattenVPCAccessConnectorNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("ip_cidr_range", flattenVPCAccessConnectorIpCidrRange(res["ipCidrRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("state", flattenVPCAccessConnectorState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("machine_type", flattenVPCAccessConnectorMachineType(res["machineType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("min_throughput", flattenVPCAccessConnectorMinThroughput(res["minThroughput"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("min_instances", flattenVPCAccessConnectorMinInstances(res["minInstances"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("max_instances", flattenVPCAccessConnectorMaxInstances(res["maxInstances"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("max_throughput", flattenVPCAccessConnectorMaxThroughput(res["maxThroughput"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("connected_projects", flattenVPCAccessConnectorConnectedProjects(res["connectedProjects"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
-	}
-	if err := d.Set("subnet", flattenVPCAccessConnectorSubnet(res["subnet"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connector: %s", err)
+	err = ResourceVPCAccessConnectorFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -548,6 +545,19 @@ func resourceVPCAccessConnectorRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceVPCAccessConnectorUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVPCAccessConnector().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVPCAccessConnectorRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -607,7 +617,7 @@ func resourceVPCAccessConnectorUpdate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VPCAccessBasePath}}projects/{{project}}/locations/{{region}}/connectors/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/connectors/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -686,6 +696,13 @@ func resourceVPCAccessConnectorUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceVPCAccessConnectorDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VPCAccessConnector without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Connector %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -699,8 +716,7 @@ func resourceVPCAccessConnectorDelete(d *schema.ResourceData, meta interface{}) 
 		return fmt.Errorf("Error fetching project for Connector: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{VPCAccessBasePath}}projects/{{project}}/locations/{{region}}/connectors/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/connectors/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -968,4 +984,44 @@ func resourceVPCAccessConnectorDecoder(d *schema.ResourceData, meta interface{},
 	}
 	res["name"] = d.Get("name").(string)
 	return res, nil
+}
+
+func ResourceVPCAccessConnectorFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenVPCAccessConnectorName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("network", flattenVPCAccessConnectorNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("ip_cidr_range", flattenVPCAccessConnectorIpCidrRange(res["ipCidrRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("state", flattenVPCAccessConnectorState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("machine_type", flattenVPCAccessConnectorMachineType(res["machineType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("min_throughput", flattenVPCAccessConnectorMinThroughput(res["minThroughput"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("min_instances", flattenVPCAccessConnectorMinInstances(res["minInstances"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("max_instances", flattenVPCAccessConnectorMaxInstances(res["maxInstances"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("max_throughput", flattenVPCAccessConnectorMaxThroughput(res["maxThroughput"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("connected_projects", flattenVPCAccessConnectorConnectedProjects(res["connectedProjects"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+	if err = d.Set("subnet", flattenVPCAccessConnectorSubnet(res["subnet"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connector: %s", err)
+	}
+
+	return nil
 }

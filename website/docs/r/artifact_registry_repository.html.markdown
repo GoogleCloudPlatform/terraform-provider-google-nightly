@@ -776,6 +776,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_docker_config"></a>The `docker_config` block supports:
@@ -1125,6 +1131,10 @@ This resource provides the following
 - `create` - Default is 20 minutes.
 - `update` - Default is 20 minutes.
 - `delete` - Default is 20 minutes.
+
+## Regional Endpoint Policies
+
+This resource supports Regional Endpoint Policies (REP). See the [provider reference](https://registry.terraform.io/providers/hashicorp/google/latest/docs/guides/provider_reference#prefer_regional_endpoints) for more details on configuration.
 
 ## Import
 

@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workstations"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = workstations.Product
 )
 
 func TestAccWorkstationsWorkstationCluster_workstationClusterBasicExample(t *testing.T) {
@@ -342,6 +346,70 @@ resource "google_compute_subnetwork" "default" {
 `, context)
 }
 
+func TestAccWorkstationsWorkstationCluster_workstationClusterUrlsExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"cluster_id":           "custom-urls-cluster",
+		"cluster_network_name": "tf-test-workstations-network" + randomSuffix,
+		"random_suffix":        randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckWorkstationsWorkstationClusterDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccWorkstationsWorkstationCluster_workstationClusterCustomUrlsExample(context),
+			},
+			{
+				ResourceName:            "google_workstations_workstation_cluster.default",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"annotations", "labels", "location", "tags", "terraform_labels", "workstation_cluster_id"},
+			},
+			{
+				ResourceName:       "google_workstations_workstation_cluster.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccWorkstationsWorkstationCluster_workstationClusterCustomUrlsExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_workstations_workstation_cluster" "default" {
+  workstation_cluster_id = "%{cluster_id}"
+  network                = google_compute_network.default.id
+  subnetwork             = google_compute_subnetwork.default.id
+  location               = "us-central1"
+
+  workstation_authorization_url = "https://workstations.cloud.google.com/ui/auth"
+  workstation_launch_url        = "https://console.cloud.google.com/workstations/launch"
+}
+
+data "google_project" "project" {
+}
+
+resource "google_compute_network" "default" {
+  name                    = "%{cluster_network_name}"
+  auto_create_subnetworks = false
+}
+
+resource "google_compute_subnetwork" "default" {
+  name          = "%{cluster_network_name}"
+  ip_cidr_range = "10.0.0.0/24"
+  region        = "us-central1"
+  network       = google_compute_network.default.name
+}
+`, context)
+}
+
 func testAccCheckWorkstationsWorkstationClusterDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {
@@ -353,8 +421,7 @@ func testAccCheckWorkstationsWorkstationClusterDestroyProducer(t *testing.T) fun
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(workstations.Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}")
 			if err != nil {
 				return err
 			}

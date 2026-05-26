@@ -31,6 +31,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/agentregistry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -49,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = agentregistry.Product
 )
 
 func TestAccAgentRegistryService_agentRegistryServiceBasicExample(t *testing.T) {
@@ -57,7 +59,7 @@ func TestAccAgentRegistryService_agentRegistryServiceBasicExample(t *testing.T) 
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"service":       "service" + randomSuffix,
+		"service":       "tf-test-service" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
 
@@ -110,7 +112,7 @@ func TestAccAgentRegistryService_agentRegistryServiceMcpServerExample(t *testing
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"service":       "service" + randomSuffix,
+		"service":       "tf-test-service" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
 
@@ -178,8 +180,7 @@ func testAccCheckAgentRegistryServiceDestroyProducer(t *testing.T) func(s *terra
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/services/{{service_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(agentregistry.Product, config)+"projects/{{project}}/locations/{{location}}/services/{{service_id}}")
 			if err != nil {
 				return err
 			}

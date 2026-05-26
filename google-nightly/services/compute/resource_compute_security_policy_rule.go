@@ -115,6 +115,7 @@ func ResourceComputeSecurityPolicyRule() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -310,6 +311,33 @@ If the rule does not evaluate preconfigured WAF rules, i.e., if evaluatePreconfi
 										Type:        schema.TypeString,
 										Required:    true,
 										Description: `Target WAF rule set to apply the preconfigured WAF exclusion.`,
+									},
+									"request_body": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `A list of request body fields to be excluded from inspection during\npreconfigured WAF evaluation.`,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"operator": {
+													Type:         schema.TypeString,
+													Required:     true,
+													ValidateFunc: validation.StringInSlice([]string{"EQUALS", "STARTS_WITH", "ENDS_WITH", "CONTAINS", "EQUALS_ANY"}, false),
+													Description: `You can specify an exact match or a partial match by using a field operator and a field value.
+Available options:
+EQUALS: The operator matches if the field value equals the specified value.
+STARTS_WITH: The operator matches if the field value starts with the specified value.
+ENDS_WITH: The operator matches if the field value ends with the specified value.
+CONTAINS: The operator matches if the field value contains the specified value.
+EQUALS_ANY: The operator matches if the field value is any value.`,
+												},
+												"value": {
+													Type:     schema.TypeString,
+													Optional: true,
+													Description: `A request field matching the specified value will be excluded from inspection during preconfigured WAF evaluation.
+The field value must be given if the field operator is not EQUALS_ANY, and cannot be given if the field operator is EQUALS_ANY.`,
+												},
+											},
+										},
 									},
 									"request_cookie": {
 										Type:        schema.TypeList,
@@ -615,6 +643,18 @@ Valid options are deny(STATUS), where valid values for STATUS are 403, 404, 429,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -683,7 +723,7 @@ func resourceComputeSecurityPolicyRuleCreate(d *schema.ResourceData, meta interf
 		obj["preview"] = previewProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/securityPolicies/{{security_policy}}/addRule?priority={{priority}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/securityPolicies/{{security_policy}}/addRule?priority={{priority}}")
 	if err != nil {
 		return err
 	}
@@ -779,7 +819,7 @@ func resourceComputeSecurityPolicyRuleRead(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/securityPolicies/{{security_policy}}/getRule?priority={{priority}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/securityPolicies/{{security_policy}}/getRule?priority={{priority}}")
 	if err != nil {
 		return err
 	}
@@ -812,36 +852,26 @@ func resourceComputeSecurityPolicyRuleRead(d *schema.ResourceData, meta interfac
 
 	log.Printf("[DEBUG] Finished reading ComputeSecurityPolicyRule %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
 	}
 
-	if err := d.Set("description", flattenComputeSecurityPolicyRuleDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
-	}
-	if err := d.Set("priority", flattenComputeSecurityPolicyRulePriority(res["priority"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
-	}
-	if err := d.Set("match", flattenComputeSecurityPolicyRuleMatch(res["match"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
-	}
-	if err := d.Set("preconfigured_waf_config", flattenComputeSecurityPolicyRulePreconfiguredWafConfig(res["preconfiguredWafConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
-	}
-	if err := d.Set("action", flattenComputeSecurityPolicyRuleAction(res["action"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
-	}
-	if err := d.Set("rate_limit_options", flattenComputeSecurityPolicyRuleRateLimitOptions(res["rateLimitOptions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
-	}
-	if err := d.Set("redirect_options", flattenComputeSecurityPolicyRuleRedirectOptions(res["redirectOptions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
-	}
-	if err := d.Set("header_action", flattenComputeSecurityPolicyRuleHeaderAction(res["headerAction"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
-	}
-	if err := d.Set("preview", flattenComputeSecurityPolicyRulePreview(res["preview"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	err = ResourceComputeSecurityPolicyRuleFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -872,6 +902,19 @@ func resourceComputeSecurityPolicyRuleRead(d *schema.ResourceData, meta interfac
 }
 
 func resourceComputeSecurityPolicyRuleUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeSecurityPolicyRule().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeSecurityPolicyRuleRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -963,7 +1006,7 @@ func resourceComputeSecurityPolicyRuleUpdate(d *schema.ResourceData, meta interf
 		obj["preview"] = previewProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/securityPolicies/{{security_policy}}/patchRule?priority={{priority}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/securityPolicies/{{security_policy}}/patchRule?priority={{priority}}")
 	if err != nil {
 		return err
 	}
@@ -1060,6 +1103,13 @@ func resourceComputeSecurityPolicyRuleUpdate(d *schema.ResourceData, meta interf
 }
 
 func resourceComputeSecurityPolicyRuleDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeSecurityPolicyRule without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing SecurityPolicyRule %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1073,8 +1123,7 @@ func resourceComputeSecurityPolicyRuleDelete(d *schema.ResourceData, meta interf
 		return fmt.Errorf("Error fetching project for SecurityPolicyRule: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/securityPolicies/{{security_policy}}/removeRule?priority={{priority}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/securityPolicies/{{security_policy}}/removeRule?priority={{priority}}")
 	if err != nil {
 		return err
 	}
@@ -1285,6 +1334,7 @@ func flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusion(v interface
 			"request_header":      flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestHeader(original["requestHeadersToExclude"], d, config),
 			"request_cookie":      flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestCookie(original["requestCookiesToExclude"], d, config),
 			"request_uri":         flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestUri(original["requestUrisToExclude"], d, config),
+			"request_body":        flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBody(original["requestBodiesToExclude"], d, config),
 			"request_query_param": flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestQueryParam(original["requestQueryParamsToExclude"], d, config),
 			"target_rule_set":     flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionTargetRuleSet(original["targetRuleSet"], d, config),
 			"target_rule_ids":     flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionTargetRuleIds(original["targetRuleIds"], d, config),
@@ -1370,6 +1420,33 @@ func flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestUriOp
 }
 
 func flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestUriValue(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBody(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return v
+	}
+	l := v.([]interface{})
+	transformed := make([]interface{}, 0, len(l))
+	for _, raw := range l {
+		original := raw.(map[string]interface{})
+		if len(original) < 1 {
+			// Do not include empty json objects coming back from the api
+			continue
+		}
+		transformed = append(transformed, map[string]interface{}{
+			"operator": flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBodyOperator(original["op"], d, config),
+			"value":    flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBodyValue(original["val"], d, config),
+		})
+	}
+	return transformed
+}
+func flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBodyOperator(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBodyValue(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1911,6 +1988,13 @@ func expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusion(v interface{
 			transformed["requestUrisToExclude"] = transformedRequestUri
 		}
 
+		transformedRequestBody, err := expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBody(original["request_body"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedRequestBody); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["requestBodiesToExclude"] = transformedRequestBody
+		}
+
 		transformedRequestQueryParam, err := expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestQueryParam(original["request_query_param"], d, config)
 		if err != nil {
 			return nil, err
@@ -2054,6 +2138,46 @@ func expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestUriOpe
 }
 
 func expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestUriValue(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBody(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	req := make([]interface{}, 0, len(l))
+	for _, raw := range l {
+		if raw == nil {
+			continue
+		}
+		original := raw.(map[string]interface{})
+		transformed := make(map[string]interface{})
+
+		transformedOperator, err := expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBodyOperator(original["operator"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedOperator); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["op"] = transformedOperator
+		}
+
+		transformedValue, err := expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBodyValue(original["value"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedValue); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["val"] = transformedValue
+		}
+
+		req = append(req, transformed)
+	}
+	return req, nil
+}
+
+func expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBodyOperator(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandComputeSecurityPolicyRulePreconfiguredWafConfigExclusionRequestBodyValue(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -2459,4 +2583,38 @@ func expandComputeSecurityPolicyRuleHeaderActionRequestHeadersToAddsHeaderValue(
 
 func expandComputeSecurityPolicyRulePreview(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceComputeSecurityPolicyRuleFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("description", flattenComputeSecurityPolicyRuleDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	}
+	if err = d.Set("priority", flattenComputeSecurityPolicyRulePriority(res["priority"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	}
+	if err = d.Set("match", flattenComputeSecurityPolicyRuleMatch(res["match"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	}
+	if err = d.Set("preconfigured_waf_config", flattenComputeSecurityPolicyRulePreconfiguredWafConfig(res["preconfiguredWafConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	}
+	if err = d.Set("action", flattenComputeSecurityPolicyRuleAction(res["action"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	}
+	if err = d.Set("rate_limit_options", flattenComputeSecurityPolicyRuleRateLimitOptions(res["rateLimitOptions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	}
+	if err = d.Set("redirect_options", flattenComputeSecurityPolicyRuleRedirectOptions(res["redirectOptions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	}
+	if err = d.Set("header_action", flattenComputeSecurityPolicyRuleHeaderAction(res["headerAction"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	}
+	if err = d.Set("preview", flattenComputeSecurityPolicyRulePreview(res["preview"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityPolicyRule: %s", err)
+	}
+
+	return nil
 }

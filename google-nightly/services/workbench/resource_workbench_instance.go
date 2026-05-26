@@ -442,6 +442,7 @@ func ResourceWorkbenchInstance() *schema.Resource {
 			workbenchMetadataCustomizeDiff,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -522,8 +523,8 @@ Currently supports only one accelerator configuration.`,
 									"type": {
 										Type:         schema.TypeString,
 										Optional:     true,
-										ValidateFunc: verify.ValidateEnum([]string{"NVIDIA_TESLA_P100", "NVIDIA_TESLA_V100", "NVIDIA_TESLA_P4", "NVIDIA_TESLA_T4", "NVIDIA_TESLA_A100", "NVIDIA_A100_80GB", "NVIDIA_L4", "NVIDIA_TESLA_T4_VWS", "NVIDIA_TESLA_P100_VWS", "NVIDIA_TESLA_P4_VWS", ""}),
-										Description:  `Optional. Type of this accelerator. Possible values: ["NVIDIA_TESLA_P100", "NVIDIA_TESLA_V100", "NVIDIA_TESLA_P4", "NVIDIA_TESLA_T4", "NVIDIA_TESLA_A100", "NVIDIA_A100_80GB", "NVIDIA_L4", "NVIDIA_TESLA_T4_VWS", "NVIDIA_TESLA_P100_VWS", "NVIDIA_TESLA_P4_VWS"]`,
+										ValidateFunc: verify.ValidateEnum([]string{"NVIDIA_TESLA_P100", "NVIDIA_TESLA_V100", "NVIDIA_TESLA_P4", "NVIDIA_TESLA_T4", "NVIDIA_TESLA_A100", "NVIDIA_A100_80GB", "NVIDIA_L4", "NVIDIA_H100_80GB", "NVIDIA_H100_MEGA_80GB", "NVIDIA_H200_141GB", "NVIDIA_B200", "NVIDIA_TESLA_T4_VWS", "NVIDIA_TESLA_P100_VWS", "NVIDIA_TESLA_P4_VWS", ""}),
+										Description:  `Optional. Type of this accelerator. Possible values: ["NVIDIA_TESLA_P100", "NVIDIA_TESLA_V100", "NVIDIA_TESLA_P4", "NVIDIA_TESLA_T4", "NVIDIA_TESLA_A100", "NVIDIA_A100_80GB", "NVIDIA_L4", "NVIDIA_H100_80GB", "NVIDIA_H100_MEGA_80GB", "NVIDIA_H200_141GB", "NVIDIA_B200", "NVIDIA_TESLA_T4_VWS", "NVIDIA_TESLA_P100_VWS", "NVIDIA_TESLA_P4_VWS"]`,
 									},
 								},
 							},
@@ -558,8 +559,8 @@ recommended value of 150GB.`,
 										Computed:     true,
 										Optional:     true,
 										ForceNew:     true,
-										ValidateFunc: verify.ValidateEnum([]string{"PD_STANDARD", "PD_SSD", "PD_BALANCED", "PD_EXTREME", ""}),
-										Description:  `Optional. Indicates the type of the disk. Possible values: ["PD_STANDARD", "PD_SSD", "PD_BALANCED", "PD_EXTREME"]`,
+										ValidateFunc: verify.ValidateEnum([]string{"PD_STANDARD", "PD_SSD", "PD_BALANCED", "PD_EXTREME", "HYPERDISK_BALANCED", "HYPERDISK_BALANCED_HIGH_AVAILABILITY", "HYPERDISK_ML", ""}),
+										Description:  `Optional. Indicates the type of the disk. Possible values: ["PD_STANDARD", "PD_SSD", "PD_BALANCED", "PD_EXTREME", "HYPERDISK_BALANCED", "HYPERDISK_BALANCED_HIGH_AVAILABILITY", "HYPERDISK_ML"]`,
 									},
 									"kms_key": {
 										Type:             schema.TypeString,
@@ -641,8 +642,8 @@ up to a maximum of 64000 GB (64 TB). If not specified, this defaults to
 										Type:         schema.TypeString,
 										Optional:     true,
 										ForceNew:     true,
-										ValidateFunc: verify.ValidateEnum([]string{"PD_STANDARD", "PD_SSD", "PD_BALANCED", "PD_EXTREME", ""}),
-										Description:  `Optional. Input only. Indicates the type of the disk. Possible values: ["PD_STANDARD", "PD_SSD", "PD_BALANCED", "PD_EXTREME"]`,
+										ValidateFunc: verify.ValidateEnum([]string{"PD_STANDARD", "PD_SSD", "PD_BALANCED", "PD_EXTREME", "HYPERDISK_BALANCED", "HYPERDISK_EXTREME", "HYPERDISK_THROUGHPUT", "HYPERDISK_BALANCED_HIGH_AVAILABILITY", "HYPERDISK_ML", ""}),
+										Description:  `Optional. Input only. Indicates the type of the disk. Possible values: ["PD_STANDARD", "PD_SSD", "PD_BALANCED", "PD_EXTREME", "HYPERDISK_BALANCED", "HYPERDISK_EXTREME", "HYPERDISK_THROUGHPUT", "HYPERDISK_BALANCED_HIGH_AVAILABILITY", "HYPERDISK_ML"]`,
 									},
 									"kms_key": {
 										Type:             schema.TypeString,
@@ -1049,6 +1050,18 @@ The milliseconds portion (".SSS") is optional.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1099,7 +1112,7 @@ func resourceWorkbenchInstanceCreate(d *schema.ResourceData, meta interface{}) e
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkbenchBasePath}}projects/{{project}}/locations/{{location}}/instances?instanceId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances?instanceId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -1198,7 +1211,7 @@ func resourceWorkbenchInstanceRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkbenchBasePath}}projects/{{project}}/locations/{{location}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1238,54 +1251,25 @@ func resourceWorkbenchInstanceRead(d *schema.ResourceData, meta interface{}) err
 			return fmt.Errorf("Error setting desired_state: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Instance: %s", err)
 	}
 
-	if err := d.Set("gce_setup", flattenWorkbenchInstanceGceSetup(res["gceSetup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("proxy_uri", flattenWorkbenchInstanceProxyUri(res["proxyUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("creator", flattenWorkbenchInstanceCreator(res["creator"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("state", flattenWorkbenchInstanceState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("upgrade_history", flattenWorkbenchInstanceUpgradeHistory(res["upgradeHistory"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("health_state", flattenWorkbenchInstanceHealthState(res["healthState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("health_info", flattenWorkbenchInstanceHealthInfo(res["healthInfo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("create_time", flattenWorkbenchInstanceCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("update_time", flattenWorkbenchInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("disable_proxy_access", flattenWorkbenchInstanceDisableProxyAccess(res["disableProxyAccess"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("labels", flattenWorkbenchInstanceLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("enable_third_party_identity", flattenWorkbenchInstanceEnableThirdPartyIdentity(res["enableThirdPartyIdentity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("enable_managed_euc", flattenWorkbenchInstanceEnableManagedEuc(res["enableManagedEuc"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenWorkbenchInstanceTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenWorkbenchInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+	err = ResourceWorkbenchInstanceFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1316,6 +1300,19 @@ func resourceWorkbenchInstanceRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceWorkbenchInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceWorkbenchInstance().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceWorkbenchInstanceRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1376,7 +1373,7 @@ func resourceWorkbenchInstanceUpdate(d *schema.ResourceData, meta interface{}) e
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkbenchBasePath}}projects/{{project}}/locations/{{location}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1582,6 +1579,13 @@ func resourceWorkbenchInstanceUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceWorkbenchInstanceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy WorkbenchInstance without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Instance %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1595,8 +1599,7 @@ func resourceWorkbenchInstanceDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for Instance: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkbenchBasePath}}projects/{{project}}/locations/{{location}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2823,4 +2826,56 @@ func expandWorkbenchInstanceEffectiveLabels(v interface{}, d tpgresource.Terrafo
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceWorkbenchInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("gce_setup", flattenWorkbenchInstanceGceSetup(res["gceSetup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("proxy_uri", flattenWorkbenchInstanceProxyUri(res["proxyUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("creator", flattenWorkbenchInstanceCreator(res["creator"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("state", flattenWorkbenchInstanceState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("upgrade_history", flattenWorkbenchInstanceUpgradeHistory(res["upgradeHistory"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("health_state", flattenWorkbenchInstanceHealthState(res["healthState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("health_info", flattenWorkbenchInstanceHealthInfo(res["healthInfo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("create_time", flattenWorkbenchInstanceCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("update_time", flattenWorkbenchInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("disable_proxy_access", flattenWorkbenchInstanceDisableProxyAccess(res["disableProxyAccess"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("labels", flattenWorkbenchInstanceLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("enable_third_party_identity", flattenWorkbenchInstanceEnableThirdPartyIdentity(res["enableThirdPartyIdentity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("enable_managed_euc", flattenWorkbenchInstanceEnableManagedEuc(res["enableManagedEuc"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenWorkbenchInstanceTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenWorkbenchInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+
+	return nil
 }

@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/osconfigv2"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,11 +50,12 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = osconfigv2.Product
 )
 
 func TestAccOSConfigV2PolicyOrchestratorForOrganization_osconfigv2PolicyOrchestratorForOrganizationBasicExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-org-{organization_id}@gcp-sa-osconfig.iam.gserviceaccount.com",
 			Role:   "roles/osconfig.serviceAgent",
@@ -166,8 +169,7 @@ func testAccCheckOSConfigV2PolicyOrchestratorForOrganizationDestroyProducer(t *t
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{OSConfigV2BasePath}}organizations/{{organization_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(osconfigv2.Product, config)+"organizations/{{organization_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}")
 			if err != nil {
 				return err
 			}

@@ -115,6 +115,7 @@ func ResourceDiscoveryEngineDataStore() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -495,6 +496,18 @@ characters.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -551,7 +564,7 @@ func resourceDiscoveryEngineDataStoreCreate(d *schema.ResourceData, meta interfa
 		obj["documentProcessingConfig"] = documentProcessingConfigProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/default_collection/dataStores?dataStoreId={{data_store_id}}&createAdvancedSiteSearch={{create_advanced_site_search}}&skipDefaultSchemaCreation={{skip_default_schema_creation}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/default_collection/dataStores?dataStoreId={{data_store_id}}&createAdvancedSiteSearch={{create_advanced_site_search}}&skipDefaultSchemaCreation={{skip_default_schema_creation}}")
 	if err != nil {
 		return err
 	}
@@ -635,7 +648,7 @@ func resourceDiscoveryEngineDataStoreRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/default_collection/dataStores/{{data_store_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/default_collection/dataStores/{{data_store_id}}")
 	if err != nil {
 		return err
 	}
@@ -668,36 +681,26 @@ func resourceDiscoveryEngineDataStoreRead(d *schema.ResourceData, meta interface
 
 	log.Printf("[DEBUG] Finished reading DiscoveryEngineDataStore %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DataStore: %s", err)
 	}
 
-	if err := d.Set("name", flattenDiscoveryEngineDataStoreName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataStore: %s", err)
-	}
-	if err := d.Set("display_name", flattenDiscoveryEngineDataStoreDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataStore: %s", err)
-	}
-	if err := d.Set("industry_vertical", flattenDiscoveryEngineDataStoreIndustryVertical(res["industryVertical"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataStore: %s", err)
-	}
-	if err := d.Set("solution_types", flattenDiscoveryEngineDataStoreSolutionTypes(res["solutionTypes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataStore: %s", err)
-	}
-	if err := d.Set("default_schema_id", flattenDiscoveryEngineDataStoreDefaultSchemaId(res["defaultSchemaId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataStore: %s", err)
-	}
-	if err := d.Set("content_config", flattenDiscoveryEngineDataStoreContentConfig(res["contentConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataStore: %s", err)
-	}
-	if err := d.Set("advanced_site_search_config", flattenDiscoveryEngineDataStoreAdvancedSiteSearchConfig(res["advancedSiteSearchConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataStore: %s", err)
-	}
-	if err := d.Set("document_processing_config", flattenDiscoveryEngineDataStoreDocumentProcessingConfig(res["documentProcessingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataStore: %s", err)
-	}
-	if err := d.Set("create_time", flattenDiscoveryEngineDataStoreCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataStore: %s", err)
+	err = ResourceDiscoveryEngineDataStoreFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -728,6 +731,19 @@ func resourceDiscoveryEngineDataStoreRead(d *schema.ResourceData, meta interface
 }
 
 func resourceDiscoveryEngineDataStoreUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDiscoveryEngineDataStore().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDiscoveryEngineDataStoreRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -776,7 +792,7 @@ func resourceDiscoveryEngineDataStoreUpdate(d *schema.ResourceData, meta interfa
 		obj["kmsKeyName"] = kmsKeyNameProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/default_collection/dataStores/{{data_store_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/default_collection/dataStores/{{data_store_id}}")
 	if err != nil {
 		return err
 	}
@@ -829,6 +845,13 @@ func resourceDiscoveryEngineDataStoreUpdate(d *schema.ResourceData, meta interfa
 }
 
 func resourceDiscoveryEngineDataStoreDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DiscoveryEngineDataStore without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DataStore %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -842,8 +865,7 @@ func resourceDiscoveryEngineDataStoreDelete(d *schema.ResourceData, meta interfa
 		return fmt.Errorf("Error fetching project for DataStore: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/default_collection/dataStores/{{data_store_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/default_collection/dataStores/{{data_store_id}}")
 	if err != nil {
 		return err
 	}
@@ -1697,4 +1719,38 @@ func expandDiscoveryEngineDataStoreDocumentProcessingConfigParsingConfigOverride
 
 func expandDiscoveryEngineDataStoreDocumentProcessingConfigParsingConfigOverridesLayoutParsingConfigExcludeHtmlIds(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceDiscoveryEngineDataStoreFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDiscoveryEngineDataStoreName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataStore: %s", err)
+	}
+	if err = d.Set("display_name", flattenDiscoveryEngineDataStoreDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataStore: %s", err)
+	}
+	if err = d.Set("industry_vertical", flattenDiscoveryEngineDataStoreIndustryVertical(res["industryVertical"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataStore: %s", err)
+	}
+	if err = d.Set("solution_types", flattenDiscoveryEngineDataStoreSolutionTypes(res["solutionTypes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataStore: %s", err)
+	}
+	if err = d.Set("default_schema_id", flattenDiscoveryEngineDataStoreDefaultSchemaId(res["defaultSchemaId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataStore: %s", err)
+	}
+	if err = d.Set("content_config", flattenDiscoveryEngineDataStoreContentConfig(res["contentConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataStore: %s", err)
+	}
+	if err = d.Set("advanced_site_search_config", flattenDiscoveryEngineDataStoreAdvancedSiteSearchConfig(res["advancedSiteSearchConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataStore: %s", err)
+	}
+	if err = d.Set("document_processing_config", flattenDiscoveryEngineDataStoreDocumentProcessingConfig(res["documentProcessingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataStore: %s", err)
+	}
+	if err = d.Set("create_time", flattenDiscoveryEngineDataStoreCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataStore: %s", err)
+	}
+
+	return nil
 }

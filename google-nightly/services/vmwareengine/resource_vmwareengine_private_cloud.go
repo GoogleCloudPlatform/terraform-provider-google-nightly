@@ -195,6 +195,7 @@ func ResourceVmwareenginePrivateCloud() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -630,6 +631,18 @@ Examples: "2014-10-02T15:01:23Z" and "2014-10-02T15:01:23.045123456Z".`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -668,7 +681,7 @@ func resourceVmwareenginePrivateCloudCreate(d *schema.ResourceData, meta interfa
 		obj["type"] = typeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}projects/{{project}}/locations/{{location}}/privateClouds?privateCloudId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateClouds?privateCloudId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -823,7 +836,7 @@ func resourceVmwareenginePrivateCloudRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}projects/{{project}}/locations/{{location}}/privateClouds/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateClouds/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -870,48 +883,25 @@ func resourceVmwareenginePrivateCloudRead(d *schema.ResourceData, meta interface
 	}
 
 	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading PrivateCloud: %s", err)
 	}
 
-	if err := d.Set("description", flattenVmwareenginePrivateCloudDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("create_time", flattenVmwareenginePrivateCloudCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("update_time", flattenVmwareenginePrivateCloudUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("delete_time", flattenVmwareenginePrivateCloudDeleteTime(res["deleteTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("expire_time", flattenVmwareenginePrivateCloudExpireTime(res["expireTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("uid", flattenVmwareenginePrivateCloudUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("state", flattenVmwareenginePrivateCloudState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("network_config", flattenVmwareenginePrivateCloudNetworkConfig(res["networkConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("management_cluster", flattenVmwareenginePrivateCloudManagementCluster(res["managementCluster"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("hcx", flattenVmwareenginePrivateCloudHcx(res["hcx"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("nsx", flattenVmwareenginePrivateCloudNsx(res["nsx"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("vcenter", flattenVmwareenginePrivateCloudVcenter(res["vcenter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
-	}
-	if err := d.Set("type", flattenVmwareenginePrivateCloudType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	err = ResourceVmwareenginePrivateCloudFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -942,6 +932,19 @@ func resourceVmwareenginePrivateCloudRead(d *schema.ResourceData, meta interface
 }
 
 func resourceVmwareenginePrivateCloudUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVmwareenginePrivateCloud().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVmwareenginePrivateCloudRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -995,7 +998,7 @@ func resourceVmwareenginePrivateCloudUpdate(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}projects/{{project}}/locations/{{location}}/privateClouds/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateClouds/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1094,6 +1097,13 @@ func resourceVmwareenginePrivateCloudUpdate(d *schema.ResourceData, meta interfa
 }
 
 func resourceVmwareenginePrivateCloudDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VmwareenginePrivateCloud without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PrivateCloud %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1107,8 +1117,7 @@ func resourceVmwareenginePrivateCloudDelete(d *schema.ResourceData, meta interfa
 		return fmt.Errorf("Error fetching project for PrivateCloud: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}projects/{{project}}/locations/{{location}}/privateClouds/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateClouds/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2239,4 +2248,50 @@ func resourceVmwareenginePrivateCloudDecoder(d *schema.ResourceData, meta interf
 	res["managementCluster"] = mgmtClusterObj
 
 	return res, nil
+}
+
+func ResourceVmwareenginePrivateCloudFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("description", flattenVmwareenginePrivateCloudDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("create_time", flattenVmwareenginePrivateCloudCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("update_time", flattenVmwareenginePrivateCloudUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("delete_time", flattenVmwareenginePrivateCloudDeleteTime(res["deleteTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("expire_time", flattenVmwareenginePrivateCloudExpireTime(res["expireTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("uid", flattenVmwareenginePrivateCloudUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("state", flattenVmwareenginePrivateCloudState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("network_config", flattenVmwareenginePrivateCloudNetworkConfig(res["networkConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("management_cluster", flattenVmwareenginePrivateCloudManagementCluster(res["managementCluster"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("hcx", flattenVmwareenginePrivateCloudHcx(res["hcx"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("nsx", flattenVmwareenginePrivateCloudNsx(res["nsx"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("vcenter", flattenVmwareenginePrivateCloudVcenter(res["vcenter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+	if err = d.Set("type", flattenVmwareenginePrivateCloudType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateCloud: %s", err)
+	}
+
+	return nil
 }

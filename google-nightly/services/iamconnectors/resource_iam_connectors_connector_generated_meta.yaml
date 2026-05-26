@@ -32,3 +32,5 @@ fields:
     - api_field: state
     - api_field: updateTime
     - api_field: workloadIds
+    - field: deletion_policy
+      provider_only: true

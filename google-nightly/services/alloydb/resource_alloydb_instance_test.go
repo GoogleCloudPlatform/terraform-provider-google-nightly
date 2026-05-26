@@ -21,6 +21,9 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/alloydb"
+	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 )
 
 func TestAccAlloydbInstance_update(t *testing.T) {
@@ -28,7 +31,7 @@ func TestAccAlloydbInstance_update(t *testing.T) {
 
 	random_suffix := acctest.RandString(t, 10)
 	context := map[string]interface{}{
-		"network_name":          acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":          servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 		"random_suffix":         random_suffix,
 		"alloydb_cluster_name":  "tf-test-alloydb-cluster" + random_suffix,
 		"alloydb_instance_name": "tf-test-alloydb-instance" + random_suffix,
@@ -156,7 +159,7 @@ func TestAccAlloydbInstance_createInstanceWithMandatoryFields(t *testing.T) {
 
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -176,7 +179,7 @@ func TestAccAlloydbInstance_stopstart(t *testing.T) {
 	t.Parallel()
 
 	suffix := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1")
+	networkName := servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1")
 
 	context := map[string]interface{}{
 		"random_suffix":         suffix,
@@ -308,7 +311,7 @@ data "google_compute_network" "default" {
 
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -383,7 +386,7 @@ func TestAccAlloydbInstance_createPrimaryAndReadPoolInstance(t *testing.T) {
 
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -444,7 +447,7 @@ data "google_compute_network" "default" {
 
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -535,8 +538,8 @@ func TestAccAlloydbInstance_createInstanceWithNetworkConfigAndAllocatedIPRange(t
 	t.Parallel()
 
 	testId := "alloydb-1"
-	addressName := acctest.BootstrapSharedTestGlobalAddress(t, testId)
-	networkName := acctest.BootstrapSharedServiceNetworkingConnection(t, testId)
+	addressName := tpgcompute.BootstrapSharedTestGlobalAddress(t, testId)
+	networkName := servicenetworking.BootstrapSharedServiceNetworkingConnection(t, testId)
 
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
@@ -598,7 +601,7 @@ func TestAccAlloydbInstance_clientConnectionConfig(t *testing.T) {
 	t.Parallel()
 
 	suffix := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1")
+	networkName := servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1")
 
 	context := map[string]interface{}{
 		"random_suffix":         suffix,
@@ -779,7 +782,7 @@ func TestAccAlloydbInstance_networkConfig(t *testing.T) {
 	t.Parallel()
 
 	suffix := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1")
+	networkName := servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1")
 
 	context1 := map[string]interface{}{
 		"random_suffix":                suffix,
@@ -1030,13 +1033,13 @@ data "google_project" "project" {}
 func TestAccAlloydbInstance_createInstanceWithPscInterfaceConfigs(t *testing.T) {
 	t.Parallel()
 
-	networkName := acctest.BootstrapSharedTestNetwork(t, "tf-test-alloydb-network")
-	subnetworkName := acctest.BootstrapSubnet(t, "tf-test-alloydb-subnetwork", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "tf-test-alloydb-network")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "tf-test-alloydb-subnetwork", networkName)
 
 	random_suffix := acctest.RandString(t, 10)
 	context := map[string]interface{}{
 		"random_suffix":         random_suffix,
-		"networkAttachmentName": acctest.BootstrapNetworkAttachment(t, "tf-test-alloydb-create-na", subnetworkName),
+		"networkAttachmentName": tpgcompute.BootstrapNetworkAttachment(t, "tf-test-alloydb-create-na", subnetworkName),
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -1087,13 +1090,13 @@ data "google_project" "project" {}
 func TestAccAlloydbInstance_updateInstanceWithPscInterfaceConfigs(t *testing.T) {
 	t.Parallel()
 
-	networkName := acctest.BootstrapSharedTestNetwork(t, "tf-test-alloydb-network")
-	subnetworkName := acctest.BootstrapSubnet(t, "tf-test-alloydb-subnetwork", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "tf-test-alloydb-network")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "tf-test-alloydb-subnetwork", networkName)
 
 	random_suffix := acctest.RandString(t, 10)
 	context := map[string]interface{}{
 		"random_suffix":         random_suffix,
-		"networkAttachmentName": acctest.BootstrapNetworkAttachment(t, "tf-test-alloydb-update-na", subnetworkName),
+		"networkAttachmentName": tpgcompute.BootstrapNetworkAttachment(t, "tf-test-alloydb-update-na", subnetworkName),
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -1114,7 +1117,7 @@ func TestAccAlloydbInstance_updateInstanceWithPscInterfaceConfigs(t *testing.T) 
 func TestAccAlloydbInstance_updatePscAutoConnections(t *testing.T) {
 	t.Parallel()
 
-	networkName := acctest.BootstrapSharedTestNetwork(t, "tf-test-alloydb-network-psc")
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "tf-test-alloydb-network-psc")
 	random_suffix := acctest.RandString(t, 10)
 	context := map[string]interface{}{
 		"network_name":  networkName,
@@ -1200,8 +1203,8 @@ func TestAccAlloydbInstance_createPrimaryAndReadPoolInstanceWithAllocatedIpRange
 	testId := "alloydb-1"
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
-		"address_name":  acctest.BootstrapSharedTestGlobalAddress(t, testId),
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, testId),
+		"address_name":  tpgcompute.BootstrapSharedTestGlobalAddress(t, testId),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, testId),
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -1274,7 +1277,7 @@ func TestAccAlloydbInstance_connectionPoolConfig(t *testing.T) {
 	t.Parallel()
 
 	suffix := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydbinstance-connection-pool-config")
+	networkName := servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydbinstance-connection-pool-config")
 
 	context := map[string]interface{}{
 		"random_suffix":                  suffix,
@@ -1596,7 +1599,7 @@ data "google_compute_network" "default" {
 func TestAccAlloydbInstance_ObservabilityConfig_Update(t *testing.T) {
 	t.Parallel()
 	random_suffix := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1")
+	networkName := servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1")
 
 	// 1. Initial State: Everything Enabled
 	contextEnableAll := map[string]interface{}{
@@ -1609,6 +1612,7 @@ func TestAccAlloydbInstance_ObservabilityConfig_Update(t *testing.T) {
 		"record_application_tags":       true,
 		"query_plans_per_minute":        10,
 		"track_active_queries":          true,
+		"track_client_address":          true,
 		"assistive_experiences_enabled": false,
 	}
 
@@ -1628,6 +1632,7 @@ func TestAccAlloydbInstance_ObservabilityConfig_Update(t *testing.T) {
 		"record_application_tags":       false,
 		"query_plans_per_minute":        5,
 		"track_active_queries":          false,
+		"track_client_address":          false,
 		"assistive_experiences_enabled": false,
 	}
 
@@ -1712,6 +1717,7 @@ resource "google_alloydb_instance" "default" {
     record_application_tags        = %{record_application_tags}
     query_plans_per_minute         = %{query_plans_per_minute}
     track_active_queries           = %{track_active_queries}
+    track_client_address           = %{track_client_address}
     assistive_experiences_enabled  = %{assistive_experiences_enabled}
   }
 }

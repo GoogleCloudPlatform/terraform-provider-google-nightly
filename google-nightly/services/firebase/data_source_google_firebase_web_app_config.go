@@ -30,6 +30,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwmodels"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwresource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwtransport"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
 
@@ -38,6 +39,14 @@ var (
 	_ datasource.DataSource              = &GoogleFirebaseWebAppConfigDataSource{}
 	_ datasource.DataSourceWithConfigure = &GoogleFirebaseWebAppConfigDataSource{}
 )
+
+func init() {
+	registry.FrameworkDataSource{
+		Name:        "google_firebase_web_app_config",
+		ProductName: "firebase",
+		Func:        NewGoogleFirebaseWebAppConfigDataSource,
+	}.Register()
+}
 
 func NewGoogleFirebaseWebAppConfigDataSource() datasource.DataSource {
 	return &GoogleFirebaseWebAppConfigDataSource{}
@@ -154,7 +163,7 @@ func (d *GoogleFirebaseWebAppConfigDataSource) Configure(ctx context.Context, re
 		return
 	}
 
-	p, ok := req.ProviderData.(*transport_tpg.Config)
+	config, ok := req.ProviderData.(*transport_tpg.Config)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
@@ -163,11 +172,11 @@ func (d *GoogleFirebaseWebAppConfigDataSource) Configure(ctx context.Context, re
 		return
 	}
 
-	d.client = p.NewFirebaseClient(ctx, p.UserAgent)
+	d.client = NewClient(ctx, config, config.UserAgent)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	d.providerConfig = p
+	d.providerConfig = config
 }
 
 func (d *GoogleFirebaseWebAppConfigDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {

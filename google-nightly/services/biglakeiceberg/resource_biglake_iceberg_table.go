@@ -131,6 +131,7 @@ func ResourceBiglakeIcebergIcebergTable() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -309,6 +310,18 @@ func ResourceBiglakeIcebergIcebergTable() *schema.Resource {
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -353,7 +366,7 @@ func resourceBiglakeIcebergIcebergTableCreate(d *schema.ResourceData, meta inter
 		obj["properties"] = propertiesProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeIcebergBasePath}}iceberg/v1/restcatalog/v1/projects/{{project}}/catalogs/{{catalog}}/namespaces/{{namespace}}/tables")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"iceberg/v1/restcatalog/v1/projects/{{project}}/catalogs/{{catalog}}/namespaces/{{namespace}}/tables")
 	if err != nil {
 		return err
 	}
@@ -436,7 +449,7 @@ func resourceBiglakeIcebergIcebergTableRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeIcebergBasePath}}iceberg/v1/restcatalog/v1/projects/{{project}}/catalogs/{{catalog}}/namespaces/{{namespace}}/tables/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"iceberg/v1/restcatalog/v1/projects/{{project}}/catalogs/{{catalog}}/namespaces/{{namespace}}/tables/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -564,24 +577,26 @@ func resourceBiglakeIcebergIcebergTableRead(d *schema.ResourceData, meta interfa
 		}
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading IcebergTable: %s", err)
 	}
 
-	if err := d.Set("name", flattenBiglakeIcebergIcebergTableName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergTable: %s", err)
-	}
-	if err := d.Set("location", flattenBiglakeIcebergIcebergTableLocation(res["location"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergTable: %s", err)
-	}
-	if err := d.Set("schema", flattenBiglakeIcebergIcebergTableSchema(res["schema"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergTable: %s", err)
-	}
-	if err := d.Set("partition_spec", flattenBiglakeIcebergIcebergTablePartitionSpec(res["partition-spec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergTable: %s", err)
-	}
-	if err := d.Set("properties", flattenBiglakeIcebergIcebergTableProperties(res["properties"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergTable: %s", err)
+	err = ResourceBiglakeIcebergIcebergTableFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -618,6 +633,19 @@ func resourceBiglakeIcebergIcebergTableRead(d *schema.ResourceData, meta interfa
 }
 
 func resourceBiglakeIcebergIcebergTableUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceBiglakeIcebergIcebergTable().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceBiglakeIcebergIcebergTableRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -694,7 +722,7 @@ func resourceBiglakeIcebergIcebergTableUpdate(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeIcebergBasePath}}iceberg/v1/restcatalog/v1/projects/{{project}}/catalogs/{{catalog}}/namespaces/{{namespace}}/tables/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"iceberg/v1/restcatalog/v1/projects/{{project}}/catalogs/{{catalog}}/namespaces/{{namespace}}/tables/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -731,6 +759,13 @@ func resourceBiglakeIcebergIcebergTableUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceBiglakeIcebergIcebergTableDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BiglakeIcebergIcebergTable without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing IcebergTable %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -744,8 +779,7 @@ func resourceBiglakeIcebergIcebergTableDelete(d *schema.ResourceData, meta inter
 		return fmt.Errorf("Error fetching project for IcebergTable: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeIcebergBasePath}}iceberg/v1/restcatalog/v1/projects/{{project}}/catalogs/{{catalog}}/namespaces/{{namespace}}/tables/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"iceberg/v1/restcatalog/v1/projects/{{project}}/catalogs/{{catalog}}/namespaces/{{namespace}}/tables/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1289,4 +1323,26 @@ func resourceBiglakeIcebergIcebergTableUpdateEncoder(d *schema.ResourceData, met
 		}, nil
 	}
 	return nil, nil
+}
+
+func ResourceBiglakeIcebergIcebergTableFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenBiglakeIcebergIcebergTableName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergTable: %s", err)
+	}
+	if err = d.Set("location", flattenBiglakeIcebergIcebergTableLocation(res["location"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergTable: %s", err)
+	}
+	if err = d.Set("schema", flattenBiglakeIcebergIcebergTableSchema(res["schema"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergTable: %s", err)
+	}
+	if err = d.Set("partition_spec", flattenBiglakeIcebergIcebergTablePartitionSpec(res["partition-spec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergTable: %s", err)
+	}
+	if err = d.Set("properties", flattenBiglakeIcebergIcebergTableProperties(res["properties"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergTable: %s", err)
+	}
+
+	return nil
 }

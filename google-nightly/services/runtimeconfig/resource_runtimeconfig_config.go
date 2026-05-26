@@ -45,6 +45,7 @@ func ResourceRuntimeconfigConfig() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Schema: map[string]*schema.Schema{
@@ -69,6 +70,9 @@ func ResourceRuntimeconfigConfig() *schema.Resource {
 				ForceNew:    true,
 				Description: `The ID of the project in which the resource belongs. If it is not provided, the provider project is used.`,
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -96,7 +100,7 @@ func resourceRuntimeconfigConfigCreate(d *schema.ResourceData, meta interface{})
 		runtimeConfig.Description = val.(string)
 	}
 
-	_, err = config.NewRuntimeconfigClient(userAgent).Projects.Configs.Create("projects/"+project, &runtimeConfig).Do()
+	_, err = NewClient(config, userAgent).Projects.Configs.Create("projects/"+project, &runtimeConfig).Do()
 
 	if err != nil {
 		return err
@@ -114,7 +118,7 @@ func resourceRuntimeconfigConfigRead(d *schema.ResourceData, meta interface{}) e
 	}
 
 	fullName := d.Id()
-	runConfig, err := config.NewRuntimeconfigClient(userAgent).Projects.Configs.Get(fullName).Do()
+	runConfig, err := NewClient(config, userAgent).Projects.Configs.Get(fullName).Do()
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, fmt.Sprintf("RuntimeConfig %q", d.Id()))
 	}
@@ -144,10 +148,19 @@ func resourceRuntimeconfigConfigRead(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error setting project: %s", err)
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func resourceRuntimeconfigConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
+	if tpgresource.DeletionPolicyPreUpdate(d, ResourceRuntimeconfigConfig) {
+		return ResourceRuntimeconfigConfig().Read(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -165,7 +178,7 @@ func resourceRuntimeconfigConfigUpdate(d *schema.ResourceData, meta interface{})
 		runtimeConfig.Description = v.(string)
 	}
 
-	_, err = config.NewRuntimeconfigClient(userAgent).Projects.Configs.Update(fullName, &runtimeConfig).Do()
+	_, err = NewClient(config, userAgent).Projects.Configs.Update(fullName, &runtimeConfig).Do()
 	if err != nil {
 		return err
 	}
@@ -173,6 +186,13 @@ func resourceRuntimeconfigConfigUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceRuntimeconfigConfigDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -181,7 +201,7 @@ func resourceRuntimeconfigConfigDelete(d *schema.ResourceData, meta interface{})
 
 	fullName := d.Id()
 
-	_, err = config.NewRuntimeconfigClient(userAgent).Projects.Configs.Delete(fullName).Do()
+	_, err = NewClient(config, userAgent).Projects.Configs.Delete(fullName).Do()
 	if err != nil {
 		return err
 	}

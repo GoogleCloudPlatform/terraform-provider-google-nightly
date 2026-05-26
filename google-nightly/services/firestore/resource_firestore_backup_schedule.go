@@ -115,6 +115,7 @@ func ResourceFirestoreBackupSchedule() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -197,6 +198,18 @@ You can set this to a value up to 14 weeks.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -229,7 +242,7 @@ func resourceFirestoreBackupScheduleCreate(d *schema.ResourceData, meta interfac
 		obj["weeklyRecurrence"] = weeklyRecurrenceProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}projects/{{project}}/databases/{{database}}/backupSchedules")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/databases/{{database}}/backupSchedules")
 	if err != nil {
 		return err
 	}
@@ -309,7 +322,7 @@ func resourceFirestoreBackupScheduleRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}projects/{{project}}/databases/{{database}}/backupSchedules/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/databases/{{database}}/backupSchedules/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -342,21 +355,26 @@ func resourceFirestoreBackupScheduleRead(d *schema.ResourceData, meta interface{
 
 	log.Printf("[DEBUG] Finished reading FirestoreBackupSchedule %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading BackupSchedule: %s", err)
 	}
 
-	if err := d.Set("name", flattenFirestoreBackupScheduleName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupSchedule: %s", err)
-	}
-	if err := d.Set("retention", flattenFirestoreBackupScheduleRetention(res["retention"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupSchedule: %s", err)
-	}
-	if err := d.Set("daily_recurrence", flattenFirestoreBackupScheduleDailyRecurrence(res["dailyRecurrence"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupSchedule: %s", err)
-	}
-	if err := d.Set("weekly_recurrence", flattenFirestoreBackupScheduleWeeklyRecurrence(res["weeklyRecurrence"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupSchedule: %s", err)
+	err = ResourceFirestoreBackupScheduleFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -387,6 +405,19 @@ func resourceFirestoreBackupScheduleRead(d *schema.ResourceData, meta interface{
 }
 
 func resourceFirestoreBackupScheduleUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceFirestoreBackupSchedule().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceFirestoreBackupScheduleRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -429,7 +460,7 @@ func resourceFirestoreBackupScheduleUpdate(d *schema.ResourceData, meta interfac
 		obj["retention"] = retentionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}projects/{{project}}/databases/{{database}}/backupSchedules/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/databases/{{database}}/backupSchedules/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -478,6 +509,13 @@ func resourceFirestoreBackupScheduleUpdate(d *schema.ResourceData, meta interfac
 }
 
 func resourceFirestoreBackupScheduleDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy FirestoreBackupSchedule without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing BackupSchedule %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -491,8 +529,7 @@ func resourceFirestoreBackupScheduleDelete(d *schema.ResourceData, meta interfac
 		return fmt.Errorf("Error fetching project for BackupSchedule: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}projects/{{project}}/databases/{{database}}/backupSchedules/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/databases/{{database}}/backupSchedules/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -634,5 +671,24 @@ func resourceFirestoreBackupSchedulePostCreateSetComputedFields(d *schema.Resour
 	if err := d.Set("name", flattenFirestoreBackupScheduleName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceFirestoreBackupScheduleFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenFirestoreBackupScheduleName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupSchedule: %s", err)
+	}
+	if err = d.Set("retention", flattenFirestoreBackupScheduleRetention(res["retention"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupSchedule: %s", err)
+	}
+	if err = d.Set("daily_recurrence", flattenFirestoreBackupScheduleDailyRecurrence(res["dailyRecurrence"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupSchedule: %s", err)
+	}
+	if err = d.Set("weekly_recurrence", flattenFirestoreBackupScheduleWeeklyRecurrence(res["weeklyRecurrence"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupSchedule: %s", err)
+	}
+
 	return nil
 }

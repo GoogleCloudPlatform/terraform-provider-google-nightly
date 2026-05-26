@@ -116,6 +116,7 @@ func ResourceNetworkServicesMulticastGroupRangeActivation() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -286,6 +287,18 @@ most recently updated.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -330,7 +343,7 @@ func resourceNetworkServicesMulticastGroupRangeActivationCreate(d *schema.Resour
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkServicesBasePath}}projects/{{project}}/locations/{{location}}/multicastGroupRangeActivations?multicastGroupRangeActivationId={{multicast_group_range_activation_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/multicastGroupRangeActivations?multicastGroupRangeActivationId={{multicast_group_range_activation_id}}")
 	if err != nil {
 		return err
 	}
@@ -414,7 +427,7 @@ func resourceNetworkServicesMulticastGroupRangeActivationRead(d *schema.Resource
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkServicesBasePath}}projects/{{project}}/locations/{{location}}/multicastGroupRangeActivations/{{multicast_group_range_activation_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/multicastGroupRangeActivations/{{multicast_group_range_activation_id}}")
 	if err != nil {
 		return err
 	}
@@ -447,51 +460,26 @@ func resourceNetworkServicesMulticastGroupRangeActivationRead(d *schema.Resource
 
 	log.Printf("[DEBUG] Finished reading NetworkServicesMulticastGroupRangeActivation %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenNetworkServicesMulticastGroupRangeActivationCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkServicesMulticastGroupRangeActivationDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("ip_cidr_range", flattenNetworkServicesMulticastGroupRangeActivationIpCidrRange(res["ipCidrRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkServicesMulticastGroupRangeActivationLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("log_config", flattenNetworkServicesMulticastGroupRangeActivationLogConfig(res["logConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("multicast_domain_activation", flattenNetworkServicesMulticastGroupRangeActivationMulticastDomainActivation(res["multicastDomainActivation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("multicast_group_consumer_activations", flattenNetworkServicesMulticastGroupRangeActivationMulticastGroupConsumerActivations(res["multicastGroupConsumerActivations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("multicast_group_range", flattenNetworkServicesMulticastGroupRangeActivationMulticastGroupRange(res["multicastGroupRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("name", flattenNetworkServicesMulticastGroupRangeActivationName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("state", flattenNetworkServicesMulticastGroupRangeActivationState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("unique_id", flattenNetworkServicesMulticastGroupRangeActivationUniqueId(res["uniqueId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkServicesMulticastGroupRangeActivationUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkServicesMulticastGroupRangeActivationTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkServicesMulticastGroupRangeActivationEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	err = ResourceNetworkServicesMulticastGroupRangeActivationFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -522,6 +510,19 @@ func resourceNetworkServicesMulticastGroupRangeActivationRead(d *schema.Resource
 }
 
 func resourceNetworkServicesMulticastGroupRangeActivationUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkServicesMulticastGroupRangeActivation().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkServicesMulticastGroupRangeActivationRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -576,7 +577,7 @@ func resourceNetworkServicesMulticastGroupRangeActivationUpdate(d *schema.Resour
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkServicesBasePath}}projects/{{project}}/locations/{{location}}/multicastGroupRangeActivations/{{multicast_group_range_activation_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/multicastGroupRangeActivations/{{multicast_group_range_activation_id}}")
 	if err != nil {
 		return err
 	}
@@ -640,6 +641,13 @@ func resourceNetworkServicesMulticastGroupRangeActivationUpdate(d *schema.Resour
 }
 
 func resourceNetworkServicesMulticastGroupRangeActivationDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkServicesMulticastGroupRangeActivation without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing MulticastGroupRangeActivation %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -653,8 +661,7 @@ func resourceNetworkServicesMulticastGroupRangeActivationDelete(d *schema.Resour
 		return fmt.Errorf("Error fetching project for MulticastGroupRangeActivation: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkServicesBasePath}}projects/{{project}}/locations/{{location}}/multicastGroupRangeActivations/{{multicast_group_range_activation_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/multicastGroupRangeActivations/{{multicast_group_range_activation_id}}")
 	if err != nil {
 		return err
 	}
@@ -866,4 +873,53 @@ func expandNetworkServicesMulticastGroupRangeActivationEffectiveLabels(v interfa
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkServicesMulticastGroupRangeActivationFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenNetworkServicesMulticastGroupRangeActivationCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkServicesMulticastGroupRangeActivationDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("ip_cidr_range", flattenNetworkServicesMulticastGroupRangeActivationIpCidrRange(res["ipCidrRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkServicesMulticastGroupRangeActivationLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("log_config", flattenNetworkServicesMulticastGroupRangeActivationLogConfig(res["logConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("multicast_domain_activation", flattenNetworkServicesMulticastGroupRangeActivationMulticastDomainActivation(res["multicastDomainActivation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("multicast_group_consumer_activations", flattenNetworkServicesMulticastGroupRangeActivationMulticastGroupConsumerActivations(res["multicastGroupConsumerActivations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("multicast_group_range", flattenNetworkServicesMulticastGroupRangeActivationMulticastGroupRange(res["multicastGroupRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("name", flattenNetworkServicesMulticastGroupRangeActivationName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("state", flattenNetworkServicesMulticastGroupRangeActivationState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("unique_id", flattenNetworkServicesMulticastGroupRangeActivationUniqueId(res["uniqueId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkServicesMulticastGroupRangeActivationUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkServicesMulticastGroupRangeActivationTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkServicesMulticastGroupRangeActivationEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MulticastGroupRangeActivation: %s", err)
+	}
+
+	return nil
 }

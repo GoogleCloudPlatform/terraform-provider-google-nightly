@@ -119,6 +119,7 @@ func ResourceComputeNodeGroup() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -298,6 +299,18 @@ than or equal to max-nodes. The default value is 0.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -366,7 +379,7 @@ func resourceComputeNodeGroupCreate(d *schema.ResourceData, meta interface{}) er
 		obj["zone"] = zoneProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/nodeGroups?initialNodeCount=PRE_CREATE_REPLACE_ME")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/nodeGroups?initialNodeCount=PRE_CREATE_REPLACE_ME")
 	if err != nil {
 		return err
 	}
@@ -462,7 +475,7 @@ func resourceComputeNodeGroupRead(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/nodeGroups/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/nodeGroups/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -495,45 +508,26 @@ func resourceComputeNodeGroupRead(d *schema.ResourceData, meta interface{}) erro
 
 	log.Printf("[DEBUG] Finished reading ComputeNodeGroup %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading NodeGroup: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeNodeGroupCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("description", flattenComputeNodeGroupDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("name", flattenComputeNodeGroupName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("node_template", flattenComputeNodeGroupNodeTemplate(res["nodeTemplate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("size", flattenComputeNodeGroupSize(res["size"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("maintenance_policy", flattenComputeNodeGroupMaintenancePolicy(res["maintenancePolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("maintenance_window", flattenComputeNodeGroupMaintenanceWindow(res["maintenanceWindow"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("autoscaling_policy", flattenComputeNodeGroupAutoscalingPolicy(res["autoscalingPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("share_settings", flattenComputeNodeGroupShareSettings(res["shareSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("maintenance_interval", flattenComputeNodeGroupMaintenanceInterval(res["maintenanceInterval"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("zone", flattenComputeNodeGroupZone(res["zone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	err = ResourceComputeNodeGroupFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -564,6 +558,19 @@ func resourceComputeNodeGroupRead(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceComputeNodeGroupUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeNodeGroup().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeNodeGroupRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -648,7 +655,7 @@ func resourceComputeNodeGroupUpdate(d *schema.ResourceData, meta interface{}) er
 		obj["zone"] = zoneProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/nodeGroups/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/nodeGroups/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -739,7 +746,7 @@ func resourceComputeNodeGroupUpdate(d *schema.ResourceData, meta interface{}) er
 			obj["nodeTemplate"] = nodeTemplateProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/nodeGroups/{{name}}/setNodeTemplate")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/nodeGroups/{{name}}/setNodeTemplate")
 		if err != nil {
 			return err
 		}
@@ -781,6 +788,13 @@ func resourceComputeNodeGroupUpdate(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceComputeNodeGroupDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeNodeGroup without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing NodeGroup %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -794,8 +808,7 @@ func resourceComputeNodeGroupDelete(d *schema.ResourceData, meta interface{}) er
 		return fmt.Errorf("Error fetching project for NodeGroup: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/nodeGroups/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/nodeGroups/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1184,4 +1197,46 @@ func expandComputeNodeGroupZone(v interface{}, d tpgresource.TerraformResourceDa
 		return nil, fmt.Errorf("Invalid value for zone: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeNodeGroupFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeNodeGroupCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("description", flattenComputeNodeGroupDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("name", flattenComputeNodeGroupName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("node_template", flattenComputeNodeGroupNodeTemplate(res["nodeTemplate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("size", flattenComputeNodeGroupSize(res["size"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("maintenance_policy", flattenComputeNodeGroupMaintenancePolicy(res["maintenancePolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("maintenance_window", flattenComputeNodeGroupMaintenanceWindow(res["maintenanceWindow"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("autoscaling_policy", flattenComputeNodeGroupAutoscalingPolicy(res["autoscalingPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("share_settings", flattenComputeNodeGroupShareSettings(res["shareSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("maintenance_interval", flattenComputeNodeGroupMaintenanceInterval(res["maintenanceInterval"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("zone", flattenComputeNodeGroupZone(res["zone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading NodeGroup: %s", err)
+	}
+	return nil
 }

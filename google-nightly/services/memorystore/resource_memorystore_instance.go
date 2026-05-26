@@ -130,6 +130,7 @@ func ResourceMemorystoreInstance() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -539,9 +540,15 @@ resolution and up to nine fractional digits.`,
 				Description: `Optional. Machine type for individual nodes of the instance. 
  Possible values:
  SHARED_CORE_NANO
+CUSTOM_PICO
+CUSTOM_MICRO
+CUSTOM_MINI
 HIGHMEM_MEDIUM
+HIGHCPU_MEDIUM
 HIGHMEM_XLARGE
-STANDARD_SMALL`,
+STANDARD_SMALL
+STANDARD_LARGE
+HIGHMEM_2XLARGE`,
 			},
 			"persistence_config": {
 				Type:        schema.TypeList,
@@ -1090,6 +1097,18 @@ projects/{project_id}/global/networks/{network_id}.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1235,7 +1254,7 @@ func resourceMemorystoreInstanceCreate(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{MemorystoreBasePath}}projects/{{project}}/locations/{{location}}/instances?instanceId={{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances?instanceId={{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -1319,7 +1338,7 @@ func resourceMemorystoreInstanceRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{MemorystoreBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -1365,120 +1384,25 @@ func resourceMemorystoreInstanceRead(d *schema.ResourceData, meta interface{}) e
 	}
 
 	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Instance: %s", err)
 	}
 
-	if err := d.Set("name", flattenMemorystoreInstanceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("create_time", flattenMemorystoreInstanceCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("update_time", flattenMemorystoreInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("labels", flattenMemorystoreInstanceLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("state", flattenMemorystoreInstanceState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("state_info", flattenMemorystoreInstanceStateInfo(res["stateInfo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("automated_backup_config", flattenMemorystoreInstanceAutomatedBackupConfig(res["automatedBackupConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("uid", flattenMemorystoreInstanceUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("replica_count", flattenMemorystoreInstanceReplicaCount(res["replicaCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("authorization_mode", flattenMemorystoreInstanceAuthorizationMode(res["authorizationMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("transit_encryption_mode", flattenMemorystoreInstanceTransitEncryptionMode(res["transitEncryptionMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("shard_count", flattenMemorystoreInstanceShardCount(res["shardCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("discovery_endpoints", flattenMemorystoreInstanceDiscoveryEndpoints(res["discoveryEndpoints"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("node_type", flattenMemorystoreInstanceNodeType(res["nodeType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("persistence_config", flattenMemorystoreInstancePersistenceConfig(res["persistenceConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("maintenance_policy", flattenMemorystoreInstanceMaintenancePolicy(res["maintenancePolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("maintenance_schedule", flattenMemorystoreInstanceMaintenanceSchedule(res["maintenanceSchedule"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("maintenance_version", flattenMemorystoreInstanceMaintenanceVersion(res["maintenanceVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("effective_maintenance_version", flattenMemorystoreInstanceEffectiveMaintenanceVersion(res["effectiveMaintenanceVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("available_maintenance_versions", flattenMemorystoreInstanceAvailableMaintenanceVersions(res["availableMaintenanceVersions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("engine_version", flattenMemorystoreInstanceEngineVersion(res["engineVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("engine_configs", flattenMemorystoreInstanceEngineConfigs(res["engineConfigs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("node_config", flattenMemorystoreInstanceNodeConfig(res["nodeConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("zone_distribution_config", flattenMemorystoreInstanceZoneDistributionConfig(res["zoneDistributionConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("deletion_protection_enabled", flattenMemorystoreInstanceDeletionProtectionEnabled(res["deletionProtectionEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("endpoints", flattenMemorystoreInstanceEndpoints(res["endpoints"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("cross_instance_replication_config", flattenMemorystoreInstanceCrossInstanceReplicationConfig(res["crossInstanceReplicationConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("mode", flattenMemorystoreInstanceMode(res["mode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("psc_attachment_details", flattenMemorystoreInstancePscAttachmentDetails(res["pscAttachmentDetails"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("psc_auto_connections", flattenMemorystoreInstancePscAutoConnections(res["pscAutoConnections"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("backup_collection", flattenMemorystoreInstanceBackupCollection(res["backupCollection"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("kms_key", flattenMemorystoreInstanceKmsKey(res["kmsKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("managed_server_ca", flattenMemorystoreInstanceManagedServerCa(res["managedServerCa"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("server_ca_mode", flattenMemorystoreInstanceServerCaMode(res["serverCaMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("server_ca_pool", flattenMemorystoreInstanceServerCaPool(res["serverCaPool"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenMemorystoreInstanceTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenMemorystoreInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+	err = ResourceMemorystoreInstanceFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1509,6 +1433,19 @@ func resourceMemorystoreInstanceRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceMemorystoreInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceMemorystoreInstance().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceMemorystoreInstanceRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1622,7 +1559,7 @@ func resourceMemorystoreInstanceUpdate(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{MemorystoreBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -1722,6 +1659,13 @@ func resourceMemorystoreInstanceUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceMemorystoreInstanceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy MemorystoreInstance without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Instance %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1735,8 +1679,7 @@ func resourceMemorystoreInstanceDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error fetching project for Instance: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{MemorystoreBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 	if err != nil {
 		return err
 	}
@@ -3772,4 +3715,122 @@ func resourceMemorystoreInstanceDecoder(d *schema.ResourceData, meta interface{}
 		res["managedServerCa"] = certificateAuthority["managedServerCa"]
 	}
 	return res, nil
+}
+
+func ResourceMemorystoreInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenMemorystoreInstanceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("create_time", flattenMemorystoreInstanceCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("update_time", flattenMemorystoreInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("labels", flattenMemorystoreInstanceLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("state", flattenMemorystoreInstanceState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("state_info", flattenMemorystoreInstanceStateInfo(res["stateInfo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("automated_backup_config", flattenMemorystoreInstanceAutomatedBackupConfig(res["automatedBackupConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("uid", flattenMemorystoreInstanceUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("replica_count", flattenMemorystoreInstanceReplicaCount(res["replicaCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("authorization_mode", flattenMemorystoreInstanceAuthorizationMode(res["authorizationMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("transit_encryption_mode", flattenMemorystoreInstanceTransitEncryptionMode(res["transitEncryptionMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("shard_count", flattenMemorystoreInstanceShardCount(res["shardCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("discovery_endpoints", flattenMemorystoreInstanceDiscoveryEndpoints(res["discoveryEndpoints"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("node_type", flattenMemorystoreInstanceNodeType(res["nodeType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("persistence_config", flattenMemorystoreInstancePersistenceConfig(res["persistenceConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("maintenance_policy", flattenMemorystoreInstanceMaintenancePolicy(res["maintenancePolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("maintenance_schedule", flattenMemorystoreInstanceMaintenanceSchedule(res["maintenanceSchedule"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("maintenance_version", flattenMemorystoreInstanceMaintenanceVersion(res["maintenanceVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("effective_maintenance_version", flattenMemorystoreInstanceEffectiveMaintenanceVersion(res["effectiveMaintenanceVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("available_maintenance_versions", flattenMemorystoreInstanceAvailableMaintenanceVersions(res["availableMaintenanceVersions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("engine_version", flattenMemorystoreInstanceEngineVersion(res["engineVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("engine_configs", flattenMemorystoreInstanceEngineConfigs(res["engineConfigs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("node_config", flattenMemorystoreInstanceNodeConfig(res["nodeConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("zone_distribution_config", flattenMemorystoreInstanceZoneDistributionConfig(res["zoneDistributionConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("deletion_protection_enabled", flattenMemorystoreInstanceDeletionProtectionEnabled(res["deletionProtectionEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("endpoints", flattenMemorystoreInstanceEndpoints(res["endpoints"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("cross_instance_replication_config", flattenMemorystoreInstanceCrossInstanceReplicationConfig(res["crossInstanceReplicationConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("mode", flattenMemorystoreInstanceMode(res["mode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("psc_attachment_details", flattenMemorystoreInstancePscAttachmentDetails(res["pscAttachmentDetails"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("psc_auto_connections", flattenMemorystoreInstancePscAutoConnections(res["pscAutoConnections"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("backup_collection", flattenMemorystoreInstanceBackupCollection(res["backupCollection"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("kms_key", flattenMemorystoreInstanceKmsKey(res["kmsKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("managed_server_ca", flattenMemorystoreInstanceManagedServerCa(res["managedServerCa"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("server_ca_mode", flattenMemorystoreInstanceServerCaMode(res["serverCaMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("server_ca_pool", flattenMemorystoreInstanceServerCaPool(res["serverCaPool"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenMemorystoreInstanceTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenMemorystoreInstanceEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+
+	return nil
 }

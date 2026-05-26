@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicedirectory"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = servicedirectory.Product
 )
 
 func TestAccServiceDirectoryEndpoint_serviceDirectoryEndpointBasicExample(t *testing.T) {
@@ -184,8 +187,7 @@ func testAccCheckServiceDirectoryEndpointDestroyProducer(t *testing.T) func(s *t
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ServiceDirectoryBasePath}}{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(servicedirectory.Product, config)+"{{name}}")
 			if err != nil {
 				return err
 			}

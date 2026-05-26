@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = compute.Product
 )
 
 func TestAccComputeSecurityPolicyRule_securityPolicyRuleBasicExample(t *testing.T) {
@@ -251,6 +253,233 @@ resource "google_compute_security_policy_rule" "policy_rule_two" {
 `, context)
 }
 
+func TestAccComputeSecurityPolicyRule_securityPolicyRuleAdvancedFeaturesExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"sec_policy_name": "policyruletest" + randomSuffix,
+		"random_suffix":   randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckComputeSecurityPolicyRuleDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeSecurityPolicyRule_securityPolicyRuleAdvancedFeaturesExample(context),
+			},
+			{
+				ResourceName:            "google_compute_security_policy_rule.policy",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"security_policy"},
+			},
+			{
+				ResourceName:       "google_compute_security_policy_rule.policy",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccComputeSecurityPolicyRule_securityPolicyRuleAdvancedFeaturesExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_compute_security_policy" "policy" {
+  name        = "%{sec_policy_name}"
+  description = "Security policy with WAF exclusions, Headers, and Redirect"
+}
+
+resource "google_compute_security_policy_rule" "policy" {
+  security_policy = google_compute_security_policy.policy.name
+  description     = "Complex rule using advanced features: WAF config, header actions, and redirect options"
+  priority        = 100
+  action          = "allow"
+
+  match {
+    expr {
+      expression = "request.path.matches('/api/v1/.*')"
+    }
+  }
+
+  preconfigured_waf_config {
+    exclusion {
+      target_rule_set = "sqli-v33-stable"
+      target_rule_ids = ["owasp-crs-v030301-id942100-sqli"]
+
+      request_header {
+        operator = "EQUALS"
+        value    = "internal-scan"
+      }
+    }
+  }
+
+  header_action {
+    request_headers_to_adds {
+      header_name  = "X-Added-By-Armor"
+      header_value = "Verified-Traffic"
+    }
+  }
+}
+`, context)
+}
+
+func TestAccComputeSecurityPolicyRule_securityPolicyRuleWithBodyExcludeExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"backend_name":    "backendpolicy" + randomSuffix,
+		"network_name":    "tf-test-test-network" + randomSuffix,
+		"sec_policy_name": "policyruletest" + randomSuffix,
+		"random_suffix":   randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		CheckDestroy:             testAccCheckComputeSecurityPolicyRuleDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeSecurityPolicyRule_securityPolicyRuleWithBodyExcludeExample(context),
+			},
+			{
+				ResourceName:            "google_compute_security_policy_rule.policy_rule_one",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"security_policy"},
+			},
+			{
+				ResourceName:       "google_compute_security_policy_rule.policy_rule_one",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccComputeSecurityPolicyRule_securityPolicyRuleWithBodyExcludeExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+
+resource "google_compute_network" "default" {
+  provider                = google-beta
+  name                    = "%{network_name}"
+  auto_create_subnetworks = false
+}
+
+resource "google_compute_subnetwork" "default" {
+  provider      = google-beta
+  name          = "test-subnet"
+  region        = "us-west2"
+  network       = google_compute_network.default.id
+  ip_cidr_range = "10.10.0.0/24"
+}
+
+resource "google_compute_health_check" "default" {
+  provider = google-beta
+  name     = "test-health-check"
+
+  http_health_check {
+    port = 80
+  }
+}
+
+resource "google_compute_security_policy" "default" {
+  provider    = google-beta
+  name        = "%{sec_policy_name}"
+  description = "global security policy with body inspection"
+  type        = "CLOUD_ARMOR"
+
+  advanced_options_config {
+    json_parsing = "STANDARD"
+    log_level    = "VERBOSE"
+  }
+}
+
+resource "google_compute_instance_template" "default" {
+  provider     = google-beta
+  name         = "%{backend_name}"
+  machine_type = "e2-micro"
+
+  disk {
+    source_image = "projects/debian-cloud/global/images/family/debian-11"
+    auto_delete  = true
+    boot         = true
+  }
+
+  network_interface {
+    subnetwork = google_compute_subnetwork.default.id
+    access_config {}
+  }
+}
+
+resource "google_compute_instance_group_manager" "default" {
+  provider           = google-beta
+  name               = "%{backend_name}"
+  base_instance_name = "backend"
+  zone               = "us-west2-a"
+
+  version {
+    instance_template = google_compute_instance_template.default.id
+  }
+
+  target_size = 1
+}
+
+resource "google_compute_backend_service" "default" {
+  provider              = google-beta
+  name                  = "%{backend_name}"
+  protocol              = "HTTP"
+  load_balancing_scheme = "EXTERNAL_MANAGED"
+  timeout_sec           = 30
+
+  health_checks = [google_compute_health_check.default.id]
+
+  backend {
+    group = google_compute_instance_group_manager.default.instance_group
+  }
+
+  security_policy = google_compute_security_policy.default.id
+}
+
+resource "google_compute_security_policy_rule" "policy_rule_one" {
+  provider        = google-beta
+  security_policy = google_compute_security_policy.default.name
+  description     = "waf body rule"
+  action          = "deny(403)"
+  priority        = 100
+  preview         = true
+
+  match {
+    expr {
+      expression = "evaluatePreconfiguredWaf('sqli-v33-stable')"
+    }
+  }
+
+  preconfigured_waf_config {
+    exclusion {
+      target_rule_set = "sqli-v33-stable"
+
+      request_body {
+        operator = "EQUALS"
+        value    = "safe-field"
+      }
+    }
+  }
+
+  depends_on = [
+    google_compute_backend_service.default
+  ]
+}
+`, context)
+}
+
 func testAccCheckComputeSecurityPolicyRuleDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {
@@ -262,8 +491,7 @@ func testAccCheckComputeSecurityPolicyRuleDestroyProducer(t *testing.T) func(s *
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/global/securityPolicies/{{security_policy}}/getRule?priority={{priority}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(compute.Product, config)+"projects/{{project}}/global/securityPolicies/{{security_policy}}/getRule?priority={{priority}}")
 			if err != nil {
 				return err
 			}

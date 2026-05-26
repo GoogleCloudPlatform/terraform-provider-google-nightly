@@ -193,7 +193,7 @@ func resourceEventarcGoogleChannelConfigCreate(d *schema.ResourceData, meta inte
 		obj["cryptoKeyName"] = cryptoKeyNameProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/googleChannelConfig?updateMask=cryptoKeyName")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/googleChannelConfig?updateMask=cryptoKeyName")
 	if err != nil {
 		return err
 	}
@@ -262,7 +262,7 @@ func resourceEventarcGoogleChannelConfigRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/googleChannelConfig")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/googleChannelConfig")
 	if err != nil {
 		return err
 	}
@@ -299,14 +299,9 @@ func resourceEventarcGoogleChannelConfigRead(d *schema.ResourceData, meta interf
 		return fmt.Errorf("Error reading GoogleChannelConfig: %s", err)
 	}
 
-	if err := d.Set("name", flattenEventarcGoogleChannelConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GoogleChannelConfig: %s", err)
-	}
-	if err := d.Set("update_time", flattenEventarcGoogleChannelConfigUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GoogleChannelConfig: %s", err)
-	}
-	if err := d.Set("crypto_key_name", flattenEventarcGoogleChannelConfigCryptoKeyName(res["cryptoKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GoogleChannelConfig: %s", err)
+	err = ResourceEventarcGoogleChannelConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -331,6 +326,7 @@ func resourceEventarcGoogleChannelConfigRead(d *schema.ResourceData, meta interf
 }
 
 func resourceEventarcGoogleChannelConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -368,7 +364,7 @@ func resourceEventarcGoogleChannelConfigUpdate(d *schema.ResourceData, meta inte
 		obj["cryptoKeyName"] = cryptoKeyNameProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/googleChannelConfig")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/googleChannelConfig")
 	if err != nil {
 		return err
 	}
@@ -463,4 +459,20 @@ func expandEventarcGoogleChannelConfigName(v interface{}, d tpgresource.Terrafor
 
 func expandEventarcGoogleChannelConfigCryptoKeyName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceEventarcGoogleChannelConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenEventarcGoogleChannelConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GoogleChannelConfig: %s", err)
+	}
+	if err = d.Set("update_time", flattenEventarcGoogleChannelConfigUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GoogleChannelConfig: %s", err)
+	}
+	if err = d.Set("crypto_key_name", flattenEventarcGoogleChannelConfigCryptoKeyName(res["cryptoKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GoogleChannelConfig: %s", err)
+	}
+
+	return nil
 }

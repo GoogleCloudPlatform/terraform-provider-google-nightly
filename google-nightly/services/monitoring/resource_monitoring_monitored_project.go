@@ -55,6 +55,12 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
+import (
+	rmClient "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager/client"
+)
+
+var _ = rmClient.NewClient
+
 func ResourceMonitoringMonitoredProjectNameDiffSuppressFunc(k, old, new string, d tpgresource.TerraformResourceDataChange) bool {
 	// Don't suppress if values are empty strings
 	if old == "" || new == "" {
@@ -127,6 +133,7 @@ func ResourceMonitoringMonitoredProject() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceMonitoringMonitoredProjectCreate,
 		Read:   resourceMonitoringMonitoredProjectRead,
+		Update: resourceMonitoringMonitoredProjectUpdate,
 		Delete: resourceMonitoringMonitoredProjectDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -168,6 +175,19 @@ func ResourceMonitoringMonitoredProject() *schema.Resource {
 				Computed:    true,
 				Description: `Output only. The time when this 'MonitoredProject' was created.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -193,7 +213,7 @@ func resourceMonitoringMonitoredProjectCreate(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{MonitoringBasePath}}v1/locations/global/metricsScopes/{{metrics_scope}}/projects")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"v1/locations/global/metricsScopes/{{metrics_scope}}/projects")
 	if err != nil {
 		return err
 	}
@@ -251,7 +271,7 @@ func resourceMonitoringMonitoredProjectRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{MonitoringBasePath}}v1/locations/global/metricsScopes/{{metrics_scope}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"v1/locations/global/metricsScopes/{{metrics_scope}}")
 	if err != nil {
 		return err
 	}
@@ -301,17 +321,41 @@ func resourceMonitoringMonitoredProjectRead(d *schema.ResourceData, meta interfa
 		return nil
 	}
 
-	if err := d.Set("name", flattenMonitoringMonitoredProjectName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MonitoredProject: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("create_time", flattenMonitoringMonitoredProjectCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MonitoredProject: %s", err)
+
+	err = ResourceMonitoringMonitoredProjectFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
+func resourceMonitoringMonitoredProjectUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceMonitoringMonitoredProjectRead(d, meta)
+}
+
 func resourceMonitoringMonitoredProjectDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy MonitoringMonitoredProject without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing MonitoredProject %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -320,7 +364,7 @@ func resourceMonitoringMonitoredProjectDelete(d *schema.ResourceData, meta inter
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{MonitoringBasePath}}v1/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"v1/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -423,7 +467,7 @@ func resourceMonitoringMonitoredProjectDecoder(d *schema.ResourceData, meta inte
 	monitoredProjects, _ := res["monitoredProjects"].([]interface{})
 
 	// Convert configured terraform monitored_project resource name to a ProjectNumber
-	expectedProject, configProjectErr := config.NewResourceManagerClient(config.UserAgent).Projects.Get(d.Get("name").(string)).Do()
+	expectedProject, configProjectErr := rmClient.NewClient(config, config.UserAgent).Projects.Get(d.Get("name").(string)).Do()
 	if configProjectErr != nil {
 		return nil, configProjectErr
 	}
@@ -488,4 +532,17 @@ func ResourceMonitoringMonitoredProjectUpgradeV0(_ context.Context, rawState map
 
 	log.Printf("[DEBUG] Attributes after migration: %#v", rawState)
 	return rawState, nil
+}
+
+func ResourceMonitoringMonitoredProjectFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenMonitoringMonitoredProjectName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MonitoredProject: %s", err)
+	}
+	if err = d.Set("create_time", flattenMonitoringMonitoredProjectCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MonitoredProject: %s", err)
+	}
+
+	return nil
 }

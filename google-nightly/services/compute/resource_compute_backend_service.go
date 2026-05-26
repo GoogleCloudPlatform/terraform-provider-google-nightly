@@ -263,6 +263,7 @@ func ResourceComputeBackendService() *schema.Resource {
 		SchemaVersion: 1,
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -840,9 +841,10 @@ If OAuth client is not set, the Google-managed OAuth client is used.`,
 							Description: `Whether the serving infrastructure will authenticate and authorize all incoming requests.`,
 						},
 						"oauth2_client_id": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: `OAuth2 Client ID for IAP`,
+							Type:             schema.TypeString,
+							Optional:         true,
+							DiffSuppressFunc: tpgresource.EmptyOrDefaultStringSuppress(" "),
+							Description:      `OAuth2 Client ID for IAP`,
 						},
 						"oauth2_client_secret": {
 							Type:        schema.TypeString,
@@ -1548,6 +1550,18 @@ object. This field is used in optimistic locking.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -2004,7 +2018,7 @@ func resourceComputeBackendServiceCreate(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendServices")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/backendServices")
 	if err != nil {
 		return err
 	}
@@ -2062,17 +2076,9 @@ func resourceComputeBackendServiceCreate(d *schema.ResourceData, meta interface{
 			return errwrap.Wrapf("Error parsing Backend Service security policy: {{err}}", err)
 		}
 
-		spr := emptySecurityPolicyReference()
-		spr.SecurityPolicy = pol.RelativeLink()
-
-		bodyBytes, err := json.Marshal(spr)
-		if err != nil {
-			return errwrap.Wrapf("Error marshaling security policy reference: {{err}}", err)
-		}
-
-		var sBody map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &sBody); err != nil {
-			return errwrap.Wrapf("Error unmarshaling security into map: {{err}}", err)
+		sBody := emptySecurityPolicyReference()
+		if link := pol.RelativeLink(); link != "" {
+			sBody["securityPolicy"] = link
 		}
 
 		securityPolicyPath := "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}/setSecurityPolicy?prettyPrint=false"
@@ -2107,16 +2113,9 @@ func resourceComputeBackendServiceCreate(d *schema.ResourceData, meta interface{
 			return errwrap.Wrapf("Error parsing Backend Service edge security policy: {{err}}", err)
 		}
 
-		spr := emptySecurityPolicyReference()
-		spr.SecurityPolicy = pol.RelativeLink()
-		bodyBytes, err := json.Marshal(spr)
-		if err != nil {
-			return errwrap.Wrapf("Error marshaling security policy reference: {{err}}", err)
-		}
-
-		var eBody map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &eBody); err != nil {
-			return errwrap.Wrapf("Error unmarshaling security into map: {{err}}", err)
+		eBody := emptySecurityPolicyReference()
+		if link := pol.RelativeLink(); link != "" {
+			eBody["securityPolicy"] = link
 		}
 
 		edgeSecurityPolicyPath := "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}/setEdgeSecurityPolicy?prettyPrint=false"
@@ -2172,7 +2171,7 @@ func resourceComputeBackendServiceRead(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/backendServices/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2217,141 +2216,26 @@ func resourceComputeBackendServiceRead(d *schema.ResourceData, meta interface{})
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading BackendService: %s", err)
 	}
 
-	if err := d.Set("affinity_cookie_ttl_sec", flattenComputeBackendServiceAffinityCookieTtlSec(res["affinityCookieTtlSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("backend", flattenComputeBackendServiceBackend(res["backends"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("circuit_breakers", flattenComputeBackendServiceCircuitBreakers(res["circuitBreakers"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("compression_mode", flattenComputeBackendServiceCompressionMode(res["compressionMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("consistent_hash", flattenComputeBackendServiceConsistentHash(res["consistentHash"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("cdn_policy", flattenComputeBackendServiceCdnPolicy(res["cdnPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	// Terraform must set the top level schema field, but since this object contains collapsed properties
-	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
-	if flattenedProp := flattenComputeBackendServiceConnectionDraining(res["connectionDraining"], d, config); flattenedProp != nil {
-		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
-			return fmt.Errorf("Error reading BackendService: %s", gerr)
-		}
-		casted := flattenedProp.([]interface{})[0]
-		if casted != nil {
-			for k, v := range casted.(map[string]interface{}) {
-				if err := d.Set(k, v); err != nil {
-					return fmt.Errorf("Error setting %s: %s", k, err)
-				}
-			}
-		}
-	}
-	if err := d.Set("creation_timestamp", flattenComputeBackendServiceCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("custom_request_headers", flattenComputeBackendServiceCustomRequestHeaders(res["customRequestHeaders"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("custom_response_headers", flattenComputeBackendServiceCustomResponseHeaders(res["customResponseHeaders"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("fingerprint", flattenComputeBackendServiceFingerprint(res["fingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("description", flattenComputeBackendServiceDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("enable_cdn", flattenComputeBackendServiceEnableCDN(res["enableCDN"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("health_checks", flattenComputeBackendServiceHealthChecks(res["healthChecks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("generated_id", flattenComputeBackendServiceGeneratedId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("iap", flattenComputeBackendServiceIap(res["iap"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("ip_address_selection_policy", flattenComputeBackendServiceIpAddressSelectionPolicy(res["ipAddressSelectionPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("load_balancing_scheme", flattenComputeBackendServiceLoadBalancingScheme(res["loadBalancingScheme"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("external_managed_migration_state", flattenComputeBackendServiceExternalManagedMigrationState(res["externalManagedMigrationState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("external_managed_migration_testing_percentage", flattenComputeBackendServiceExternalManagedMigrationTestingPercentage(res["externalManagedMigrationTestingPercentage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("locality_lb_policy", flattenComputeBackendServiceLocalityLbPolicy(res["localityLbPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("locality_lb_policies", flattenComputeBackendServiceLocalityLbPolicies(res["localityLbPolicies"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("custom_metrics", flattenComputeBackendServiceCustomMetrics(res["customMetrics"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("name", flattenComputeBackendServiceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("outlier_detection", flattenComputeBackendServiceOutlierDetection(res["outlierDetection"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("port_name", flattenComputeBackendServicePortName(res["portName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("protocol", flattenComputeBackendServiceProtocol(res["protocol"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("security_policy", flattenComputeBackendServiceSecurityPolicy(res["securityPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("edge_security_policy", flattenComputeBackendServiceEdgeSecurityPolicy(res["edgeSecurityPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("security_settings", flattenComputeBackendServiceSecuritySettings(res["securitySettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("session_affinity", flattenComputeBackendServiceSessionAffinity(res["sessionAffinity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("strong_session_affinity_cookie", flattenComputeBackendServiceStrongSessionAffinityCookie(res["strongSessionAffinityCookie"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("timeout_sec", flattenComputeBackendServiceTimeoutSec(res["timeoutSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("log_config", flattenComputeBackendServiceLogConfig(res["logConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("service_lb_policy", flattenComputeBackendServiceServiceLbPolicy(res["serviceLbPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("tls_settings", flattenComputeBackendServiceTlsSettings(res["tlsSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("max_stream_duration", flattenComputeBackendServiceMaxStreamDuration(res["maxStreamDuration"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("network_pass_through_lb_traffic_policy", flattenComputeBackendServiceNetworkPassThroughLbTrafficPolicy(res["networkPassThroughLbTrafficPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("dynamic_forwarding", flattenComputeBackendServiceDynamicForwarding(res["dynamicForwarding"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading BackendService: %s", err)
+	err = ResourceComputeBackendServiceFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -2376,6 +2260,19 @@ func resourceComputeBackendServiceRead(d *schema.ResourceData, meta interface{})
 }
 
 func resourceComputeBackendServiceUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeBackendService().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeBackendServiceRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -2640,7 +2537,7 @@ func resourceComputeBackendServiceUpdate(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/backendServices/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2685,17 +2582,9 @@ func resourceComputeBackendServiceUpdate(d *schema.ResourceData, meta interface{
 			return errwrap.Wrapf("Error parsing Backend Service security policy: {{err}}", err)
 		}
 
-		spr := emptySecurityPolicyReference()
-		spr.SecurityPolicy = pol.RelativeLink()
-
-		bodyBytes, err := json.Marshal(spr)
-		if err != nil {
-			return errwrap.Wrapf("Error marshaling security policy reference: {{err}}", err)
-		}
-
-		var sBody map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &sBody); err != nil {
-			return errwrap.Wrapf("Error unmarshaling security into map: {{err}}", err)
+		sBody := emptySecurityPolicyReference()
+		if link := pol.RelativeLink(); link != "" {
+			sBody["securityPolicy"] = link
 		}
 
 		securityPolicyPath := "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}/setSecurityPolicy?prettyPrint=false"
@@ -2730,16 +2619,9 @@ func resourceComputeBackendServiceUpdate(d *schema.ResourceData, meta interface{
 			return errwrap.Wrapf("Error parsing Backend Service edge security policy: {{err}}", err)
 		}
 
-		spr := emptySecurityPolicyReference()
-		spr.SecurityPolicy = pol.RelativeLink()
-		bodyBytes, err := json.Marshal(spr)
-		if err != nil {
-			return errwrap.Wrapf("Error marshaling security policy reference: {{err}}", err)
-		}
-
-		var eBody map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &eBody); err != nil {
-			return errwrap.Wrapf("Error unmarshaling security into map: {{err}}", err)
+		eBody := emptySecurityPolicyReference()
+		if link := pol.RelativeLink(); link != "" {
+			eBody["securityPolicy"] = link
 		}
 
 		edgeSecurityPolicyPath := "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}/setEdgeSecurityPolicy?prettyPrint=false"
@@ -2770,6 +2652,13 @@ func resourceComputeBackendServiceUpdate(d *schema.ResourceData, meta interface{
 }
 
 func resourceComputeBackendServiceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeBackendService without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing BackendService %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -2783,8 +2672,7 @@ func resourceComputeBackendServiceDelete(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error fetching project for BackendService: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/backendServices/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -6358,4 +6246,142 @@ func resourceComputeBackendServiceDecoder(d *schema.ResourceData, meta interface
 	}
 
 	return res, nil
+}
+
+func ResourceComputeBackendServiceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("affinity_cookie_ttl_sec", flattenComputeBackendServiceAffinityCookieTtlSec(res["affinityCookieTtlSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("backend", flattenComputeBackendServiceBackend(res["backends"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("circuit_breakers", flattenComputeBackendServiceCircuitBreakers(res["circuitBreakers"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("compression_mode", flattenComputeBackendServiceCompressionMode(res["compressionMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("consistent_hash", flattenComputeBackendServiceConsistentHash(res["consistentHash"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("cdn_policy", flattenComputeBackendServiceCdnPolicy(res["cdnPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	// Terraform must set the top level schema field, but since this object contains collapsed properties
+	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
+	if flattenedProp := flattenComputeBackendServiceConnectionDraining(res["connectionDraining"], d, config); flattenedProp != nil {
+		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
+			return fmt.Errorf("Error reading BackendService: %s", gerr)
+		}
+		casted := flattenedProp.([]interface{})[0]
+		if casted != nil {
+			for k, v := range casted.(map[string]interface{}) {
+				if err := d.Set(k, v); err != nil {
+					return fmt.Errorf("Error setting %s: %s", k, err)
+				}
+			}
+		}
+	}
+	if err = d.Set("creation_timestamp", flattenComputeBackendServiceCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("custom_request_headers", flattenComputeBackendServiceCustomRequestHeaders(res["customRequestHeaders"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("custom_response_headers", flattenComputeBackendServiceCustomResponseHeaders(res["customResponseHeaders"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("fingerprint", flattenComputeBackendServiceFingerprint(res["fingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("description", flattenComputeBackendServiceDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("enable_cdn", flattenComputeBackendServiceEnableCDN(res["enableCDN"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("health_checks", flattenComputeBackendServiceHealthChecks(res["healthChecks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("generated_id", flattenComputeBackendServiceGeneratedId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("iap", flattenComputeBackendServiceIap(res["iap"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("ip_address_selection_policy", flattenComputeBackendServiceIpAddressSelectionPolicy(res["ipAddressSelectionPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("load_balancing_scheme", flattenComputeBackendServiceLoadBalancingScheme(res["loadBalancingScheme"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("external_managed_migration_state", flattenComputeBackendServiceExternalManagedMigrationState(res["externalManagedMigrationState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("external_managed_migration_testing_percentage", flattenComputeBackendServiceExternalManagedMigrationTestingPercentage(res["externalManagedMigrationTestingPercentage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("locality_lb_policy", flattenComputeBackendServiceLocalityLbPolicy(res["localityLbPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("locality_lb_policies", flattenComputeBackendServiceLocalityLbPolicies(res["localityLbPolicies"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("custom_metrics", flattenComputeBackendServiceCustomMetrics(res["customMetrics"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("name", flattenComputeBackendServiceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("outlier_detection", flattenComputeBackendServiceOutlierDetection(res["outlierDetection"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("port_name", flattenComputeBackendServicePortName(res["portName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("protocol", flattenComputeBackendServiceProtocol(res["protocol"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("security_policy", flattenComputeBackendServiceSecurityPolicy(res["securityPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("edge_security_policy", flattenComputeBackendServiceEdgeSecurityPolicy(res["edgeSecurityPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("security_settings", flattenComputeBackendServiceSecuritySettings(res["securitySettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("session_affinity", flattenComputeBackendServiceSessionAffinity(res["sessionAffinity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("strong_session_affinity_cookie", flattenComputeBackendServiceStrongSessionAffinityCookie(res["strongSessionAffinityCookie"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("timeout_sec", flattenComputeBackendServiceTimeoutSec(res["timeoutSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("log_config", flattenComputeBackendServiceLogConfig(res["logConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("service_lb_policy", flattenComputeBackendServiceServiceLbPolicy(res["serviceLbPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("tls_settings", flattenComputeBackendServiceTlsSettings(res["tlsSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("max_stream_duration", flattenComputeBackendServiceMaxStreamDuration(res["maxStreamDuration"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("network_pass_through_lb_traffic_policy", flattenComputeBackendServiceNetworkPassThroughLbTrafficPolicy(res["networkPassThroughLbTrafficPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("dynamic_forwarding", flattenComputeBackendServiceDynamicForwarding(res["dynamicForwarding"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading BackendService: %s", err)
+	}
+	return nil
 }

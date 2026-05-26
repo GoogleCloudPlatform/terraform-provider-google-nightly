@@ -100,6 +100,7 @@ func ResourceCloudbuildv2Repository() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceCloudbuildv2RepositoryCreate,
 		Read:   resourceCloudbuildv2RepositoryRead,
+		Update: resourceCloudbuildv2RepositoryUpdate,
 		Delete: resourceCloudbuildv2RepositoryDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -114,6 +115,7 @@ func ResourceCloudbuildv2Repository() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -208,6 +210,18 @@ Please refer to the field 'effective_annotations' for all of the annotations pre
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -245,7 +259,7 @@ func resourceCloudbuildv2RepositoryCreate(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{Cloudbuildv2BasePath}}projects/{{project}}/locations/{{location}}/connections/{{parent_connection}}/repositories?repositoryId={{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{parent_connection}}/repositories?repositoryId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -334,7 +348,7 @@ func resourceCloudbuildv2RepositoryRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{Cloudbuildv2BasePath}}projects/{{project}}/locations/{{location}}/connections/{{parent_connection}}/repositories/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{parent_connection}}/repositories/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -367,27 +381,26 @@ func resourceCloudbuildv2RepositoryRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading Cloudbuildv2Repository %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Repository: %s", err)
 	}
 
-	if err := d.Set("remote_uri", flattenCloudbuildv2RepositoryRemoteUri(res["remoteUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("create_time", flattenCloudbuildv2RepositoryCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("update_time", flattenCloudbuildv2RepositoryUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("annotations", flattenCloudbuildv2RepositoryAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("etag", flattenCloudbuildv2RepositoryEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenCloudbuildv2RepositoryEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
+	err = ResourceCloudbuildv2RepositoryFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -423,7 +436,19 @@ func resourceCloudbuildv2RepositoryRead(d *schema.ResourceData, meta interface{}
 	return nil
 }
 
+func resourceCloudbuildv2RepositoryUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceCloudbuildv2RepositoryRead(d, meta)
+}
+
 func resourceCloudbuildv2RepositoryDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy Cloudbuildv2Repository without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Repository %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -437,8 +462,7 @@ func resourceCloudbuildv2RepositoryDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for Repository: %s", err)
 	}
 	billingProject = strings.TrimPrefix(project, "projects/")
-
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{Cloudbuildv2BasePath}}projects/{{project}}/locations/{{location}}/connections/{{parent_connection}}/repositories/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{parent_connection}}/repositories/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -577,4 +601,29 @@ func resourceCloudbuildv2RepositoryEncoder(d *schema.ResourceData, meta interfac
 	d.Set("location", location)
 	d.Set("name", name)
 	return obj, nil
+}
+
+func ResourceCloudbuildv2RepositoryFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("remote_uri", flattenCloudbuildv2RepositoryRemoteUri(res["remoteUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("create_time", flattenCloudbuildv2RepositoryCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("update_time", flattenCloudbuildv2RepositoryUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("annotations", flattenCloudbuildv2RepositoryAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("etag", flattenCloudbuildv2RepositoryEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenCloudbuildv2RepositoryEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+
+	return nil
 }

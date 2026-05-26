@@ -41,11 +41,17 @@ The following arguments are supported:
   The Apigee environment group associated with the Apigee environment,
   in the format `organizations/{{org_name}}/environments/{{env_name}}`.
 
-
 * `name` -
-  (Optional)
+  (Required)
   The name of the newly created keystore.
 
+
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 ## Attributes Reference
@@ -80,7 +86,7 @@ In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hash
 import {
   identity = {
     envId = "<-required value->"
-    name = "<-optional value->"
+    name = "<-required value->"
   }
   to = google_apigee_env_keystore.default
 }

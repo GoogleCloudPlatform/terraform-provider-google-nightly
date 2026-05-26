@@ -22,6 +22,10 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vertexai"
 )
 
 func TestAccVertexAIEndpoint_vertexAiEndpointNetwork(t *testing.T) {
@@ -29,8 +33,8 @@ func TestAccVertexAIEndpoint_vertexAiEndpointNetwork(t *testing.T) {
 
 	context := map[string]interface{}{
 		"endpoint_name": fmt.Sprint(acctest.RandInt(t) % 9999999999),
-		"kms_key_name":  acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "vertex-ai-endpoint-update-1"),
+		"kms_key_name":  kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "vertex-ai-endpoint-update-1"),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 

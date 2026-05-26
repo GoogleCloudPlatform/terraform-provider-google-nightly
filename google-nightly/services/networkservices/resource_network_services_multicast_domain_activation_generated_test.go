@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkservices"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = networkservices.Product
 )
 
 func TestAccNetworkServicesMulticastDomainActivation_networkServicesMulticastDomainActivationBasicExample(t *testing.T) {
@@ -120,8 +123,7 @@ func testAccCheckNetworkServicesMulticastDomainActivationDestroyProducer(t *test
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{NetworkServicesBasePath}}projects/{{project}}/locations/{{location}}/multicastDomainActivations/{{multicast_domain_activation_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(networkservices.Product, config)+"projects/{{project}}/locations/{{location}}/multicastDomainActivations/{{multicast_domain_activation_id}}")
 			if err != nil {
 				return err
 			}

@@ -18,6 +18,7 @@ package compute_test
 
 import (
 	"fmt"
+	neturl "net/url"
 	"os"
 	"testing"
 	"time"
@@ -27,10 +28,12 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
-
-	compute "google.golang.org/api/compute/v0.beta"
 )
 
 func TestDiskImageDiffSuppress(t *testing.T) {
@@ -359,17 +362,37 @@ func TestAccComputeDisk_imageDiffSuppressPublicVendorsFamilyNames(t *testing.T) 
 		page := 0
 		maxPages := 10
 		for paginate := true; paginate && page < maxPages; {
-			resp, err := config.NewComputeClient(config.UserAgent).Images.List(publicImageProject).Filter("deprecated.replacement ne .*images.*").PageToken(token).Do()
+			params := neturl.Values{}
+			params.Set("filter", "deprecated.replacement ne .*images.*")
+			if token != "" {
+				params.Set("pageToken", token)
+			}
+			listURL := fmt.Sprintf("%sprojects/%s/global/images?%s", transport_tpg.BaseUrl(tpgcompute.Product, config), publicImageProject, params.Encode())
+			resp, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+				Config:    config,
+				Method:    "GET",
+				Project:   publicImageProject,
+				RawURL:    listURL,
+				UserAgent: config.UserAgent,
+			})
 			if err != nil {
 				t.Fatalf("Can't list public images for project %q", publicImageProject)
 			}
 
-			for _, image := range resp.Items {
-				if !tpgcompute.DiskImageDiffSuppress("image", image.SelfLink, "family/"+image.Family, nil) {
-					t.Errorf("should suppress diff for image %q and family %q", image.SelfLink, image.Family)
+			if rawItems, ok := resp["items"].([]interface{}); ok {
+				for _, raw := range rawItems {
+					image, ok := raw.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					selfLink, _ := image["selfLink"].(string)
+					family, _ := image["family"].(string)
+					if !tpgcompute.DiskImageDiffSuppress("image", selfLink, "family/"+family, nil) {
+						t.Errorf("should suppress diff for image %q and family %q", selfLink, family)
+					}
 				}
 			}
-			token := resp.NextPageToken
+			token, _ := resp["nextPageToken"].(string)
 			paginate = token != ""
 			page++
 		}
@@ -628,7 +651,7 @@ func TestAccComputeDisk_encryption(t *testing.T) {
 	t.Parallel()
 
 	diskName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
-	var disk compute.Disk
+	var disk map[string]interface{}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -651,13 +674,13 @@ func TestAccComputeDisk_encryption(t *testing.T) {
 func TestAccComputeDisk_encryptionKMS(t *testing.T) {
 	t.Parallel()
 
-	kms := acctest.BootstrapKMSKey(t)
+	bootstrapped := kms.BootstrapKMSKey(t)
 	pid := envvar.GetTestProjectFromEnv()
 	diskName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	importID := fmt.Sprintf("%s/%s/%s", pid, "us-central1-a", diskName)
-	var disk compute.Disk
+	var disk map[string]interface{}
 
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@compute-system.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -670,7 +693,7 @@ func TestAccComputeDisk_encryptionKMS(t *testing.T) {
 		CheckDestroy:             testAccCheckComputeDiskDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccComputeDisk_encryptionKMS(diskName, kms.CryptoKey.Name),
+				Config: testAccComputeDisk_encryptionKMS(diskName, bootstrapped.CryptoKey.Name),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckComputeDiskExists(
 						t, "google_compute_disk.foobar", pid, &disk),
@@ -693,7 +716,7 @@ func TestAccComputeDisk_pdHyperDiskEnableConfidentialCompute(t *testing.T) {
 
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
-		"kms": acctest.BootstrapKMSKeyWithPurposeInLocationAndName(
+		"kms": kms.BootstrapKMSKeyWithPurposeInLocationAndName(
 			t,
 			"ENCRYPT_DECRYPT",
 			"us-central1",
@@ -702,7 +725,7 @@ func TestAccComputeDisk_pdHyperDiskEnableConfidentialCompute(t *testing.T) {
 		"confidential_compute": true,
 	}
 
-	var disk compute.Disk
+	var disk map[string]interface{}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -912,7 +935,7 @@ func TestAccComputeDisk_multiWriter(t *testing.T) {
 	})
 }
 
-func testAccCheckComputeDiskExists(t *testing.T, n, p string, disk *compute.Disk) resource.TestCheckFunc {
+func testAccCheckComputeDiskExists(t *testing.T, n, p string, disk *map[string]interface{}) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
@@ -925,23 +948,30 @@ func testAccCheckComputeDiskExists(t *testing.T, n, p string, disk *compute.Disk
 
 		config := acctest.GoogleProviderConfig(t)
 
-		found, err := config.NewComputeClient(config.UserAgent).Disks.Get(
-			p, rs.Primary.Attributes["zone"], rs.Primary.Attributes["name"]).Do()
+		url := fmt.Sprintf("%sprojects/%s/zones/%s/disks/%s",
+			transport_tpg.BaseUrl(tpgcompute.Product, config), p, rs.Primary.Attributes["zone"], rs.Primary.Attributes["name"])
+		found, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+			Config:    config,
+			Method:    "GET",
+			Project:   p,
+			RawURL:    url,
+			UserAgent: config.UserAgent,
+		})
 		if err != nil {
 			return err
 		}
 
-		if found.Name != rs.Primary.Attributes["name"] {
+		if found["name"].(string) != rs.Primary.Attributes["name"] {
 			return fmt.Errorf("Disk not found")
 		}
 
-		*disk = *found
+		*disk = found
 
 		return nil
 	}
 }
 
-func testAccCheckEncryptionKey(t *testing.T, n string, disk *compute.Disk) resource.TestCheckFunc {
+func testAccCheckEncryptionKey(t *testing.T, n string, disk *map[string]interface{}) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		rs, ok := s.RootModule().Resources[n]
 		if !ok {
@@ -949,11 +979,14 @@ func testAccCheckEncryptionKey(t *testing.T, n string, disk *compute.Disk) resou
 		}
 
 		attr := rs.Primary.Attributes["disk_encryption_key.0.sha256"]
-		if disk.DiskEncryptionKey == nil {
+		diskEncKey, ok := (*disk)["diskEncryptionKey"].(map[string]interface{})
+		if !ok {
 			return fmt.Errorf("Disk %s has mismatched encryption key.\nTF State: %+v\nGCP State: <empty>", n, attr)
-		} else if attr != disk.DiskEncryptionKey.Sha256 {
+		}
+		sha256, _ := diskEncKey["sha256"].(string)
+		if attr != sha256 {
 			return fmt.Errorf("Disk %s has mismatched encryption key.\nTF State: %+v.\nGCP State: %+v",
-				n, attr, disk.DiskEncryptionKey.Sha256)
+				n, attr, sha256)
 		}
 		return nil
 	}
@@ -962,20 +995,44 @@ func testAccCheckEncryptionKey(t *testing.T, n string, disk *compute.Disk) resou
 func testAccCheckComputeDisk_removeBackupSnapshot(t *testing.T, parentDiskName string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		config := acctest.GoogleProviderConfig(t)
-		snapshot, err := config.NewComputeClient(config.UserAgent).Snapshots.List(envvar.GetTestProjectFromEnv()).Filter(fmt.Sprintf("name eq %s.*", parentDiskName)).Do()
+		project := envvar.GetTestProjectFromEnv()
+
+		listParams := neturl.Values{}
+		listParams.Set("filter", fmt.Sprintf("name eq %s.*", parentDiskName))
+		listURL := fmt.Sprintf("%sprojects/%s/global/snapshots?%s", transport_tpg.BaseUrl(tpgcompute.Product, config), project, listParams.Encode())
+		snapshotResp, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+			Config:    config,
+			Method:    "GET",
+			Project:   project,
+			RawURL:    listURL,
+			UserAgent: config.UserAgent,
+		})
 		if err != nil {
 			return err
 		}
 
-		if len(snapshot.Items) == 0 {
+		items, ok := snapshotResp["items"].([]interface{})
+		if !ok || len(items) == 0 {
 			return fmt.Errorf("No snapshot found")
 		}
+		firstSnapshot, ok := items[0].(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("No snapshot found")
+		}
+		snapshotName, _ := firstSnapshot["name"].(string)
 
-		op, err := config.NewComputeClient(config.UserAgent).Snapshots.Delete(envvar.GetTestProjectFromEnv(), snapshot.Items[0].Name).Do()
+		deleteURL := fmt.Sprintf("%sprojects/%s/global/snapshots/%s", transport_tpg.BaseUrl(tpgcompute.Product, config), project, snapshotName)
+		res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+			Config:    config,
+			Method:    "DELETE",
+			Project:   project,
+			RawURL:    deleteURL,
+			UserAgent: config.UserAgent,
+		})
 		if err != nil {
 			return err
 		}
-		return tpgcompute.ComputeOperationWaitTime(config, op, envvar.GetTestProjectFromEnv(), "Deleting Snapshot", config.UserAgent, 10*time.Minute)
+		return tpgcompute.ComputeOperationWaitTime(config, res, project, "Deleting Snapshot", config.UserAgent, 10*time.Minute)
 	}
 }
 
@@ -984,7 +1041,7 @@ func TestAccComputeDisk_cloneDisk(t *testing.T) {
 	pid := envvar.GetTestProjectFromEnv()
 	diskName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 
-	var disk compute.Disk
+	var disk map[string]interface{}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -1019,7 +1076,7 @@ func TestAccComputeDisk_architecture(t *testing.T) {
 		"random_suffix": context_1["random_suffix"],
 		"architecture":  "ARM64",
 	}
-	var disk compute.Disk
+	var disk map[string]interface{}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -1052,7 +1109,7 @@ func TestAccComputeDisk_sourceStorageObject(t *testing.T) {
 		"source_storage_object": "test-fixtures/empty-image.tar.gz",
 	}
 
-	var disk compute.Disk
+	var disk map[string]interface{}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -1078,7 +1135,7 @@ func TestAccComputeDisk_resourceManagerTags(t *testing.T) {
 		"project_id":    pid,
 	}
 
-	var disk compute.Disk
+	var disk map[string]interface{}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -1103,7 +1160,7 @@ func TestAccComputeDisk_sourceInstantSnapshot(t *testing.T) {
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
-	var disk compute.Disk
+	var disk map[string]interface{}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -1156,15 +1213,15 @@ func TestAccComputeDisk_createSnapshotBeforeDestroy(t *testing.T) {
 	acctest.SkipIfVcr(t) // Disk cleanup test check
 	t.Parallel()
 
-	var disk1 compute.Disk
-	var disk2 compute.Disk
-	var disk3 compute.Disk
+	var disk1 map[string]interface{}
+	var disk2 map[string]interface{}
+	var disk3 map[string]interface{}
 	context := map[string]interface{}{
 		"disk_name1":        fmt.Sprintf("tf-test-disk-%s", acctest.RandString(t, 10)),
 		"disk_name2":        fmt.Sprintf("test-%s", acctest.RandString(t, 44)), //this is over the snapshot character creation limit of 48
 		"disk_name3":        fmt.Sprintf("tf-test-disk-%s", acctest.RandString(t, 10)),
 		"snapshot_prefix":   fmt.Sprintf("tf-test-snapshot-%s", acctest.RandString(t, 10)),
-		"kms_key_self_link": acctest.BootstrapKMSKey(t).CryptoKey.Name,
+		"kms_key_self_link": kms.BootstrapKMSKey(t).CryptoKey.Name,
 		"raw_key":           "SGVsbG8gZnJvbSBHb29nbGUgQ2xvdWQgUGxhdGZvcm0=",
 		"rsa_encrypted_key": "ieCx/NcW06PcT7Ep1X6LUTc/hLvUDYyzSZPPVCVPTVEohpeHASqC8uw5TzyO9U+Fka9JFHz0mBibXUInrC/jEk014kCK/NPjYgEMOyssZ4ZINPKxlUh2zn1bV+MCaTICrdmuSBTWlUUiFoDD6PYznLwh8ZNdaheCeZ8ewEXgFQ8V+sDroLaN3Xs3MDTXQEMMoNUXMCZEIpg9Vtp9x2oeQ5lAbtt7bYAAHf5l+gJWw3sUfs0/Glw5fpdjT8Uggrr+RMZezGrltJEF293rvTIjWOEB3z5OHyHwQkvdrPDFcTqsLfh+8Hr8g+mf+7zVPEC8nEbqpdl3GPv3A7AwpFp7MA==",
 	}
@@ -1655,7 +1712,7 @@ func TestAccComputeDisk_encryptionWithRSAEncryptedKey(t *testing.T) {
 	t.Parallel()
 
 	diskName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
-	var disk compute.Disk
+	var disk map[string]interface{}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -1906,7 +1963,7 @@ resource "google_compute_disk" "foobar" {
 func TestAccComputeDisk_storagePoolSpecified(t *testing.T) {
 	t.Parallel()
 
-	storagePoolNameLong := acctest.BootstrapComputeStoragePool(t, "basic-1", "hyperdisk-throughput")
+	storagePoolNameLong := tpgcompute.BootstrapComputeStoragePool(t, "basic-1", "hyperdisk-throughput")
 	diskName := fmt.Sprintf("tf-test-disk-%s", acctest.RandString(t, 10))
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -1928,7 +1985,7 @@ func TestAccComputeDisk_storagePoolSpecified(t *testing.T) {
 func TestAccComputeDisk_storagePoolSpecified_nameOnly(t *testing.T) {
 	t.Parallel()
 
-	acctest.BootstrapComputeStoragePool(t, "basic-2", "hyperdisk-throughput")
+	tpgcompute.BootstrapComputeStoragePool(t, "basic-2", "hyperdisk-throughput")
 	diskName := fmt.Sprintf("tf-test-disk-%s", acctest.RandString(t, 10))
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -1961,9 +2018,8 @@ resource "google_compute_disk" "foobar" {
 
 func TestExpandStoragePoolUrl_withDataProjectAndZone(t *testing.T) {
 	config := &transport_tpg.Config{
-		ComputeBasePath: "https://www.googleapis.com/compute/v1/",
-		Project:         "other-project",
-		Zone:            "other-zone",
+		Project: "other-project",
+		Zone:    "other-zone",
 	}
 
 	data := &tpgresource.ResourceDataMock{
@@ -1976,7 +2032,7 @@ func TestExpandStoragePoolUrl_withDataProjectAndZone(t *testing.T) {
 	name := "test-storage-pool"
 	zoneUrl := "zones/test-zone/storagePools/" + name
 	projectUrl := "projects/test-project/" + zoneUrl
-	fullUrl := config.ComputeBasePath + projectUrl
+	fullUrl := transport_tpg.BaseUrl(tpgcompute.Product, config) + projectUrl
 
 	cases := []struct {
 		name     string
@@ -2026,9 +2082,8 @@ func TestExpandStoragePoolUrl_withDataProjectAndZone(t *testing.T) {
 
 func TestExpandStoragePoolUrl_withConfigProjectAndZone(t *testing.T) {
 	config := &transport_tpg.Config{
-		ComputeBasePath: "https://www.googleapis.com/compute/v1/",
-		Project:         "test-project",
-		Zone:            "test-zone",
+		Project: "test-project",
+		Zone:    "test-zone",
 	}
 
 	data := &tpgresource.ResourceDataMock{}
@@ -2036,7 +2091,7 @@ func TestExpandStoragePoolUrl_withConfigProjectAndZone(t *testing.T) {
 	name := "test-storage-pool"
 	zoneUrl := "zones/test-zone/storagePools/" + name
 	projectUrl := "projects/test-project/" + zoneUrl
-	fullUrl := config.ComputeBasePath + projectUrl
+	fullUrl := transport_tpg.BaseUrl(tpgcompute.Product, config) + projectUrl
 
 	cases := []struct {
 		name     string
@@ -2085,16 +2140,14 @@ func TestExpandStoragePoolUrl_withConfigProjectAndZone(t *testing.T) {
 }
 
 func TestExpandStoragePoolUrl_noProjectAndZoneFromConfigAndData(t *testing.T) {
-	config := &transport_tpg.Config{
-		ComputeBasePath: "https://www.googleapis.com/compute/v1/",
-	}
+	config := &transport_tpg.Config{}
 
 	data := &tpgresource.ResourceDataMock{}
 
 	name := "test-storage-pool"
 	zoneUrl := "zones/test-zone/storagePools/" + name
 	projectUrl := "projects/test-project/" + zoneUrl
-	fullUrl := config.ComputeBasePath + projectUrl
+	fullUrl := transport_tpg.BaseUrl(tpgcompute.Product, config) + projectUrl
 
 	cases := []struct {
 		name     string

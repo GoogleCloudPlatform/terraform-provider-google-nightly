@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = compute.Product
 )
 
 func TestAccComputeOrganizationSecurityPolicy_organizationSecurityPolicyBasicExample(t *testing.T) {
@@ -85,6 +87,57 @@ resource "google_compute_organization_security_policy" "policy" {
   short_name = "%{short_name}"
   parent     = "organizations/%{org_id}"
   type       = "CLOUD_ARMOR"
+}
+`, context)
+}
+
+func TestAccComputeOrganizationSecurityPolicy_organizationSecurityPolicyWithAdvancedOptionsExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"org_id":          envvar.GetTestOrgFromEnv(t),
+		"sec_policy_name": "tf-test-security-policy" + randomSuffix,
+		"random_suffix":   randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckComputeOrganizationSecurityPolicyDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeOrganizationSecurityPolicy_organizationSecurityPolicyWithAdvancedOptionsExample(context),
+			},
+			{
+				ResourceName:            "google_compute_organization_security_policy.policy",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"display_name"},
+			},
+		},
+	})
+}
+
+func testAccComputeOrganizationSecurityPolicy_organizationSecurityPolicyWithAdvancedOptionsExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_compute_organization_security_policy" "policy" {
+  short_name = "%{sec_policy_name}"
+  parent       = "organizations/%{org_id}"
+  type         = "CLOUD_ARMOR"
+
+  advanced_options_config {
+    json_parsing = "STANDARD_WITH_GRAPHQL"
+    log_level    = "VERBOSE"
+    
+    json_custom_config {
+      content_types = ["application/vnd.api+json"]
+    }
+
+    user_ip_request_headers     = ["X-Forwarded-For"]
+    request_body_inspection_size = "64KB"
+  }
 }
 `, context)
 }

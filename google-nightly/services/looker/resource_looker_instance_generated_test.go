@@ -30,6 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/looker"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +52,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = looker.Product
 )
 
 func TestAccLookerInstance_lookerInstanceBasicExample(t *testing.T) {
@@ -241,13 +246,13 @@ func TestAccLookerInstance_lookerInstanceEnterpriseFullTestExample(t *testing.T)
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"address_name":      acctest.BootstrapSharedTestGlobalAddress(t, "looker-vpc-network-3", acctest.AddressWithPrefixLength(8)),
+		"address_name":      compute.BootstrapSharedTestGlobalAddress(t, "looker-vpc-network-3", compute.AddressWithPrefixLength(8)),
 		"client_id":         "tf-test-my-client-id" + randomSuffix,
 		"client_secret":     "tf-test-my-client-secret" + randomSuffix,
 		"instance_name":     "tf-test-my-instance" + randomSuffix,
-		"kms_key_name":      acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name":      kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"kms_key_ring_name": "tf-test-looker-kms-ring" + randomSuffix,
-		"network_name":      acctest.BootstrapSharedServiceNetworkingConnection(t, "looker-vpc-network-3", acctest.ServiceNetworkWithPrefixLength(8)),
+		"network_name":      servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "looker-vpc-network-3", servicenetworking.ServiceNetworkWithPrefixLength(8)),
 		"random_suffix":     randomSuffix,
 	}
 
@@ -536,8 +541,7 @@ func testAccCheckLookerInstanceDestroyProducer(t *testing.T) func(s *terraform.S
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{LookerBasePath}}projects/{{project}}/locations/{{region}}/instances/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(looker.Product, config)+"projects/{{project}}/locations/{{region}}/instances/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/observability"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = observability.Product
 )
 
 func TestAccObservabilityOrganizationSettings_observabilityOrganizationSettingsBasicExample(t *testing.T) {
@@ -57,7 +60,7 @@ func TestAccObservabilityOrganizationSettings_observabilityOrganizationSettingsB
 
 	context := map[string]interface{}{
 		"org_id":        envvar.GetTestOrgFromEnv(t),
-		"kms_key_name":  acctest.BootstrapKMSKeyInLocation(t, "us").CryptoKey.Name,
+		"kms_key_name":  kms.BootstrapKMSKeyInLocation(t, "us").CryptoKey.Name,
 		"location":      "us" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}

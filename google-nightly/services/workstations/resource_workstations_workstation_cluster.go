@@ -117,6 +117,7 @@ func ResourceWorkstationsWorkstationCluster() *schema.Resource {
 			tpgresource.SetLabelsDiff,
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -258,6 +259,19 @@ For example:
 "123/costCenter": "marketing"`,
 				Elem: &schema.Schema{Type: schema.TypeString},
 			},
+			"workstation_authorization_url": {
+				Type:     schema.TypeString,
+				Computed: true,
+				Optional: true,
+				Description: `Specifies the redirect URL for unauthorized requests received by workstation VMs in this cluster.
+Redirects to this endpoint will send a base64 encoded 'state' query param containing the target workstation name and original request hostname. The endpoint is responsible for retrieving a token using 'GenerateAccessToken' and redirecting back to the original hostname with the token.`,
+			},
+			"workstation_launch_url": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Description: `Specifies the launch URL for workstations in this cluster. Requests sent to unstarted workstations will be redirected to this URL.
+Requests redirected to the launch endpoint will be sent with a 'workstation' query parameter containing the full workstation resource. The launch endpoint is responsible for starting the workstation, polling it until it reaches 'STATE_RUNNING', and then issuing a redirect to the workstation's host URL.`,
+			},
 			"conditions": {
 				Type:        schema.TypeList,
 				Computed:    true,
@@ -343,6 +357,18 @@ May be sent on update and delete requests to ensure that the client has an up-to
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -373,6 +399,18 @@ func resourceWorkstationsWorkstationClusterCreate(d *schema.ResourceData, meta i
 		return err
 	} else if v, ok := d.GetOkExists("display_name"); !tpgresource.IsEmptyValue(reflect.ValueOf(displayNameProp)) && (ok || !reflect.DeepEqual(v, displayNameProp)) {
 		obj["displayName"] = displayNameProp
+	}
+	workstationAuthorizationUrlProp, err := expandWorkstationsWorkstationClusterWorkstationAuthorizationUrl(d.Get("workstation_authorization_url"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("workstation_authorization_url"); !tpgresource.IsEmptyValue(reflect.ValueOf(workstationAuthorizationUrlProp)) && (ok || !reflect.DeepEqual(v, workstationAuthorizationUrlProp)) {
+		obj["workstationAuthorizationUrl"] = workstationAuthorizationUrlProp
+	}
+	workstationLaunchUrlProp, err := expandWorkstationsWorkstationClusterWorkstationLaunchUrl(d.Get("workstation_launch_url"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("workstation_launch_url"); !tpgresource.IsEmptyValue(reflect.ValueOf(workstationLaunchUrlProp)) && (ok || !reflect.DeepEqual(v, workstationLaunchUrlProp)) {
+		obj["workstationLaunchUrl"] = workstationLaunchUrlProp
 	}
 	etagProp, err := expandWorkstationsWorkstationClusterEtag(d.Get("etag"), d, config)
 	if err != nil {
@@ -411,7 +449,7 @@ func resourceWorkstationsWorkstationClusterCreate(d *schema.ResourceData, meta i
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters?workstationClusterId={{workstation_cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters?workstationClusterId={{workstation_cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -495,7 +533,7 @@ func resourceWorkstationsWorkstationClusterRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -528,60 +566,26 @@ func resourceWorkstationsWorkstationClusterRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading WorkstationsWorkstationCluster %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
 	}
 
-	if err := d.Set("name", flattenWorkstationsWorkstationClusterName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("uid", flattenWorkstationsWorkstationClusterUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("labels", flattenWorkstationsWorkstationClusterLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("network", flattenWorkstationsWorkstationClusterNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("subnetwork", flattenWorkstationsWorkstationClusterSubnetwork(res["subnetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("control_plane_ip", flattenWorkstationsWorkstationClusterControlPlaneIp(res["controlPlaneIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("display_name", flattenWorkstationsWorkstationClusterDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("degraded", flattenWorkstationsWorkstationClusterDegraded(res["degraded"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("annotations", flattenWorkstationsWorkstationClusterAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("etag", flattenWorkstationsWorkstationClusterEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("create_time", flattenWorkstationsWorkstationClusterCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("private_cluster_config", flattenWorkstationsWorkstationClusterPrivateClusterConfig(res["privateClusterConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("domain_config", flattenWorkstationsWorkstationClusterDomainConfig(res["domainConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("conditions", flattenWorkstationsWorkstationClusterConditions(res["conditions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenWorkstationsWorkstationClusterTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenWorkstationsWorkstationClusterEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenWorkstationsWorkstationClusterEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	err = ResourceWorkstationsWorkstationClusterFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -612,6 +616,19 @@ func resourceWorkstationsWorkstationClusterRead(d *schema.ResourceData, meta int
 }
 
 func resourceWorkstationsWorkstationClusterUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceWorkstationsWorkstationCluster().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceWorkstationsWorkstationClusterRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -653,6 +670,18 @@ func resourceWorkstationsWorkstationClusterUpdate(d *schema.ResourceData, meta i
 	} else if v, ok := d.GetOkExists("display_name"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, displayNameProp)) {
 		obj["displayName"] = displayNameProp
 	}
+	workstationAuthorizationUrlProp, err := expandWorkstationsWorkstationClusterWorkstationAuthorizationUrl(d.Get("workstation_authorization_url"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("workstation_authorization_url"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, workstationAuthorizationUrlProp)) {
+		obj["workstationAuthorizationUrl"] = workstationAuthorizationUrlProp
+	}
+	workstationLaunchUrlProp, err := expandWorkstationsWorkstationClusterWorkstationLaunchUrl(d.Get("workstation_launch_url"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("workstation_launch_url"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, workstationLaunchUrlProp)) {
+		obj["workstationLaunchUrl"] = workstationLaunchUrlProp
+	}
 	etagProp, err := expandWorkstationsWorkstationClusterEtag(d.Get("etag"), d, config)
 	if err != nil {
 		return err
@@ -684,7 +713,7 @@ func resourceWorkstationsWorkstationClusterUpdate(d *schema.ResourceData, meta i
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -695,6 +724,14 @@ func resourceWorkstationsWorkstationClusterUpdate(d *schema.ResourceData, meta i
 
 	if d.HasChange("display_name") {
 		updateMask = append(updateMask, "displayName")
+	}
+
+	if d.HasChange("workstation_authorization_url") {
+		updateMask = append(updateMask, "workstationAuthorizationUrl")
+	}
+
+	if d.HasChange("workstation_launch_url") {
+		updateMask = append(updateMask, "workstationLaunchUrl")
 	}
 
 	if d.HasChange("etag") {
@@ -760,6 +797,13 @@ func resourceWorkstationsWorkstationClusterUpdate(d *schema.ResourceData, meta i
 }
 
 func resourceWorkstationsWorkstationClusterDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy WorkstationsWorkstationCluster without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing WorkstationCluster %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -773,8 +817,7 @@ func resourceWorkstationsWorkstationClusterDelete(d *schema.ResourceData, meta i
 		return fmt.Errorf("Error fetching project for WorkstationCluster: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -871,6 +914,14 @@ func flattenWorkstationsWorkstationClusterControlPlaneIp(v interface{}, d *schem
 }
 
 func flattenWorkstationsWorkstationClusterDisplayName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenWorkstationsWorkstationClusterWorkstationAuthorizationUrl(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenWorkstationsWorkstationClusterWorkstationLaunchUrl(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1033,6 +1084,14 @@ func expandWorkstationsWorkstationClusterDisplayName(v interface{}, d tpgresourc
 	return v, nil
 }
 
+func expandWorkstationsWorkstationClusterWorkstationAuthorizationUrl(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandWorkstationsWorkstationClusterWorkstationLaunchUrl(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandWorkstationsWorkstationClusterEtag(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
@@ -1153,4 +1212,68 @@ func expandWorkstationsWorkstationClusterEffectiveAnnotations(v interface{}, d t
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceWorkstationsWorkstationClusterFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenWorkstationsWorkstationClusterName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("uid", flattenWorkstationsWorkstationClusterUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("labels", flattenWorkstationsWorkstationClusterLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("network", flattenWorkstationsWorkstationClusterNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("subnetwork", flattenWorkstationsWorkstationClusterSubnetwork(res["subnetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("control_plane_ip", flattenWorkstationsWorkstationClusterControlPlaneIp(res["controlPlaneIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("display_name", flattenWorkstationsWorkstationClusterDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("workstation_authorization_url", flattenWorkstationsWorkstationClusterWorkstationAuthorizationUrl(res["workstationAuthorizationUrl"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("workstation_launch_url", flattenWorkstationsWorkstationClusterWorkstationLaunchUrl(res["workstationLaunchUrl"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("degraded", flattenWorkstationsWorkstationClusterDegraded(res["degraded"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("annotations", flattenWorkstationsWorkstationClusterAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("etag", flattenWorkstationsWorkstationClusterEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("create_time", flattenWorkstationsWorkstationClusterCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("private_cluster_config", flattenWorkstationsWorkstationClusterPrivateClusterConfig(res["privateClusterConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("domain_config", flattenWorkstationsWorkstationClusterDomainConfig(res["domainConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("conditions", flattenWorkstationsWorkstationClusterConditions(res["conditions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenWorkstationsWorkstationClusterTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenWorkstationsWorkstationClusterEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenWorkstationsWorkstationClusterEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationCluster: %s", err)
+	}
+
+	return nil
 }

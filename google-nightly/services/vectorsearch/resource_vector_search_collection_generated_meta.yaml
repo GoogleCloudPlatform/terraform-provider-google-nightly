@@ -17,6 +17,7 @@ fields:
     - api_field: displayName
     - field: effective_labels
       provider_only: true
+    - api_field: encryptionSpec.cryptoKeyName
     - api_field: labels
     - field: location
       provider_only: true
@@ -36,3 +37,5 @@ fields:
       field: vector_schema.dense_vector.vertex_embedding_config.text_template
     - api_field: vectorSchema.value.sparseVector
       field: vector_schema.sparse_vector
+    - field: deletion_policy
+      provider_only: true

@@ -24,6 +24,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/logging"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 )
 
 func TestAccLoggingProjectSink_basic(t *testing.T) {
@@ -376,7 +380,7 @@ func testAccCheckLoggingProjectSinkDestroyProducer(t *testing.T) func(s *terrafo
 
 			attributes := rs.Primary.Attributes
 
-			_, err := config.NewLoggingClient(config.UserAgent).Projects.Sinks.Get(attributes["id"]).Do()
+			_, err := logging.NewClient(config, config.UserAgent).Projects.Sinks.Get(attributes["id"]).Do()
 			if err == nil {
 				return fmt.Errorf("project sink still exists")
 			}

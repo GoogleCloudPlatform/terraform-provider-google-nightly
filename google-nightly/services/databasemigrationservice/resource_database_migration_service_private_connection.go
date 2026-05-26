@@ -116,6 +116,7 @@ func ResourceDatabaseMigrationServicePrivateConnection() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -154,31 +155,6 @@ func ResourceDatabaseMigrationServicePrivateConnection() *schema.Resource {
 				ForceNew:    true,
 				Description: `The private connectivity identifier.`,
 			},
-			"vpc_peering_config": {
-				Type:     schema.TypeList,
-				Required: true,
-				ForceNew: true,
-				Description: `The VPC Peering configuration is used to create VPC peering
-between databasemigrationservice and the consumer's VPC.`,
-				MaxItems: 1,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"subnet": {
-							Type:        schema.TypeString,
-							Required:    true,
-							ForceNew:    true,
-							Description: `A free subnet for peering. (CIDR of /29)`,
-						},
-						"vpc_name": {
-							Type:     schema.TypeString,
-							Required: true,
-							ForceNew: true,
-							Description: `Fully qualified name of the VPC that Database Migration Service will peer to.
-Format: projects/{project}/global/{networks}/{name}`,
-						},
-					},
-				},
-			},
 			"create_without_validation": {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -201,6 +177,52 @@ Format: projects/{project}/global/{networks}/{name}`,
 **Note**: This field is non-authoritative, and will only manage the labels present in your configuration.
 Please refer to the field 'effective_labels' for all of the labels present on the resource.`,
 				Elem: &schema.Schema{Type: schema.TypeString},
+			},
+			"psc_interface_config": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				Description: `The PSC Interface configuration is used to create PSC Interface
+between DMS's internal VPC and the consumer's PSC.`,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"network_attachment": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+							Description: `Fully qualified name of the Network Attachment that DMS will connect to.
+Format: projects/{project}/regions/{region}/networkAttachments/{name}`,
+						},
+					},
+				},
+				ExactlyOneOf: []string{"vpc_peering_config"},
+			},
+			"vpc_peering_config": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				Description: `The VPC Peering configuration is used to create VPC peering
+between databasemigrationservice and the consumer's VPC.`,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"subnet": {
+							Type:        schema.TypeString,
+							Required:    true,
+							ForceNew:    true,
+							Description: `A free subnet for peering. (CIDR of /29)`,
+						},
+						"vpc_name": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+							Description: `Fully qualified name of the VPC that Database Migration Service will peer to.
+Format: projects/{project}/global/{networks}/{name}`,
+						},
+					},
+				},
+				ExactlyOneOf: []string{"psc_interface_config"},
 			},
 			"effective_labels": {
 				Type:        schema.TypeMap,
@@ -252,6 +274,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -277,6 +311,12 @@ func resourceDatabaseMigrationServicePrivateConnectionCreate(d *schema.ResourceD
 	} else if v, ok := d.GetOkExists("vpc_peering_config"); !tpgresource.IsEmptyValue(reflect.ValueOf(vpcPeeringConfigProp)) && (ok || !reflect.DeepEqual(v, vpcPeeringConfigProp)) {
 		obj["vpcPeeringConfig"] = vpcPeeringConfigProp
 	}
+	pscInterfaceConfigProp, err := expandDatabaseMigrationServicePrivateConnectionPscInterfaceConfig(d.Get("psc_interface_config"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("psc_interface_config"); !tpgresource.IsEmptyValue(reflect.ValueOf(pscInterfaceConfigProp)) && (ok || !reflect.DeepEqual(v, pscInterfaceConfigProp)) {
+		obj["pscInterfaceConfig"] = pscInterfaceConfigProp
+	}
 	effectiveLabelsProp, err := expandDatabaseMigrationServicePrivateConnectionEffectiveLabels(d.Get("effective_labels"), d, config)
 	if err != nil {
 		return err
@@ -284,7 +324,7 @@ func resourceDatabaseMigrationServicePrivateConnectionCreate(d *schema.ResourceD
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatabaseMigrationServiceBasePath}}projects/{{project}}/locations/{{location}}/privateConnections?privateConnectionId={{private_connection_id}}&skip_validation={{create_without_validation}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateConnections?privateConnectionId={{private_connection_id}}&skip_validation={{create_without_validation}}")
 	if err != nil {
 		return err
 	}
@@ -368,7 +408,7 @@ func resourceDatabaseMigrationServicePrivateConnectionRead(d *schema.ResourceDat
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatabaseMigrationServiceBasePath}}projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -401,33 +441,26 @@ func resourceDatabaseMigrationServicePrivateConnectionRead(d *schema.ResourceDat
 
 	log.Printf("[DEBUG] Finished reading DatabaseMigrationServicePrivateConnection %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading PrivateConnection: %s", err)
 	}
 
-	if err := d.Set("name", flattenDatabaseMigrationServicePrivateConnectionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("labels", flattenDatabaseMigrationServicePrivateConnectionLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("display_name", flattenDatabaseMigrationServicePrivateConnectionDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("state", flattenDatabaseMigrationServicePrivateConnectionState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("error", flattenDatabaseMigrationServicePrivateConnectionError(res["error"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("vpc_peering_config", flattenDatabaseMigrationServicePrivateConnectionVpcPeeringConfig(res["vpcPeeringConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDatabaseMigrationServicePrivateConnectionTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDatabaseMigrationServicePrivateConnectionEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	err = ResourceDatabaseMigrationServicePrivateConnectionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -458,11 +491,18 @@ func resourceDatabaseMigrationServicePrivateConnectionRead(d *schema.ResourceDat
 }
 
 func resourceDatabaseMigrationServicePrivateConnectionUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceDatabaseMigrationServicePrivateConnectionRead(d, meta)
 }
 
 func resourceDatabaseMigrationServicePrivateConnectionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DatabaseMigrationServicePrivateConnection without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PrivateConnection %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -476,8 +516,7 @@ func resourceDatabaseMigrationServicePrivateConnectionDelete(d *schema.ResourceD
 		return fmt.Errorf("Error fetching project for PrivateConnection: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatabaseMigrationServiceBasePath}}projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -611,6 +650,23 @@ func flattenDatabaseMigrationServicePrivateConnectionVpcPeeringConfigSubnet(v in
 	return v
 }
 
+func flattenDatabaseMigrationServicePrivateConnectionPscInterfaceConfig(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["network_attachment"] =
+		flattenDatabaseMigrationServicePrivateConnectionPscInterfaceConfigNetworkAttachment(original["networkAttachment"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDatabaseMigrationServicePrivateConnectionPscInterfaceConfigNetworkAttachment(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenDatabaseMigrationServicePrivateConnectionTerraformLabels(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return v
@@ -671,6 +727,32 @@ func expandDatabaseMigrationServicePrivateConnectionVpcPeeringConfigSubnet(v int
 	return v, nil
 }
 
+func expandDatabaseMigrationServicePrivateConnectionPscInterfaceConfig(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedNetworkAttachment, err := expandDatabaseMigrationServicePrivateConnectionPscInterfaceConfigNetworkAttachment(original["network_attachment"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedNetworkAttachment); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["networkAttachment"] = transformedNetworkAttachment
+	}
+
+	return transformed, nil
+}
+
+func expandDatabaseMigrationServicePrivateConnectionPscInterfaceConfigNetworkAttachment(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandDatabaseMigrationServicePrivateConnectionEffectiveLabels(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
 	if v == nil {
 		return map[string]string{}, nil
@@ -680,4 +762,38 @@ func expandDatabaseMigrationServicePrivateConnectionEffectiveLabels(v interface{
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceDatabaseMigrationServicePrivateConnectionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDatabaseMigrationServicePrivateConnectionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("labels", flattenDatabaseMigrationServicePrivateConnectionLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("display_name", flattenDatabaseMigrationServicePrivateConnectionDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("state", flattenDatabaseMigrationServicePrivateConnectionState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("error", flattenDatabaseMigrationServicePrivateConnectionError(res["error"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("vpc_peering_config", flattenDatabaseMigrationServicePrivateConnectionVpcPeeringConfig(res["vpcPeeringConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("psc_interface_config", flattenDatabaseMigrationServicePrivateConnectionPscInterfaceConfig(res["pscInterfaceConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDatabaseMigrationServicePrivateConnectionTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDatabaseMigrationServicePrivateConnectionEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+
+	return nil
 }

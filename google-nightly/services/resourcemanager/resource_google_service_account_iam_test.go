@@ -23,6 +23,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iambeta"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgiamresource"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -335,7 +337,7 @@ func testAccServiceAccountIamMember_generateFederatedIdentityStateId(state *terr
 func testAccCheckGoogleServiceAccountIam(t *testing.T, account string, numBindings int) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		config := acctest.GoogleProviderConfig(t)
-		p, err := config.NewIamClient(config.UserAgent).Projects.ServiceAccounts.GetIamPolicy(serviceAccountCanonicalId(account)).OptionsRequestedPolicyVersion(tpgiamresource.IamPolicyVersion).Do()
+		p, err := iambeta.NewClient(config, config.UserAgent).Projects.ServiceAccounts.GetIamPolicy(serviceAccountCanonicalId(account)).OptionsRequestedPolicyVersion(tpgiamresource.IamPolicyVersion).Do()
 		if err != nil {
 			return err
 		}

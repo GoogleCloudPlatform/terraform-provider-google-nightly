@@ -84,7 +84,8 @@ resource "google_iam_workload_identity_pool" "example" {
   }
   inline_trust_config {
     additional_trust_bundles {
-      trust_domain = "example.com"
+      trust_domain            = "example.com"
+      trust_default_shared_ca = false      
       trust_anchors {
         pem_certificate = file("test-fixtures/trust_anchor_1.pem")
       }
@@ -93,7 +94,8 @@ resource "google_iam_workload_identity_pool" "example" {
       }
     }
     additional_trust_bundles {
-      trust_domain = "example.net"
+      trust_domain            = "example.net"
+      trust_default_shared_ca = false
       trust_anchors {
         pem_certificate = file("test-fixtures/trust_anchor_3.pem")
       }
@@ -125,7 +127,8 @@ resource "google_iam_workload_identity_pool" "example" {
   }
   inline_trust_config {
     additional_trust_bundles {
-      trust_domain = "example.com"
+      trust_domain            = "example.com"
+      trust_default_shared_ca = true
       trust_anchors {
         pem_certificate = file("test-fixtures/trust_anchor_1.pem")
       }
@@ -134,7 +137,8 @@ resource "google_iam_workload_identity_pool" "example" {
       }
     }
     additional_trust_bundles {
-      trust_domain = "example.net"
+      trust_domain            = "example.net"
+      trust_default_shared_ca = true
       trust_anchors {
         pem_certificate = file("test-fixtures/trust_anchor_3.pem")
       }
@@ -225,6 +229,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_inline_certificate_issuance_config"></a>The `inline_certificate_issuance_config` block supports:
@@ -298,6 +308,14 @@ The following arguments are supported:
   `TrustStore`. The incoming end entity's certificate must be chained up to one of the
   trust anchors here.
   Structure is [documented below](#nested_inline_trust_config_additional_trust_bundles_trust_anchors).
+
+* `trust_default_shared_ca` -
+  (Optional)
+  If set to True, the trust bundle will include the private ca managed identity regional root
+  public certificates.
+  
+  ~> **Note** `trust_default_shared_ca` is only supported for managed identity trust domain
+  resource.
 
 
 <a name="nested_inline_trust_config_additional_trust_bundles_trust_anchors"></a>The `trust_anchors` block supports:

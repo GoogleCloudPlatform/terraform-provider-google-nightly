@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/ces"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = ces.Product
 )
 
 func TestAccCESExample_cesExampleBasicExample(t *testing.T) {
@@ -156,7 +158,7 @@ resource "google_ces_agent" "ces_base_agent" {
     instruction = "You are a helpful assistant for this example."
 
     model_settings {
-        model       = "gemini-2.5-flash"
+        model       = "gemini-3.0-flash-001"
         temperature = 0.5
     }
 
@@ -173,7 +175,7 @@ resource "google_ces_agent" "ces_child_agent" {
     instruction = "You are a helpful assistant for this example."
 
     model_settings {
-        model       = "gemini-2.5-flash"
+        model       = "gemini-3.0-flash-001"
         temperature = 0.5
     }
 
@@ -270,8 +272,7 @@ func testAccCheckCESExampleDestroyProducer(t *testing.T) func(s *terraform.State
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/examples/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(ces.Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/examples/{{name}}")
 			if err != nil {
 				return err
 			}

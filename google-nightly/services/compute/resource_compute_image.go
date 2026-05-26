@@ -116,6 +116,7 @@ func ResourceComputeImage() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -249,6 +250,30 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Elem: &schema.Schema{
 					Type:             schema.TypeString,
 					DiffSuppressFunc: tpgresource.CompareSelfLinkOrResourceName,
+				},
+			},
+			"params": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				ForceNew:    true,
+				Description: `Additional params passed with the request, but not persisted as part of resource payload.`,
+				MaxItems:    1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"resource_manager_tags": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							ForceNew: true,
+							Description: `Resource manager tags to be bound to the image. Tag keys and values have the
+same definition as resource manager tags. Keys and values can be either in numeric format,
+such as tagKeys/{tag_key_id} and tagValues/{tag_value_id} or in namespaced format such as
+{org_id|projectId}/{tag_key_short_name} and {tag_value_short_name}. The field is ignored when empty.
+The field is immutable and causes resource replacement when mutated. This field is only
+set at create time and modifying this field after creation will trigger recreation.
+To apply tags to an existing resource, see the google_tags_tag_binding resource.`,
+							Elem: &schema.Schema{Type: schema.TypeString},
+						},
+					},
 				},
 			},
 			"raw_disk": {
@@ -635,6 +660,18 @@ internally during updates.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -697,6 +734,12 @@ func resourceComputeImageCreate(d *schema.ResourceData, meta interface{}) error 
 		return err
 	} else if v, ok := d.GetOkExists("image_encryption_key"); !tpgresource.IsEmptyValue(reflect.ValueOf(imageEncryptionKeyProp)) && (ok || !reflect.DeepEqual(v, imageEncryptionKeyProp)) {
 		obj["imageEncryptionKey"] = imageEncryptionKeyProp
+	}
+	paramsProp, err := expandComputeImageParams(d.Get("params"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("params"); !tpgresource.IsEmptyValue(reflect.ValueOf(paramsProp)) && (ok || !reflect.DeepEqual(v, paramsProp)) {
+		obj["params"] = paramsProp
 	}
 	labelFingerprintProp, err := expandComputeImageLabelFingerprint(d.Get("label_fingerprint"), d, config)
 	if err != nil {
@@ -771,7 +814,7 @@ func resourceComputeImageCreate(d *schema.ResourceData, meta interface{}) error 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/images")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/images")
 	if err != nil {
 		return err
 	}
@@ -850,7 +893,7 @@ func resourceComputeImageRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/images/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/images/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -883,66 +926,26 @@ func resourceComputeImageRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading ComputeImage %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Image: %s", err)
 	}
 
-	if err := d.Set("archive_size_bytes", flattenComputeImageArchiveSizeBytes(res["archiveSizeBytes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeImageCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("description", flattenComputeImageDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("storage_locations", flattenComputeImageStorageLocations(res["storageLocations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("disk_size_gb", flattenComputeImageDiskSizeGb(res["diskSizeGb"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("family", flattenComputeImageFamily(res["family"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("guest_os_features", flattenComputeImageGuestOsFeatures(res["guestOsFeatures"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("image_encryption_key", flattenComputeImageImageEncryptionKey(res["imageEncryptionKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("labels", flattenComputeImageLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("label_fingerprint", flattenComputeImageLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("licenses", flattenComputeImageLicenses(res["licenses"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("name", flattenComputeImageName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("source_disk", flattenComputeImageSourceDisk(res["sourceDisk"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("source_image", flattenComputeImageSourceImage(res["sourceImage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("source_snapshot", flattenComputeImageSourceSnapshot(res["sourceSnapshot"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("shielded_instance_initial_state", flattenComputeImageShieldedInstanceInitialState(res["shieldedInstanceInitialState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenComputeImageTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenComputeImageEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading Image: %s", err)
+	err = ResourceComputeImageFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -967,6 +970,19 @@ func resourceComputeImageRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceComputeImageUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeImage().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeImageRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1014,7 +1030,7 @@ func resourceComputeImageUpdate(d *schema.ResourceData, meta interface{}) error 
 			obj["labels"] = labelsProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/images/{{name}}/setLabels")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/images/{{name}}/setLabels")
 		if err != nil {
 			return err
 		}
@@ -1056,6 +1072,13 @@ func resourceComputeImageUpdate(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceComputeImageDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeImage without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Image %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1069,8 +1092,7 @@ func resourceComputeImageDelete(d *schema.ResourceData, meta interface{}) error 
 		return fmt.Errorf("Error fetching project for Image: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/images/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/images/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1538,6 +1560,39 @@ func expandComputeImageImageEncryptionKeyRawKey(v interface{}, d tpgresource.Ter
 
 func expandComputeImageImageEncryptionKeyRsaEncryptedKey(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func expandComputeImageParams(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedResourceManagerTags, err := expandComputeImageParamsResourceManagerTags(original["resource_manager_tags"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedResourceManagerTags); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["resourceManagerTags"] = transformedResourceManagerTags
+	}
+
+	return transformed, nil
+}
+
+func expandComputeImageParamsResourceManagerTags(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
 }
 
 func expandComputeImageLabelFingerprint(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
@@ -2022,4 +2077,67 @@ func expandComputeImageEffectiveLabels(v interface{}, d tpgresource.TerraformRes
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceComputeImageFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("archive_size_bytes", flattenComputeImageArchiveSizeBytes(res["archiveSizeBytes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeImageCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("description", flattenComputeImageDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("storage_locations", flattenComputeImageStorageLocations(res["storageLocations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("disk_size_gb", flattenComputeImageDiskSizeGb(res["diskSizeGb"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("family", flattenComputeImageFamily(res["family"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("guest_os_features", flattenComputeImageGuestOsFeatures(res["guestOsFeatures"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("image_encryption_key", flattenComputeImageImageEncryptionKey(res["imageEncryptionKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("labels", flattenComputeImageLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("label_fingerprint", flattenComputeImageLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("licenses", flattenComputeImageLicenses(res["licenses"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("name", flattenComputeImageName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("source_disk", flattenComputeImageSourceDisk(res["sourceDisk"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("source_image", flattenComputeImageSourceImage(res["sourceImage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("source_snapshot", flattenComputeImageSourceSnapshot(res["sourceSnapshot"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("shielded_instance_initial_state", flattenComputeImageShieldedInstanceInitialState(res["shieldedInstanceInitialState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenComputeImageTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenComputeImageEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading Image: %s", err)
+	}
+	return nil
 }

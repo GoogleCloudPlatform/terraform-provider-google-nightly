@@ -117,6 +117,7 @@ func ResourceDeveloperConnectConnection() *schema.Resource {
 			tpgresource.SetLabelsDiff,
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -833,6 +834,18 @@ background.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -919,7 +932,7 @@ func resourceDeveloperConnectConnectionCreate(d *schema.ResourceData, meta inter
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeveloperConnectBasePath}}projects/{{project}}/locations/{{location}}/connections?connectionId={{connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections?connectionId={{connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -1003,7 +1016,7 @@ func resourceDeveloperConnectConnectionRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeveloperConnectBasePath}}projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -1036,75 +1049,26 @@ func resourceDeveloperConnectConnectionRead(d *schema.ResourceData, meta interfa
 
 	log.Printf("[DEBUG] Finished reading DeveloperConnectConnection %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Connection: %s", err)
 	}
 
-	if err := d.Set("github_config", flattenDeveloperConnectConnectionGithubConfig(res["githubConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("github_enterprise_config", flattenDeveloperConnectConnectionGithubEnterpriseConfig(res["githubEnterpriseConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("labels", flattenDeveloperConnectConnectionLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("etag", flattenDeveloperConnectConnectionEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("uid", flattenDeveloperConnectConnectionUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("name", flattenDeveloperConnectConnectionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("reconciling", flattenDeveloperConnectConnectionReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("gitlab_enterprise_config", flattenDeveloperConnectConnectionGitlabEnterpriseConfig(res["gitlabEnterpriseConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("bitbucket_cloud_config", flattenDeveloperConnectConnectionBitbucketCloudConfig(res["bitbucketCloudConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("bitbucket_data_center_config", flattenDeveloperConnectConnectionBitbucketDataCenterConfig(res["bitbucketDataCenterConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("update_time", flattenDeveloperConnectConnectionUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("delete_time", flattenDeveloperConnectConnectionDeleteTime(res["deleteTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("installation_state", flattenDeveloperConnectConnectionInstallationState(res["installationState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("disabled", flattenDeveloperConnectConnectionDisabled(res["disabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("annotations", flattenDeveloperConnectConnectionAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("gitlab_config", flattenDeveloperConnectConnectionGitlabConfig(res["gitlabConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("http_config", flattenDeveloperConnectConnectionHttpConfig(res["httpConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("create_time", flattenDeveloperConnectConnectionCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("crypto_key_config", flattenDeveloperConnectConnectionCryptoKeyConfig(res["cryptoKeyConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDeveloperConnectConnectionTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDeveloperConnectConnectionEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenDeveloperConnectConnectionEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
+	err = ResourceDeveloperConnectConnectionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1135,6 +1099,19 @@ func resourceDeveloperConnectConnectionRead(d *schema.ResourceData, meta interfa
 }
 
 func resourceDeveloperConnectConnectionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDeveloperConnectConnection().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDeveloperConnectConnectionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1243,7 +1220,7 @@ func resourceDeveloperConnectConnectionUpdate(d *schema.ResourceData, meta inter
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeveloperConnectBasePath}}projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -1343,6 +1320,13 @@ func resourceDeveloperConnectConnectionUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceDeveloperConnectConnectionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DeveloperConnectConnection without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Connection %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1356,8 +1340,7 @@ func resourceDeveloperConnectConnectionDelete(d *schema.ResourceData, meta inter
 		return fmt.Errorf("Error fetching project for Connection: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeveloperConnectBasePath}}projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -3160,4 +3143,77 @@ func expandDeveloperConnectConnectionEffectiveAnnotations(v interface{}, d tpgre
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceDeveloperConnectConnectionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("github_config", flattenDeveloperConnectConnectionGithubConfig(res["githubConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("github_enterprise_config", flattenDeveloperConnectConnectionGithubEnterpriseConfig(res["githubEnterpriseConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("labels", flattenDeveloperConnectConnectionLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("etag", flattenDeveloperConnectConnectionEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("uid", flattenDeveloperConnectConnectionUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("name", flattenDeveloperConnectConnectionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("reconciling", flattenDeveloperConnectConnectionReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("gitlab_enterprise_config", flattenDeveloperConnectConnectionGitlabEnterpriseConfig(res["gitlabEnterpriseConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("bitbucket_cloud_config", flattenDeveloperConnectConnectionBitbucketCloudConfig(res["bitbucketCloudConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("bitbucket_data_center_config", flattenDeveloperConnectConnectionBitbucketDataCenterConfig(res["bitbucketDataCenterConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("update_time", flattenDeveloperConnectConnectionUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("delete_time", flattenDeveloperConnectConnectionDeleteTime(res["deleteTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("installation_state", flattenDeveloperConnectConnectionInstallationState(res["installationState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("disabled", flattenDeveloperConnectConnectionDisabled(res["disabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("annotations", flattenDeveloperConnectConnectionAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("gitlab_config", flattenDeveloperConnectConnectionGitlabConfig(res["gitlabConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("http_config", flattenDeveloperConnectConnectionHttpConfig(res["httpConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("create_time", flattenDeveloperConnectConnectionCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("crypto_key_config", flattenDeveloperConnectConnectionCryptoKeyConfig(res["cryptoKeyConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDeveloperConnectConnectionTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDeveloperConnectConnectionEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenDeveloperConnectConnectionEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+
+	return nil
 }

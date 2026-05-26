@@ -16,14 +16,17 @@
 # ----------------------------------------------------------------------------
 subcategory: "Customer Engagement Suite"
 description: |-
-  Description
+  Customer Engagement Suite App
 ---
 
 # google_ces_app
 
-Description
+Customer Engagement Suite App
 
 
+To get more information about App, see:
+
+* [API documentation](https://docs.cloud.google.com/customer-engagement-ai/conversational-agents/ps/reference/rest/v1/projects.locations.apps)
 
 <div class = "oics-button" style="float: right; margin: 0 0 -15px">
   <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=ces_app_basic&open_in_editor=main.tf" target="_blank">
@@ -121,7 +124,7 @@ resource "google_ces_app" "ces_app_basic" {
   }
 
   model_settings {
-    model       = "gemini-1.5-flash"
+    model       = "gemini-3.0-flash-001"
     temperature = 0.5
   }
 
@@ -213,7 +216,6 @@ variable_declarations {
   client_certificate_settings {
     tls_certificate = file("test-fixtures/cert.pem")
     private_key = google_secret_manager_secret_version.fake_secret_version.name
-    passphrase = google_secret_manager_secret_version.fake_secret_version.name
   }
 
   # Root agent should not be specified when creating an app
@@ -293,7 +295,7 @@ resource "google_ces_app" "ces_app_ambient_sound_gcs_uri" {
   }
 
   model_settings {
-    model       = "gemini-1.5-flash"
+    model       = "gemini-3.0-flash-001"
     temperature = 0.5
   }
 
@@ -477,6 +479,11 @@ The following arguments are supported:
   TimeZone settings of the app.
   Structure is [documented below](#nested_time_zone_settings).
 
+* `tool_execution_mode` -
+  (Optional)
+  The tool execution mode for the app.
+  See the [API reference](https://docs.cloud.google.com/customer-engagement-ai/conversational-agents/ps/reference/rpc/google.cloud.ces.v1#google.cloud.ces.v1.App.ToolExecutionMode) for more details.
+
 * `variable_declarations` -
   (Optional)
   The declarations of the variables.
@@ -490,6 +497,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_audio_processing_config"></a>The `audio_processing_config` block supports:
@@ -948,8 +961,8 @@ The following arguments are supported:
   (Optional)
   Optional. Default value of the data. Represents a dynamically typed value
   which can be either null, a number, a string, a boolean, a struct,
-  or a list of values. The provided default value must be compatible
-  with the defined 'type' and other schema constraints.
+  or a list of values. The provided default value must be encoded as a JSON string.
+  Use `jsonencode` in Terraform HCL to encode the default value.
 
 * `additional_properties` -
   (Optional)

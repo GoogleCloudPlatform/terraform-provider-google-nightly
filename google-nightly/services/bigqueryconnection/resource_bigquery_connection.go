@@ -115,6 +115,7 @@ func ResourceBigqueryConnectionConnection() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -170,7 +171,7 @@ func ResourceBigqueryConnectionConnection() *schema.Resource {
 						},
 					},
 				},
-				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "spark"},
+				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "configuration", "spark"},
 			},
 			"azure": {
 				Type:        schema.TypeList,
@@ -216,7 +217,7 @@ func ResourceBigqueryConnectionConnection() *schema.Resource {
 						},
 					},
 				},
-				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "spark"},
+				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "configuration", "spark"},
 			},
 			"cloud_resource": {
 				Type:        schema.TypeList,
@@ -232,7 +233,7 @@ func ResourceBigqueryConnectionConnection() *schema.Resource {
 						},
 					},
 				},
-				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "spark"},
+				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "configuration", "spark"},
 			},
 			"cloud_spanner": {
 				Type:        schema.TypeList,
@@ -277,7 +278,7 @@ func ResourceBigqueryConnectionConnection() *schema.Resource {
 						},
 					},
 				},
-				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "spark"},
+				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "configuration", "spark"},
 			},
 			"cloud_sql": {
 				Type:        schema.TypeList,
@@ -330,7 +331,141 @@ func ResourceBigqueryConnectionConnection() *schema.Resource {
 						},
 					},
 				},
-				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "spark"},
+				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "configuration", "spark"},
+			},
+			"configuration": {
+				Type:     schema.TypeList,
+				Optional: true,
+				Description: `Connector configuration. This is a generic configuration that is used to connect to
+external data sources such as AlloyDB, MySQL, and PostgreSQL using the BigQuery
+Connector framework.`,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"asset": {
+							Type:        schema.TypeList,
+							Required:    true,
+							Description: `Asset configuration for the connector.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"database": {
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: `The name of the database.`,
+									},
+									"google_cloud_resource": {
+										Type:     schema.TypeString,
+										Optional: true,
+										Description: `The full resource name of the Google Cloud resource.
+For AlloyDB, this is in the format of
+'//alloydb.googleapis.com/projects/{project}/locations/{region}/clusters/{cluster}/instances/{instance}'.`,
+									},
+								},
+							},
+						},
+						"connector_id": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: true,
+							Description: `The ID of the connector. Possible values include 'google-alloydb', 'google-cloudsql-mysql',
+'google-cloudsql-postgres', and other connector IDs supported by the BigQuery Connector framework.`,
+						},
+						"authentication": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `Authentication configuration for the connector.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"username_password": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `Username/password authentication configuration.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"password": {
+													Type:        schema.TypeList,
+													Required:    true,
+													Description: `Password configuration for the connector.`,
+													MaxItems:    1,
+													Elem: &schema.Resource{
+														Schema: map[string]*schema.Schema{
+															"plaintext": {
+																Type:        schema.TypeString,
+																Required:    true,
+																Description: `The plaintext password.`,
+																Sensitive:   true,
+															},
+															"secret_type": {
+																Type:        schema.TypeString,
+																Computed:    true,
+																Description: `Output only. The type of the secret.`,
+															},
+														},
+													},
+												},
+												"username": {
+													Type:        schema.TypeString,
+													Required:    true,
+													Description: `Username for the connector.`,
+												},
+											},
+										},
+									},
+									"service_account": {
+										Type:        schema.TypeString,
+										Computed:    true,
+										Description: `Output only. The service account used for authenticating with the connector.`,
+									},
+								},
+							},
+						},
+						"endpoint": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `Endpoint configuration for the connector.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"host_port": {
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: `Host and port in the format of 'host:port' for the connector endpoint.`,
+									},
+								},
+							},
+						},
+						"network": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `Network configuration for the connector.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"private_service_connect": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `Private Service Connect configuration for the connector.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"network_attachment": {
+													Type:     schema.TypeString,
+													Required: true,
+													Description: `The resource name of a network attachment in the format of
+'projects/{project}/regions/{region}/networkAttachments/{networkAttachment}'.`,
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "configuration", "spark"},
 			},
 			"connection_id": {
 				Type:        schema.TypeString,
@@ -412,7 +547,7 @@ Azure allowed regions are azure-eastus2`,
 						},
 					},
 				},
-				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "spark"},
+				ExactlyOneOf: []string{"aws", "azure", "cloud_resource", "cloud_spanner", "cloud_sql", "configuration", "spark"},
 			},
 			"has_credential": {
 				Type:        schema.TypeBool,
@@ -430,6 +565,18 @@ Azure allowed regions are azure-eastus2`,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -504,13 +651,19 @@ func resourceBigqueryConnectionConnectionCreate(d *schema.ResourceData, meta int
 	} else if v, ok := d.GetOkExists("spark"); ok || !reflect.DeepEqual(v, sparkProp) {
 		obj["spark"] = sparkProp
 	}
+	configurationProp, err := expandBigqueryConnectionConnectionConfiguration(d.Get("configuration"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("configuration"); !tpgresource.IsEmptyValue(reflect.ValueOf(configurationProp)) && (ok || !reflect.DeepEqual(v, configurationProp)) {
+		obj["configuration"] = configurationProp
+	}
 
 	obj, err = resourceBigqueryConnectionConnectionEncoder(d, meta, obj)
 	if err != nil {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryConnectionBasePath}}projects/{{project}}/locations/{{location}}/connections?connectionId={{connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections?connectionId={{connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -590,7 +743,7 @@ func resourceBigqueryConnectionConnectionRead(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryConnectionBasePath}}projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -623,45 +776,26 @@ func resourceBigqueryConnectionConnectionRead(d *schema.ResourceData, meta inter
 
 	log.Printf("[DEBUG] Finished reading BigqueryConnectionConnection %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Connection: %s", err)
 	}
 
-	if err := d.Set("name", flattenBigqueryConnectionConnectionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("connection_id", flattenBigqueryConnectionConnectionConnectionId(res["connectionId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("friendly_name", flattenBigqueryConnectionConnectionFriendlyName(res["friendlyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("description", flattenBigqueryConnectionConnectionDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("has_credential", flattenBigqueryConnectionConnectionHasCredential(res["hasCredential"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("kms_key_name", flattenBigqueryConnectionConnectionKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("cloud_sql", flattenBigqueryConnectionConnectionCloudSql(res["cloudSql"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("aws", flattenBigqueryConnectionConnectionAws(res["aws"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("azure", flattenBigqueryConnectionConnectionAzure(res["azure"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("cloud_spanner", flattenBigqueryConnectionConnectionCloudSpanner(res["cloudSpanner"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("cloud_resource", flattenBigqueryConnectionConnectionCloudResource(res["cloudResource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
-	}
-	if err := d.Set("spark", flattenBigqueryConnectionConnectionSpark(res["spark"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Connection: %s", err)
+	err = ResourceBigqueryConnectionConnectionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -692,6 +826,19 @@ func resourceBigqueryConnectionConnectionRead(d *schema.ResourceData, meta inter
 }
 
 func resourceBigqueryConnectionConnectionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceBigqueryConnectionConnection().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceBigqueryConnectionConnectionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -781,13 +928,19 @@ func resourceBigqueryConnectionConnectionUpdate(d *schema.ResourceData, meta int
 	} else if v, ok := d.GetOkExists("spark"); ok || !reflect.DeepEqual(v, sparkProp) {
 		obj["spark"] = sparkProp
 	}
+	configurationProp, err := expandBigqueryConnectionConnectionConfiguration(d.Get("configuration"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("configuration"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, configurationProp)) {
+		obj["configuration"] = configurationProp
+	}
 
 	obj, err = resourceBigqueryConnectionConnectionEncoder(d, meta, obj)
 	if err != nil {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryConnectionBasePath}}projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -832,6 +985,10 @@ func resourceBigqueryConnectionConnectionUpdate(d *schema.ResourceData, meta int
 	if d.HasChange("spark") {
 		updateMask = append(updateMask, "spark")
 	}
+
+	if d.HasChange("configuration") {
+		updateMask = append(updateMask, "configuration")
+	}
 	// updateMask is a URL parameter but not present in the schema, so ReplaceVars
 	// won't set it
 	url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": strings.Join(updateMask, ",")})
@@ -869,6 +1026,13 @@ func resourceBigqueryConnectionConnectionUpdate(d *schema.ResourceData, meta int
 }
 
 func resourceBigqueryConnectionConnectionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BigqueryConnectionConnection without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Connection %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -882,8 +1046,7 @@ func resourceBigqueryConnectionConnectionDelete(d *schema.ResourceData, meta int
 		return fmt.Errorf("Error fetching project for Connection: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryConnectionBasePath}}projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -1225,6 +1388,148 @@ func flattenBigqueryConnectionConnectionSparkSparkHistoryServerConfig(v interfac
 	return []interface{}{transformed}
 }
 func flattenBigqueryConnectionConnectionSparkSparkHistoryServerConfigDataprocCluster(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenBigqueryConnectionConnectionConfiguration(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["connector_id"] =
+		flattenBigqueryConnectionConnectionConfigurationConnectorId(original["connectorId"], d, config)
+	transformed["endpoint"] =
+		flattenBigqueryConnectionConnectionConfigurationEndpoint(original["endpoint"], d, config)
+	transformed["authentication"] =
+		flattenBigqueryConnectionConnectionConfigurationAuthentication(original["authentication"], d, config)
+	transformed["network"] =
+		flattenBigqueryConnectionConnectionConfigurationNetwork(original["network"], d, config)
+	transformed["asset"] =
+		flattenBigqueryConnectionConnectionConfigurationAsset(original["asset"], d, config)
+	return []interface{}{transformed}
+}
+func flattenBigqueryConnectionConnectionConfigurationConnectorId(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenBigqueryConnectionConnectionConfigurationEndpoint(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["host_port"] =
+		flattenBigqueryConnectionConnectionConfigurationEndpointHostPort(original["hostPort"], d, config)
+	return []interface{}{transformed}
+}
+func flattenBigqueryConnectionConnectionConfigurationEndpointHostPort(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenBigqueryConnectionConnectionConfigurationAuthentication(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["username_password"] =
+		flattenBigqueryConnectionConnectionConfigurationAuthenticationUsernamePassword(original["usernamePassword"], d, config)
+	transformed["service_account"] =
+		flattenBigqueryConnectionConnectionConfigurationAuthenticationServiceAccount(original["serviceAccount"], d, config)
+	return []interface{}{transformed}
+}
+func flattenBigqueryConnectionConnectionConfigurationAuthenticationUsernamePassword(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+
+	password := map[string]interface{}{
+		// The API redacts the plaintext on read, so we keep the value from
+		// state to avoid a permadiff.
+		"plaintext": d.Get("configuration.0.authentication.0.username_password.0.password.0.plaintext"),
+	}
+	if originalPassword, ok := original["password"].(map[string]interface{}); ok {
+		if secretType, ok := originalPassword["secretType"]; ok {
+			password["secret_type"] = secretType
+		}
+	}
+
+	return []interface{}{
+		map[string]interface{}{
+			"username": original["username"],
+			"password": []interface{}{password},
+		},
+	}
+}
+
+func flattenBigqueryConnectionConnectionConfigurationAuthenticationServiceAccount(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenBigqueryConnectionConnectionConfigurationNetwork(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["private_service_connect"] =
+		flattenBigqueryConnectionConnectionConfigurationNetworkPrivateServiceConnect(original["privateServiceConnect"], d, config)
+	return []interface{}{transformed}
+}
+func flattenBigqueryConnectionConnectionConfigurationNetworkPrivateServiceConnect(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["network_attachment"] =
+		flattenBigqueryConnectionConnectionConfigurationNetworkPrivateServiceConnectNetworkAttachment(original["networkAttachment"], d, config)
+	return []interface{}{transformed}
+}
+func flattenBigqueryConnectionConnectionConfigurationNetworkPrivateServiceConnectNetworkAttachment(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenBigqueryConnectionConnectionConfigurationAsset(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["database"] =
+		flattenBigqueryConnectionConnectionConfigurationAssetDatabase(original["database"], d, config)
+	transformed["google_cloud_resource"] =
+		flattenBigqueryConnectionConnectionConfigurationAssetGoogleCloudResource(original["googleCloudResource"], d, config)
+	return []interface{}{transformed}
+}
+func flattenBigqueryConnectionConnectionConfigurationAssetDatabase(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenBigqueryConnectionConnectionConfigurationAssetGoogleCloudResource(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1697,6 +2002,274 @@ func expandBigqueryConnectionConnectionSparkSparkHistoryServerConfigDataprocClus
 	return v, nil
 }
 
+func expandBigqueryConnectionConnectionConfiguration(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedConnectorId, err := expandBigqueryConnectionConnectionConfigurationConnectorId(original["connector_id"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedConnectorId); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["connectorId"] = transformedConnectorId
+	}
+
+	transformedEndpoint, err := expandBigqueryConnectionConnectionConfigurationEndpoint(original["endpoint"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedEndpoint); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["endpoint"] = transformedEndpoint
+	}
+
+	transformedAuthentication, err := expandBigqueryConnectionConnectionConfigurationAuthentication(original["authentication"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedAuthentication); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["authentication"] = transformedAuthentication
+	}
+
+	transformedNetwork, err := expandBigqueryConnectionConnectionConfigurationNetwork(original["network"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedNetwork); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["network"] = transformedNetwork
+	}
+
+	transformedAsset, err := expandBigqueryConnectionConnectionConfigurationAsset(original["asset"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedAsset); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["asset"] = transformedAsset
+	}
+
+	return transformed, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationConnectorId(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationEndpoint(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedHostPort, err := expandBigqueryConnectionConnectionConfigurationEndpointHostPort(original["host_port"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedHostPort); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["hostPort"] = transformedHostPort
+	}
+
+	return transformed, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationEndpointHostPort(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAuthentication(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedUsernamePassword, err := expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePassword(original["username_password"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedUsernamePassword); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["usernamePassword"] = transformedUsernamePassword
+	}
+
+	transformedServiceAccount, err := expandBigqueryConnectionConnectionConfigurationAuthenticationServiceAccount(original["service_account"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedServiceAccount); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["serviceAccount"] = transformedServiceAccount
+	}
+
+	return transformed, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePassword(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedUsername, err := expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePasswordUsername(original["username"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedUsername); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["username"] = transformedUsername
+	}
+
+	transformedPassword, err := expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePasswordPassword(original["password"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedPassword); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["password"] = transformedPassword
+	}
+
+	return transformed, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePasswordUsername(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePasswordPassword(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedPlaintext, err := expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePasswordPasswordPlaintext(original["plaintext"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedPlaintext); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["plaintext"] = transformedPlaintext
+	}
+
+	transformedSecretType, err := expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePasswordPasswordSecretType(original["secret_type"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedSecretType); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["secretType"] = transformedSecretType
+	}
+
+	return transformed, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePasswordPasswordPlaintext(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAuthenticationUsernamePasswordPasswordSecretType(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAuthenticationServiceAccount(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationNetwork(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedPrivateServiceConnect, err := expandBigqueryConnectionConnectionConfigurationNetworkPrivateServiceConnect(original["private_service_connect"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedPrivateServiceConnect); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["privateServiceConnect"] = transformedPrivateServiceConnect
+	}
+
+	return transformed, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationNetworkPrivateServiceConnect(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedNetworkAttachment, err := expandBigqueryConnectionConnectionConfigurationNetworkPrivateServiceConnectNetworkAttachment(original["network_attachment"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedNetworkAttachment); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["networkAttachment"] = transformedNetworkAttachment
+	}
+
+	return transformed, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationNetworkPrivateServiceConnectNetworkAttachment(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAsset(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedDatabase, err := expandBigqueryConnectionConnectionConfigurationAssetDatabase(original["database"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedDatabase); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["database"] = transformedDatabase
+	}
+
+	transformedGoogleCloudResource, err := expandBigqueryConnectionConnectionConfigurationAssetGoogleCloudResource(original["google_cloud_resource"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedGoogleCloudResource); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["googleCloudResource"] = transformedGoogleCloudResource
+	}
+
+	return transformed, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAssetDatabase(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandBigqueryConnectionConnectionConfigurationAssetGoogleCloudResource(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func resourceBigqueryConnectionConnectionEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
 	// connectionId is needed to qualify the URL but cannot be sent in the body
 	delete(obj, "connectionId")
@@ -1715,5 +2288,51 @@ func resourceBigqueryConnectionConnectionPostCreateSetComputedFields(d *schema.R
 			return fmt.Errorf(`Error setting computed identity field "connection_id": %s`, err)
 		}
 	}
+	return nil
+}
+
+func ResourceBigqueryConnectionConnectionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenBigqueryConnectionConnectionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("connection_id", flattenBigqueryConnectionConnectionConnectionId(res["connectionId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("friendly_name", flattenBigqueryConnectionConnectionFriendlyName(res["friendlyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("description", flattenBigqueryConnectionConnectionDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("has_credential", flattenBigqueryConnectionConnectionHasCredential(res["hasCredential"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("kms_key_name", flattenBigqueryConnectionConnectionKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("cloud_sql", flattenBigqueryConnectionConnectionCloudSql(res["cloudSql"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("aws", flattenBigqueryConnectionConnectionAws(res["aws"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("azure", flattenBigqueryConnectionConnectionAzure(res["azure"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("cloud_spanner", flattenBigqueryConnectionConnectionCloudSpanner(res["cloudSpanner"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("cloud_resource", flattenBigqueryConnectionConnectionCloudResource(res["cloudResource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("spark", flattenBigqueryConnectionConnectionSpark(res["spark"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+	if err = d.Set("configuration", flattenBigqueryConnectionConnectionConfiguration(res["configuration"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Connection: %s", err)
+	}
+
 	return nil
 }

@@ -198,7 +198,7 @@ func resourceKMSKeyHandleCreate(d *schema.ResourceData, meta interface{}) error 
 		obj["resourceTypeSelector"] = resourceTypeSelectorProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}projects/{{project}}/locations/{{location}}/keyHandles?keyHandleId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/keyHandles?keyHandleId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -282,7 +282,7 @@ func resourceKMSKeyHandleRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}projects/{{project}}/locations/{{location}}/keyHandles/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/keyHandles/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -331,14 +331,9 @@ func resourceKMSKeyHandleRead(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Error reading KeyHandle: %s", err)
 	}
 
-	if err := d.Set("name", flattenKMSKeyHandleName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading KeyHandle: %s", err)
-	}
-	if err := d.Set("kms_key", flattenKMSKeyHandleKmsKey(res["kmsKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading KeyHandle: %s", err)
-	}
-	if err := d.Set("resource_type_selector", flattenKMSKeyHandleResourceTypeSelector(res["resourceTypeSelector"], d, config)); err != nil {
-		return fmt.Errorf("Error reading KeyHandle: %s", err)
+	err = ResourceKMSKeyHandleFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -427,4 +422,20 @@ func resourceKMSKeyHandleDecoder(d *schema.ResourceData, meta interface{}, res m
 		res["name"] = v.(string)
 	}
 	return res, nil
+}
+
+func ResourceKMSKeyHandleFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenKMSKeyHandleName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading KeyHandle: %s", err)
+	}
+	if err = d.Set("kms_key", flattenKMSKeyHandleKmsKey(res["kmsKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading KeyHandle: %s", err)
+	}
+	if err = d.Set("resource_type_selector", flattenKMSKeyHandleResourceTypeSelector(res["resourceTypeSelector"], d, config)); err != nil {
+		return fmt.Errorf("Error reading KeyHandle: %s", err)
+	}
+
+	return nil
 }

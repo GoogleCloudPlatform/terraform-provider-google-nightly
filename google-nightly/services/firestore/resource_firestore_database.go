@@ -115,6 +115,7 @@ func ResourceFirestoreDatabase() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("ABANDON"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -335,21 +336,23 @@ Any read or query can specify a readTime within this window, and will read the s
 If the PITR feature is enabled, the retention period is 7 days. Otherwise, the retention period is 1 hour.
 A duration in seconds with up to nine fractional digits, ending with 's'. Example: "3.5s".`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `Deletion behavior for this database.
-If the deletion policy is 'ABANDON', the database will be removed from Terraform state but not deleted from Google Cloud upon destruction.
-If the deletion policy is 'DELETE', the database will both be removed from Terraform state and deleted from Google Cloud upon destruction.
-The default value is 'ABANDON'.
-See also 'delete_protection'.`,
-				Default: "ABANDON",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "ABANDON".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -449,7 +452,7 @@ func resourceFirestoreDatabaseCreate(d *schema.ResourceData, meta interface{}) e
 		obj["tags"] = tagsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}projects/{{project}}/databases?databaseId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/databases?databaseId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -528,7 +531,7 @@ func resourceFirestoreDatabaseRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}projects/{{project}}/databases/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/databases/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -563,70 +566,24 @@ func resourceFirestoreDatabaseRead(d *schema.ResourceData, meta interface{}) err
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "ABANDON"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "ABANDON"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Database: %s", err)
 	}
 
-	if err := d.Set("name", flattenFirestoreDatabaseName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("location_id", flattenFirestoreDatabaseLocationId(res["locationId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("type", flattenFirestoreDatabaseType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("database_edition", flattenFirestoreDatabaseDatabaseEdition(res["databaseEdition"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("firestore_data_access_mode", flattenFirestoreDatabaseFirestoreDataAccessMode(res["firestoreDataAccessMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("mongodb_compatible_data_access_mode", flattenFirestoreDatabaseMongodbCompatibleDataAccessMode(res["mongodbCompatibleDataAccessMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("realtime_updates_mode", flattenFirestoreDatabaseRealtimeUpdatesMode(res["realtimeUpdatesMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("concurrency_mode", flattenFirestoreDatabaseConcurrencyMode(res["concurrencyMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("app_engine_integration_mode", flattenFirestoreDatabaseAppEngineIntegrationMode(res["appEngineIntegrationMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("point_in_time_recovery_enablement", flattenFirestoreDatabasePointInTimeRecoveryEnablement(res["pointInTimeRecoveryEnablement"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("key_prefix", flattenFirestoreDatabaseKeyPrefix(res["keyPrefix"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("delete_protection_state", flattenFirestoreDatabaseDeleteProtectionState(res["deleteProtectionState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("etag", flattenFirestoreDatabaseEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("create_time", flattenFirestoreDatabaseCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("update_time", flattenFirestoreDatabaseUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("uid", flattenFirestoreDatabaseUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("version_retention_period", flattenFirestoreDatabaseVersionRetentionPeriod(res["versionRetentionPeriod"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("earliest_version_time", flattenFirestoreDatabaseEarliestVersionTime(res["earliestVersionTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("cmek_config", flattenFirestoreDatabaseCmekConfig(res["cmekConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
+	err = ResourceFirestoreDatabaseFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -651,6 +608,19 @@ func resourceFirestoreDatabaseRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceFirestoreDatabaseUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceFirestoreDatabase().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceFirestoreDatabaseRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -718,7 +688,7 @@ func resourceFirestoreDatabaseUpdate(d *schema.ResourceData, meta interface{}) e
 		obj["etag"] = etagProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}projects/{{project}}/databases/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/databases/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -794,6 +764,13 @@ func resourceFirestoreDatabaseUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceFirestoreDatabaseDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy FirestoreDatabase without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Database %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -807,8 +784,7 @@ func resourceFirestoreDatabaseDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for Database: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}projects/{{project}}/databases/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/databases/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -821,10 +797,6 @@ func resourceFirestoreDatabaseDelete(d *schema.ResourceData, meta interface{}) e
 	}
 
 	headers := make(http.Header)
-	if deletionPolicy := d.Get("deletion_policy"); deletionPolicy != "DELETE" {
-		log.Printf("[WARN] Firestore database %q deletion_policy is not set to 'DELETE', skipping deletion", d.Get("name").(string))
-		return nil
-	}
 	if deleteProtection := d.Get("delete_protection_state"); deleteProtection == "DELETE_PROTECTION_ENABLED" {
 		return fmt.Errorf("Cannot delete Firestore database %s: Delete Protection is enabled. Set delete_protection_state to DELETE_PROTECTION_DISABLED for this resource and run \"terraform apply\" before attempting to delete it.", d.Get("name").(string))
 	}
@@ -864,11 +836,6 @@ func resourceFirestoreDatabaseImport(d *schema.ResourceData, meta interface{}) (
 		return nil, fmt.Errorf("Error constructing id: %s", err)
 	}
 	d.SetId(id)
-
-	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "ABANDON"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -1065,4 +1032,68 @@ func expandFirestoreDatabaseTags(v interface{}, d tpgresource.TerraformResourceD
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceFirestoreDatabaseFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenFirestoreDatabaseName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("location_id", flattenFirestoreDatabaseLocationId(res["locationId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("type", flattenFirestoreDatabaseType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("database_edition", flattenFirestoreDatabaseDatabaseEdition(res["databaseEdition"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("firestore_data_access_mode", flattenFirestoreDatabaseFirestoreDataAccessMode(res["firestoreDataAccessMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("mongodb_compatible_data_access_mode", flattenFirestoreDatabaseMongodbCompatibleDataAccessMode(res["mongodbCompatibleDataAccessMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("realtime_updates_mode", flattenFirestoreDatabaseRealtimeUpdatesMode(res["realtimeUpdatesMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("concurrency_mode", flattenFirestoreDatabaseConcurrencyMode(res["concurrencyMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("app_engine_integration_mode", flattenFirestoreDatabaseAppEngineIntegrationMode(res["appEngineIntegrationMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("point_in_time_recovery_enablement", flattenFirestoreDatabasePointInTimeRecoveryEnablement(res["pointInTimeRecoveryEnablement"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("key_prefix", flattenFirestoreDatabaseKeyPrefix(res["keyPrefix"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("delete_protection_state", flattenFirestoreDatabaseDeleteProtectionState(res["deleteProtectionState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("etag", flattenFirestoreDatabaseEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("create_time", flattenFirestoreDatabaseCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("update_time", flattenFirestoreDatabaseUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("uid", flattenFirestoreDatabaseUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("version_retention_period", flattenFirestoreDatabaseVersionRetentionPeriod(res["versionRetentionPeriod"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("earliest_version_time", flattenFirestoreDatabaseEarliestVersionTime(res["earliestVersionTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("cmek_config", flattenFirestoreDatabaseCmekConfig(res["cmekConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+
+	return nil
 }

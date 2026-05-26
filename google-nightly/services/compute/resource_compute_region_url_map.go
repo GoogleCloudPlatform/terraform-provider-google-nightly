@@ -115,6 +115,7 @@ func ResourceComputeRegionUrlMap() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -2930,6 +2931,18 @@ updates of this resource.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -3041,7 +3054,7 @@ func resourceComputeRegionUrlMapCreate(d *schema.ResourceData, meta interface{})
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/urlMaps")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/urlMaps")
 	if err != nil {
 		return err
 	}
@@ -3125,7 +3138,7 @@ func resourceComputeRegionUrlMapRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/urlMaps/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/urlMaps/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -3158,51 +3171,26 @@ func resourceComputeRegionUrlMapRead(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[DEBUG] Finished reading ComputeRegionUrlMap %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeRegionUrlMapCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("default_service", flattenComputeRegionUrlMapDefaultService(res["defaultService"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("description", flattenComputeRegionUrlMapDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("host_rule", flattenComputeRegionUrlMapHostRule(res["hostRules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("map_id", flattenComputeRegionUrlMapMapId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("fingerprint", flattenComputeRegionUrlMapFingerprint(res["fingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("name", flattenComputeRegionUrlMapName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("path_matcher", flattenComputeRegionUrlMapPathMatcher(res["pathMatchers"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("test", flattenComputeRegionUrlMapTest(res["tests"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("default_url_redirect", flattenComputeRegionUrlMapDefaultUrlRedirect(res["defaultUrlRedirect"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("default_route_action", flattenComputeRegionUrlMapDefaultRouteAction(res["defaultRouteAction"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("header_action", flattenComputeRegionUrlMapHeaderAction(res["headerAction"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("region", flattenComputeRegionUrlMapRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	err = ResourceComputeRegionUrlMapFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -3233,6 +3221,19 @@ func resourceComputeRegionUrlMapRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceComputeRegionUrlMapUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeRegionUrlMap().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeRegionUrlMapRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -3335,7 +3336,7 @@ func resourceComputeRegionUrlMapUpdate(d *schema.ResourceData, meta interface{})
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/urlMaps/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/urlMaps/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -3377,6 +3378,13 @@ func resourceComputeRegionUrlMapUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceComputeRegionUrlMapDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeRegionUrlMap without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RegionUrlMap %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -3390,8 +3398,7 @@ func resourceComputeRegionUrlMapDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error fetching project for RegionUrlMap: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/urlMaps/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/urlMaps/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -10876,4 +10883,52 @@ func expandComputeRegionUrlMapRegion(v interface{}, d tpgresource.TerraformResou
 		return nil, fmt.Errorf("Invalid value for region: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeRegionUrlMapFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeRegionUrlMapCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("default_service", flattenComputeRegionUrlMapDefaultService(res["defaultService"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("description", flattenComputeRegionUrlMapDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("host_rule", flattenComputeRegionUrlMapHostRule(res["hostRules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("map_id", flattenComputeRegionUrlMapMapId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("fingerprint", flattenComputeRegionUrlMapFingerprint(res["fingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("name", flattenComputeRegionUrlMapName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("path_matcher", flattenComputeRegionUrlMapPathMatcher(res["pathMatchers"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("test", flattenComputeRegionUrlMapTest(res["tests"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("default_url_redirect", flattenComputeRegionUrlMapDefaultUrlRedirect(res["defaultUrlRedirect"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("default_route_action", flattenComputeRegionUrlMapDefaultRouteAction(res["defaultRouteAction"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("header_action", flattenComputeRegionUrlMapHeaderAction(res["headerAction"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("region", flattenComputeRegionUrlMapRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading RegionUrlMap: %s", err)
+	}
+	return nil
 }

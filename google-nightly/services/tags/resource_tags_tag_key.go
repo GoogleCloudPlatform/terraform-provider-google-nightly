@@ -199,6 +199,19 @@ A timestamp in RFC3339 UTC "Zulu" format, with nanosecond resolution and up to n
 
 A timestamp in RFC3339 UTC "Zulu" format, with nanosecond resolution and up to nine fractional digits. Examples: "2014-10-02T15:01:23Z" and "2014-10-02T15:01:23.045123456Z".`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -256,7 +269,7 @@ func resourceTagsTagKeyCreate(d *schema.ResourceData, meta interface{}) error {
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{TagsBasePath}}tagKeys")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"tagKeys")
 	if err != nil {
 		return err
 	}
@@ -338,7 +351,7 @@ func resourceTagsTagKeyRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{TagsBasePath}}tagKeys/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"tagKeys/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -365,32 +378,23 @@ func resourceTagsTagKeyRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading TagsTagKey %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenTagsTagKeyName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TagKey: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("parent", flattenTagsTagKeyParent(res["parent"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TagKey: %s", err)
-	}
-	if err := d.Set("short_name", flattenTagsTagKeyShortName(res["shortName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TagKey: %s", err)
-	}
-	if err := d.Set("namespaced_name", flattenTagsTagKeyNamespacedName(res["namespacedName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TagKey: %s", err)
-	}
-	if err := d.Set("description", flattenTagsTagKeyDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TagKey: %s", err)
-	}
-	if err := d.Set("create_time", flattenTagsTagKeyCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TagKey: %s", err)
-	}
-	if err := d.Set("update_time", flattenTagsTagKeyUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TagKey: %s", err)
-	}
-	if err := d.Set("purpose", flattenTagsTagKeyPurpose(res["purpose"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TagKey: %s", err)
-	}
-	if err := d.Set("allowed_values_regex", flattenTagsTagKeyAllowedValuesRegex(res["allowedValuesRegex"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TagKey: %s", err)
+
+	err = ResourceTagsTagKeyFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -409,6 +413,19 @@ func resourceTagsTagKeyRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceTagsTagKeyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceTagsTagKey().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceTagsTagKeyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -448,7 +465,7 @@ func resourceTagsTagKeyUpdate(d *schema.ResourceData, meta interface{}) error {
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{TagsBasePath}}tagKeys/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"tagKeys/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -508,6 +525,13 @@ func resourceTagsTagKeyUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceTagsTagKeyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy TagsTagKey without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing TagKey %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -522,8 +546,7 @@ func resourceTagsTagKeyDelete(d *schema.ResourceData, meta interface{}) error {
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{TagsBasePath}}tagKeys/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"tagKeys/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -651,4 +674,38 @@ func expandTagsTagKeyPurposeData(v interface{}, d tpgresource.TerraformResourceD
 
 func expandTagsTagKeyAllowedValuesRegex(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceTagsTagKeyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenTagsTagKeyName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TagKey: %s", err)
+	}
+	if err = d.Set("parent", flattenTagsTagKeyParent(res["parent"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TagKey: %s", err)
+	}
+	if err = d.Set("short_name", flattenTagsTagKeyShortName(res["shortName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TagKey: %s", err)
+	}
+	if err = d.Set("namespaced_name", flattenTagsTagKeyNamespacedName(res["namespacedName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TagKey: %s", err)
+	}
+	if err = d.Set("description", flattenTagsTagKeyDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TagKey: %s", err)
+	}
+	if err = d.Set("create_time", flattenTagsTagKeyCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TagKey: %s", err)
+	}
+	if err = d.Set("update_time", flattenTagsTagKeyUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TagKey: %s", err)
+	}
+	if err = d.Set("purpose", flattenTagsTagKeyPurpose(res["purpose"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TagKey: %s", err)
+	}
+	if err = d.Set("allowed_values_regex", flattenTagsTagKeyAllowedValuesRegex(res["allowedValuesRegex"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TagKey: %s", err)
+	}
+
+	return nil
 }

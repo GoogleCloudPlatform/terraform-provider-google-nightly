@@ -23,6 +23,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/healthcare"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -235,7 +236,7 @@ func testAccCheckGoogleHealthcareFhirStoreUpdate(t *testing.T, pubsubTopic strin
 				return err
 			}
 
-			response, err := config.NewHealthcareClient(config.UserAgent).Projects.Locations.Datasets.FhirStores.Get(gcpResourceUri).Do()
+			response, err := healthcare.NewClient(config, config.UserAgent).Projects.Locations.Datasets.FhirStores.Get(gcpResourceUri).Do()
 			if err != nil {
 				return fmt.Errorf("Unexpected failure while verifying 'updated' dataset: %s", err)
 			}

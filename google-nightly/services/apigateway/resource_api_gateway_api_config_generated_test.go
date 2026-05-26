@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/apigateway"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = apigateway.Product
 )
 
 func TestAccApiGatewayApiConfig_apigatewayApiConfigBasicExample(t *testing.T) {
@@ -350,8 +352,7 @@ func testAccCheckApiGatewayApiConfigDestroyProducer(t *testing.T) func(s *terraf
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ApiGatewayBasePath}}projects/{{project}}/locations/global/apis/{{api}}/configs/{{api_config_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(apigateway.Product, config)+"projects/{{project}}/locations/global/apis/{{api}}/configs/{{api_config_id}}")
 			if err != nil {
 				return err
 			}

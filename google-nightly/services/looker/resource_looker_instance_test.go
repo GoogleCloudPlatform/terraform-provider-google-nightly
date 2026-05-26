@@ -23,6 +23,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/looker"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 )
 
 func TestAccLookerInstance_update(t *testing.T) {
@@ -163,7 +167,7 @@ func TestAccLookerInstance_updatePeriodicExport(t *testing.T) {
 		"random_suffix": suffix,
 	}
 
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			// For writing/managing the export files in GCS
 			Member: "serviceAccount:service-{project_number}@gcp-sa-looker.iam.gserviceaccount.com",

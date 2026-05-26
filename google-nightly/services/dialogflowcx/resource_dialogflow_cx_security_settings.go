@@ -115,6 +115,7 @@ func ResourceDialogflowCXSecuritySettings() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -270,6 +271,18 @@ Format: projects/<Project ID>/locations/<Location ID>/securitySettings/<Security
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -344,7 +357,7 @@ func resourceDialogflowCXSecuritySettingsCreate(d *schema.ResourceData, meta int
 		obj["retentionStrategy"] = retentionStrategyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}projects/{{project}}/locations/{{location}}/securitySettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/securitySettings")
 	if err != nil {
 		return err
 	}
@@ -429,7 +442,7 @@ func resourceDialogflowCXSecuritySettingsRead(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}projects/{{project}}/locations/{{location}}/securitySettings/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/securitySettings/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -462,42 +475,26 @@ func resourceDialogflowCXSecuritySettingsRead(d *schema.ResourceData, meta inter
 
 	log.Printf("[DEBUG] Finished reading DialogflowCXSecuritySettings %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading SecuritySettings: %s", err)
 	}
 
-	if err := d.Set("name", flattenDialogflowCXSecuritySettingsName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("display_name", flattenDialogflowCXSecuritySettingsDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("redaction_strategy", flattenDialogflowCXSecuritySettingsRedactionStrategy(res["redactionStrategy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("redaction_scope", flattenDialogflowCXSecuritySettingsRedactionScope(res["redactionScope"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("inspect_template", flattenDialogflowCXSecuritySettingsInspectTemplate(res["inspectTemplate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("deidentify_template", flattenDialogflowCXSecuritySettingsDeidentifyTemplate(res["deidentifyTemplate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("purge_data_types", flattenDialogflowCXSecuritySettingsPurgeDataTypes(res["purgeDataTypes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("audio_export_settings", flattenDialogflowCXSecuritySettingsAudioExportSettings(res["audioExportSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("insights_export_settings", flattenDialogflowCXSecuritySettingsInsightsExportSettings(res["insightsExportSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("retention_window_days", flattenDialogflowCXSecuritySettingsRetentionWindowDays(res["retentionWindowDays"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
-	}
-	if err := d.Set("retention_strategy", flattenDialogflowCXSecuritySettingsRetentionStrategy(res["retentionStrategy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	err = ResourceDialogflowCXSecuritySettingsFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -528,6 +525,19 @@ func resourceDialogflowCXSecuritySettingsRead(d *schema.ResourceData, meta inter
 }
 
 func resourceDialogflowCXSecuritySettingsUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDialogflowCXSecuritySettings().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDialogflowCXSecuritySettingsRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -624,7 +634,7 @@ func resourceDialogflowCXSecuritySettingsUpdate(d *schema.ResourceData, meta int
 		obj["retentionStrategy"] = retentionStrategyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}projects/{{project}}/locations/{{location}}/securitySettings/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/securitySettings/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -713,6 +723,13 @@ func resourceDialogflowCXSecuritySettingsUpdate(d *schema.ResourceData, meta int
 }
 
 func resourceDialogflowCXSecuritySettingsDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DialogflowCXSecuritySettings without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing SecuritySettings %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -726,8 +743,7 @@ func resourceDialogflowCXSecuritySettingsDelete(d *schema.ResourceData, meta int
 		return fmt.Errorf("Error fetching project for SecuritySettings: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}projects/{{project}}/locations/{{location}}/securitySettings/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/securitySettings/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1006,5 +1022,45 @@ func resourceDialogflowCXSecuritySettingsPostCreateSetComputedFields(d *schema.R
 	if err := d.Set("name", flattenDialogflowCXSecuritySettingsName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceDialogflowCXSecuritySettingsFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDialogflowCXSecuritySettingsName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("display_name", flattenDialogflowCXSecuritySettingsDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("redaction_strategy", flattenDialogflowCXSecuritySettingsRedactionStrategy(res["redactionStrategy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("redaction_scope", flattenDialogflowCXSecuritySettingsRedactionScope(res["redactionScope"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("inspect_template", flattenDialogflowCXSecuritySettingsInspectTemplate(res["inspectTemplate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("deidentify_template", flattenDialogflowCXSecuritySettingsDeidentifyTemplate(res["deidentifyTemplate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("purge_data_types", flattenDialogflowCXSecuritySettingsPurgeDataTypes(res["purgeDataTypes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("audio_export_settings", flattenDialogflowCXSecuritySettingsAudioExportSettings(res["audioExportSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("insights_export_settings", flattenDialogflowCXSecuritySettingsInsightsExportSettings(res["insightsExportSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("retention_window_days", flattenDialogflowCXSecuritySettingsRetentionWindowDays(res["retentionWindowDays"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+	if err = d.Set("retention_strategy", flattenDialogflowCXSecuritySettingsRetentionStrategy(res["retentionStrategy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecuritySettings: %s", err)
+	}
+
 	return nil
 }

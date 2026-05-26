@@ -175,7 +175,7 @@ func resourceKMSSecretCiphertextCreate(d *schema.ResourceData, meta interface{})
 		obj["additionalAuthenticatedData"] = additionalAuthenticatedDataProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}{{crypto_key}}:encrypt")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{crypto_key}}:encrypt")
 	if err != nil {
 		return err
 	}
@@ -252,7 +252,7 @@ func resourceKMSSecretCiphertextRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}{{crypto_key}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{crypto_key}}")
 	if err != nil {
 		return err
 	}
@@ -293,6 +293,11 @@ func resourceKMSSecretCiphertextRead(d *schema.ResourceData, meta interface{}) e
 		log.Printf("[DEBUG] Removing KMSSecretCiphertext because it no longer exists.")
 		d.SetId("")
 		return nil
+	}
+
+	err = ResourceKMSSecretCiphertextFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -337,4 +342,9 @@ func expandKMSSecretCiphertextAdditionalAuthenticatedData(v interface{}, d tpgre
 
 func resourceKMSSecretCiphertextDecoder(d *schema.ResourceData, meta interface{}, res map[string]interface{}) (map[string]interface{}, error) {
 	return res, nil
+}
+
+func ResourceKMSSecretCiphertextFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+
+	return nil
 }

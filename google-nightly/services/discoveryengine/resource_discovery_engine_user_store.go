@@ -225,7 +225,7 @@ func resourceDiscoveryEngineUserStoreCreate(d *schema.ResourceData, meta interfa
 		obj["enableExpiredLicenseAutoUpdate"] = enableExpiredLicenseAutoUpdateProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/userStores/{{user_store_id}}?updateMask=defaultLicenseConfig,enableLicenseAutoRegister,enableExpiredLicenseAutoUpdate")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/userStores/{{user_store_id}}?updateMask=defaultLicenseConfig,enableLicenseAutoRegister,enableExpiredLicenseAutoUpdate")
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func resourceDiscoveryEngineUserStoreRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/userStores/{{user_store_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/userStores/{{user_store_id}}")
 	if err != nil {
 		return err
 	}
@@ -336,17 +336,9 @@ func resourceDiscoveryEngineUserStoreRead(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error reading UserStore: %s", err)
 	}
 
-	if err := d.Set("name", flattenDiscoveryEngineUserStoreName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading UserStore: %s", err)
-	}
-	if err := d.Set("default_license_config", flattenDiscoveryEngineUserStoreDefaultLicenseConfig(res["defaultLicenseConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading UserStore: %s", err)
-	}
-	if err := d.Set("enable_license_auto_register", flattenDiscoveryEngineUserStoreEnableLicenseAutoRegister(res["enableLicenseAutoRegister"], d, config)); err != nil {
-		return fmt.Errorf("Error reading UserStore: %s", err)
-	}
-	if err := d.Set("enable_expired_license_auto_update", flattenDiscoveryEngineUserStoreEnableExpiredLicenseAutoUpdate(res["enableExpiredLicenseAutoUpdate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading UserStore: %s", err)
+	err = ResourceDiscoveryEngineUserStoreFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -377,6 +369,7 @@ func resourceDiscoveryEngineUserStoreRead(d *schema.ResourceData, meta interface
 }
 
 func resourceDiscoveryEngineUserStoreUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -431,7 +424,7 @@ func resourceDiscoveryEngineUserStoreUpdate(d *schema.ResourceData, meta interfa
 		obj["enableExpiredLicenseAutoUpdate"] = enableExpiredLicenseAutoUpdateProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/userStores/{{user_store_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/userStores/{{user_store_id}}")
 	if err != nil {
 		return err
 	}
@@ -542,4 +535,23 @@ func expandDiscoveryEngineUserStoreEnableLicenseAutoRegister(v interface{}, d tp
 
 func expandDiscoveryEngineUserStoreEnableExpiredLicenseAutoUpdate(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceDiscoveryEngineUserStoreFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDiscoveryEngineUserStoreName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading UserStore: %s", err)
+	}
+	if err = d.Set("default_license_config", flattenDiscoveryEngineUserStoreDefaultLicenseConfig(res["defaultLicenseConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading UserStore: %s", err)
+	}
+	if err = d.Set("enable_license_auto_register", flattenDiscoveryEngineUserStoreEnableLicenseAutoRegister(res["enableLicenseAutoRegister"], d, config)); err != nil {
+		return fmt.Errorf("Error reading UserStore: %s", err)
+	}
+	if err = d.Set("enable_expired_license_auto_update", flattenDiscoveryEngineUserStoreEnableExpiredLicenseAutoUpdate(res["enableExpiredLicenseAutoUpdate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading UserStore: %s", err)
+	}
+
+	return nil
 }

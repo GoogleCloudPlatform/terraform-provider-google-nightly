@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/discoveryengine"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = discoveryengine.Product
 )
 
 func TestAccDiscoveryEngineDataConnector_discoveryengineDataconnectorServicenowBasicExample(t *testing.T) {
@@ -207,7 +209,11 @@ resource "google_discovery_engine_data_connector" "jira-with-actions" {
     key = "url"
     destinations {
       host = "https://example.atlassian.net"
+      port = 123
     }
+    params                     = jsonencode({
+      "destination_type": "private"
+    })
   }
   connector_modes              = ["FEDERATED", "ACTIONS"]
   sync_mode                    = "PERIODIC"
@@ -249,8 +255,7 @@ func testAccCheckDiscoveryEngineDataConnectorDestroyProducer(t *testing.T) func(
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/dataConnector")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(discoveryengine.Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/dataConnector")
 			if err != nil {
 				return err
 			}

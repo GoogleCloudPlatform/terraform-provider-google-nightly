@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/memorystore"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkconnectivityv1"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = memorystore.Product
 )
 
 func TestAccMemorystoreInstanceDesiredUserCreatedEndpoints_memorystoreInstanceDesiredUserCreatedEndpointsExample(t *testing.T) {
@@ -418,8 +422,7 @@ func testAccCheckMemorystoreInstanceDesiredUserCreatedEndpointsDestroyProducer(t
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{MemorystoreBasePath}}projects/{{project}}/locations/{{region}}/instances/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(memorystore.Product, config)+"projects/{{project}}/locations/{{region}}/instances/{{name}}")
 			if err != nil {
 				return err
 			}

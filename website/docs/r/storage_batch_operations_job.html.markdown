@@ -64,6 +64,42 @@ resource "google_storage_batch_operations_job" "tf-job" {
 	delete_protection = false
 }
 ```
+<div class = "oics-button" style="float: right; margin: 0 0 -15px">
+  <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=storage_batch_operations_description&open_in_editor=main.tf" target="_blank">
+    <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
+  </a>
+</div>
+## Example Usage - Storage Batch Operations Description
+
+
+```hcl
+resource "google_storage_bucket" "bucket" {
+  name          = "tf-sample-bucket"
+  location      = "us-central1"
+  force_destroy = true
+}
+
+resource "google_storage_batch_operations_job" "tf-job" {
+  job_id      = "tf-job"
+  description = "A sample job description"
+  bucket_list {
+    buckets {
+      bucket = google_storage_bucket.bucket.name
+      prefix_list {
+        included_object_prefixes = [
+          "bkt"
+        ]
+      }
+    }
+  }
+  put_metadata {
+    custom_metadata = {
+      "key" = "value"
+    }
+  }
+  delete_protection = false
+}
+```
 
 ## Argument Reference
 
@@ -96,6 +132,10 @@ The following arguments are supported:
   allows to update temporary hold or eventBased hold for objects in bucket.
   Structure is [documented below](#nested_put_object_hold).
 
+* `description` -
+  (Optional)
+  A description provided by the user for the job. Its max length is 1024 bytes when Unicode-encoded.
+
 * `job_id` -
   (Optional)
   The ID of the job.
@@ -103,6 +143,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 * `delete_protection` - (Optional) If set to `true`, the storage batch operation job will not be deleted and new job will be created.
 
 

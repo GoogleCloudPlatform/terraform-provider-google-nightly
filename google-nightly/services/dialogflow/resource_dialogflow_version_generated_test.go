@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dialogflow"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = dialogflow.Product
 )
 
 func TestAccDialogflowVersion_dialogflowVersionFullExample(t *testing.T) {
@@ -108,11 +111,6 @@ resource "time_sleep" "wait_enable_service_api" {
   ]
   create_duration = "30s"
 }
-resource "google_project_service_identity" "gcp_sa" {
-  service    = "dialogflow.googleapis.com"
-  project    = google_project.project.project_id
-  depends_on = [time_sleep.wait_enable_service_api]
-}
 resource "google_dialogflow_agent" "basic_agent" {
   display_name = "example_agent"
   default_language_code = "en"
@@ -139,8 +137,7 @@ func testAccCheckDialogflowVersionDestroyProducer(t *testing.T) func(s *terrafor
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DialogflowBasePath}}{{parent}}/versions/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(dialogflow.Product, config)+"{{parent}}/versions/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -274,6 +274,19 @@ Valid only when 'RuntimeType' is CLOUD. A base64-encoded string.`,
 				Description: `Output only. Subscription type of the Apigee organization.
 Valid values include trial (free, limited, and for evaluation purposes only) or paid (full subscription has been purchased).`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -365,7 +378,7 @@ func resourceApigeeOrganizationCreate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations?parent=projects/{{project_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations?parent=projects/{{project_id}}")
 	if err != nil {
 		return err
 	}
@@ -447,7 +460,7 @@ func resourceApigeeOrganizationRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -474,53 +487,23 @@ func resourceApigeeOrganizationRead(d *schema.ResourceData, meta interface{}) er
 
 	log.Printf("[DEBUG] Finished reading ApigeeOrganization %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenApigeeOrganizationName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("display_name", flattenApigeeOrganizationDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("description", flattenApigeeOrganizationDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("analytics_region", flattenApigeeOrganizationAnalyticsRegion(res["analyticsRegion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("api_consumer_data_location", flattenApigeeOrganizationApiConsumerDataLocation(res["apiConsumerDataLocation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("api_consumer_data_encryption_key_name", flattenApigeeOrganizationApiConsumerDataEncryptionKeyName(res["apiConsumerDataEncryptionKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("control_plane_encryption_key_name", flattenApigeeOrganizationControlPlaneEncryptionKeyName(res["controlPlaneEncryptionKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("authorized_network", flattenApigeeOrganizationAuthorizedNetwork(res["authorizedNetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("disable_vpc_peering", flattenApigeeOrganizationDisableVpcPeering(res["disableVpcPeering"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("runtime_type", flattenApigeeOrganizationRuntimeType(res["runtimeType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("subscription_type", flattenApigeeOrganizationSubscriptionType(res["subscriptionType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("billing_type", flattenApigeeOrganizationBillingType(res["billingType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("ca_certificate", flattenApigeeOrganizationCaCertificate(res["caCertificate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("runtime_database_encryption_key_name", flattenApigeeOrganizationRuntimeDatabaseEncryptionKeyName(res["runtimeDatabaseEncryptionKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("properties", flattenApigeeOrganizationProperties(res["properties"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
-	}
-	if err := d.Set("apigee_project_id", flattenApigeeOrganizationApigeeProjectId(res["apigeeProjectId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Organization: %s", err)
+
+	err = ResourceApigeeOrganizationFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -539,6 +522,19 @@ func resourceApigeeOrganizationRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceApigeeOrganizationUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceApigeeOrganization().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceApigeeOrganizationRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -636,7 +632,7 @@ func resourceApigeeOrganizationUpdate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -670,6 +666,13 @@ func resourceApigeeOrganizationUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceApigeeOrganizationDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ApigeeOrganization without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Organization %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -678,7 +681,7 @@ func resourceApigeeOrganizationDelete(d *schema.ResourceData, meta interface{}) 
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{name}}?retention={{retention}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{name}}?retention={{retention}}")
 	if err != nil {
 		return err
 	}
@@ -965,4 +968,59 @@ func expandApigeeOrganizationPropertiesPropertyValue(v interface{}, d tpgresourc
 func resourceApigeeOrganizationEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
 	obj["name"] = d.Get("project_id").(string)
 	return obj, nil
+}
+
+func ResourceApigeeOrganizationFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenApigeeOrganizationName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("display_name", flattenApigeeOrganizationDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("description", flattenApigeeOrganizationDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("analytics_region", flattenApigeeOrganizationAnalyticsRegion(res["analyticsRegion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("api_consumer_data_location", flattenApigeeOrganizationApiConsumerDataLocation(res["apiConsumerDataLocation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("api_consumer_data_encryption_key_name", flattenApigeeOrganizationApiConsumerDataEncryptionKeyName(res["apiConsumerDataEncryptionKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("control_plane_encryption_key_name", flattenApigeeOrganizationControlPlaneEncryptionKeyName(res["controlPlaneEncryptionKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("authorized_network", flattenApigeeOrganizationAuthorizedNetwork(res["authorizedNetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("disable_vpc_peering", flattenApigeeOrganizationDisableVpcPeering(res["disableVpcPeering"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("runtime_type", flattenApigeeOrganizationRuntimeType(res["runtimeType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("subscription_type", flattenApigeeOrganizationSubscriptionType(res["subscriptionType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("billing_type", flattenApigeeOrganizationBillingType(res["billingType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("ca_certificate", flattenApigeeOrganizationCaCertificate(res["caCertificate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("runtime_database_encryption_key_name", flattenApigeeOrganizationRuntimeDatabaseEncryptionKeyName(res["runtimeDatabaseEncryptionKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("properties", flattenApigeeOrganizationProperties(res["properties"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+	if err = d.Set("apigee_project_id", flattenApigeeOrganizationApigeeProjectId(res["apigeeProjectId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Organization: %s", err)
+	}
+
+	return nil
 }

@@ -115,6 +115,7 @@ func ResourceDiscoveryEngineSearchEngine() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -354,6 +355,18 @@ characters.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -433,7 +446,7 @@ func resourceDiscoveryEngineSearchEngineCreate(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines?engineId={{engine_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines?engineId={{engine_id}}")
 	if err != nil {
 		return err
 	}
@@ -522,7 +535,7 @@ func resourceDiscoveryEngineSearchEngineRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}")
 	if err != nil {
 		return err
 	}
@@ -555,45 +568,26 @@ func resourceDiscoveryEngineSearchEngineRead(d *schema.ResourceData, meta interf
 
 	log.Printf("[DEBUG] Finished reading DiscoveryEngineSearchEngine %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading SearchEngine: %s", err)
 	}
 
-	if err := d.Set("name", flattenDiscoveryEngineSearchEngineName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("industry_vertical", flattenDiscoveryEngineSearchEngineIndustryVertical(res["industryVertical"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("display_name", flattenDiscoveryEngineSearchEngineDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("data_store_ids", flattenDiscoveryEngineSearchEngineDataStoreIds(res["dataStoreIds"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("create_time", flattenDiscoveryEngineSearchEngineCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("update_time", flattenDiscoveryEngineSearchEngineUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("search_engine_config", flattenDiscoveryEngineSearchEngineSearchEngineConfig(res["searchEngineConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("common_config", flattenDiscoveryEngineSearchEngineCommonConfig(res["commonConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("app_type", flattenDiscoveryEngineSearchEngineAppType(res["appType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("disable_analytics", flattenDiscoveryEngineSearchEngineDisableAnalytics(res["disableAnalytics"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("features", flattenDiscoveryEngineSearchEngineFeatures(res["features"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
-	}
-	if err := d.Set("knowledge_graph_config", flattenDiscoveryEngineSearchEngineKnowledgeGraphConfig(res["knowledgeGraphConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	err = ResourceDiscoveryEngineSearchEngineFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -630,6 +624,19 @@ func resourceDiscoveryEngineSearchEngineRead(d *schema.ResourceData, meta interf
 }
 
 func resourceDiscoveryEngineSearchEngineUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDiscoveryEngineSearchEngine().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDiscoveryEngineSearchEngineRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -718,7 +725,7 @@ func resourceDiscoveryEngineSearchEngineUpdate(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}")
 	if err != nil {
 		return err
 	}
@@ -791,6 +798,13 @@ func resourceDiscoveryEngineSearchEngineUpdate(d *schema.ResourceData, meta inte
 }
 
 func resourceDiscoveryEngineSearchEngineDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DiscoveryEngineSearchEngine without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing SearchEngine %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -804,8 +818,7 @@ func resourceDiscoveryEngineSearchEngineDelete(d *schema.ResourceData, meta inte
 		return fmt.Errorf("Error fetching project for SearchEngine: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}")
 	if err != nil {
 		return err
 	}
@@ -1241,4 +1254,47 @@ func resourceDiscoveryEngineSearchEngineEncoder(d *schema.ResourceData, meta int
 	// hard code solutionType to "SOLUTION_TYPE_SEARCH" for search engine resource
 	obj["solutionType"] = "SOLUTION_TYPE_SEARCH"
 	return obj, nil
+}
+
+func ResourceDiscoveryEngineSearchEngineFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDiscoveryEngineSearchEngineName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("industry_vertical", flattenDiscoveryEngineSearchEngineIndustryVertical(res["industryVertical"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("display_name", flattenDiscoveryEngineSearchEngineDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("data_store_ids", flattenDiscoveryEngineSearchEngineDataStoreIds(res["dataStoreIds"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("create_time", flattenDiscoveryEngineSearchEngineCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("update_time", flattenDiscoveryEngineSearchEngineUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("search_engine_config", flattenDiscoveryEngineSearchEngineSearchEngineConfig(res["searchEngineConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("common_config", flattenDiscoveryEngineSearchEngineCommonConfig(res["commonConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("app_type", flattenDiscoveryEngineSearchEngineAppType(res["appType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("disable_analytics", flattenDiscoveryEngineSearchEngineDisableAnalytics(res["disableAnalytics"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("features", flattenDiscoveryEngineSearchEngineFeatures(res["features"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+	if err = d.Set("knowledge_graph_config", flattenDiscoveryEngineSearchEngineKnowledgeGraphConfig(res["knowledgeGraphConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SearchEngine: %s", err)
+	}
+
+	return nil
 }

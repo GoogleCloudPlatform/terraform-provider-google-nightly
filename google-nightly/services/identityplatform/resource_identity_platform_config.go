@@ -334,6 +334,7 @@ This field does not support phone based MFA, for that use the 'enabledProviders'
 			},
 			"multi_tenant": {
 				Type:        schema.TypeList,
+				Computed:    true,
 				Optional:    true,
 				Description: `Configuration related to multi-tenant functionality.`,
 				MaxItems:    1,
@@ -629,7 +630,7 @@ func resourceIdentityPlatformConfigRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IdentityPlatformBasePath}}projects/{{project}}/config")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/config")
 	if err != nil {
 		return err
 	}
@@ -666,38 +667,9 @@ func resourceIdentityPlatformConfigRead(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error reading Config: %s", err)
 	}
 
-	if err := d.Set("name", flattenIdentityPlatformConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("autodelete_anonymous_users", flattenIdentityPlatformConfigAutodeleteAnonymousUsers(res["autodeleteAnonymousUsers"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("sign_in", flattenIdentityPlatformConfigSignIn(res["signIn"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("blocking_functions", flattenIdentityPlatformConfigBlockingFunctions(res["blockingFunctions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("quota", flattenIdentityPlatformConfigQuota(res["quota"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("authorized_domains", flattenIdentityPlatformConfigAuthorizedDomains(res["authorizedDomains"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("sms_region_config", flattenIdentityPlatformConfigSmsRegionConfig(res["smsRegionConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("client", flattenIdentityPlatformConfigClient(res["client"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("mfa", flattenIdentityPlatformConfigMfa(res["mfa"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("multi_tenant", flattenIdentityPlatformConfigMultiTenant(res["multiTenant"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
-	}
-	if err := d.Set("monitoring", flattenIdentityPlatformConfigMonitoring(res["monitoring"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Config: %s", err)
+	err = ResourceIdentityPlatformConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -716,6 +688,7 @@ func resourceIdentityPlatformConfigRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceIdentityPlatformConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -802,7 +775,7 @@ func resourceIdentityPlatformConfigUpdate(d *schema.ResourceData, meta interface
 		obj["monitoring"] = monitoringProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IdentityPlatformBasePath}}projects/{{project}}/config")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/config")
 	if err != nil {
 		return err
 	}
@@ -2210,4 +2183,44 @@ func expandIdentityPlatformConfigMonitoringRequestLogging(v interface{}, d tpgre
 
 func expandIdentityPlatformConfigMonitoringRequestLoggingEnabled(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceIdentityPlatformConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenIdentityPlatformConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("autodelete_anonymous_users", flattenIdentityPlatformConfigAutodeleteAnonymousUsers(res["autodeleteAnonymousUsers"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("sign_in", flattenIdentityPlatformConfigSignIn(res["signIn"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("blocking_functions", flattenIdentityPlatformConfigBlockingFunctions(res["blockingFunctions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("quota", flattenIdentityPlatformConfigQuota(res["quota"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("authorized_domains", flattenIdentityPlatformConfigAuthorizedDomains(res["authorizedDomains"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("sms_region_config", flattenIdentityPlatformConfigSmsRegionConfig(res["smsRegionConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("client", flattenIdentityPlatformConfigClient(res["client"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("mfa", flattenIdentityPlatformConfigMfa(res["mfa"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("multi_tenant", flattenIdentityPlatformConfigMultiTenant(res["multiTenant"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+	if err = d.Set("monitoring", flattenIdentityPlatformConfigMonitoring(res["monitoring"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Config: %s", err)
+	}
+
+	return nil
 }

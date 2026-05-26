@@ -19,8 +19,10 @@ package apigee
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
@@ -43,6 +45,10 @@ func ResourceApigeeSharedFlowDeployment() *schema.Resource {
 			Update: schema.DefaultTimeout(20 * time.Minute),
 			Delete: schema.DefaultTimeout(20 * time.Minute),
 		},
+
+		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
+		),
 
 		Schema: map[string]*schema.Schema{
 			"environment": {
@@ -74,6 +80,9 @@ func ResourceApigeeSharedFlowDeployment() *schema.Resource {
 				ForceNew:    true,
 				Description: `Id of the Sharedflow to be deployed.`,
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -86,7 +95,7 @@ func resourceApigeeSharedflowDeploymentCreate(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/sharedflows/{{sharedflow_id}}/revisions/{{revision}}/deployments?override=true&serviceAccount={{service_account}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/sharedflows/{{sharedflow_id}}/revisions/{{revision}}/deployments?override=true&serviceAccount={{service_account}}")
 	if err != nil {
 		return err
 	}
@@ -130,7 +139,7 @@ func resourceApigeeSharedflowDeploymentRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/sharedflows/{{sharedflow_id}}/revisions/{{revision}}/deployments")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/sharedflows/{{sharedflow_id}}/revisions/{{revision}}/deployments")
 	if err != nil {
 		return err
 	}
@@ -156,6 +165,27 @@ func resourceApigeeSharedflowDeploymentRead(d *schema.ResourceData, meta interfa
 	}
 	log.Printf("[DEBUG] ApigeeSharedflowDeployment deployStartTime %s", res["deployStartTime"])
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
+	// org_id is not returned by the API; it is derived from the resource ID
+	// (set by Create or by the import parser) and stays in state untouched.
+	if err := d.Set("environment", flattenApigeeSharedflowDeploymentEnvironment(res["environment"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SharedflowDeployment: %s", err)
+	}
+	// The API uses `apiProxy` for both API proxy and shared flow deployments
+	// to identify the deployed artifact.
+	if err := d.Set("sharedflow_id", flattenApigeeSharedflowDeploymentSharedflowId(res["apiProxy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SharedflowDeployment: %s", err)
+	}
+	if err := d.Set("revision", flattenApigeeSharedflowDeploymentRevision(res["revision"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SharedflowDeployment: %s", err)
+	}
+	if err := d.Set("service_account", flattenApigeeSharedflowDeploymentServiceAccount(res["serviceAccount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SharedflowDeployment: %s", err)
+	}
+
 	return nil
 }
 
@@ -166,7 +196,11 @@ func resourceApigeeSharedflowDeploymentUpdate(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/sharedflows/{{sharedflow_id}}/revisions/{{revision}}/deployments?override=true&serviceAccount={{service_account}}")
+	if tpgresource.DeletionPolicyPreUpdate(d, ResourceApigeeSharedFlowDeployment) {
+		return ResourceApigeeSharedFlowDeployment().Read(d, meta)
+	}
+
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/sharedflows/{{sharedflow_id}}/revisions/{{revision}}/deployments?override=true&serviceAccount={{service_account}}")
 	if err != nil {
 		return err
 	}
@@ -204,6 +238,13 @@ func resourceApigeeSharedflowDeploymentUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceApigeeSharedflowDeploymentDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -212,7 +253,7 @@ func resourceApigeeSharedflowDeploymentDelete(d *schema.ResourceData, meta inter
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/sharedflows/{{sharedflow_id}}/revisions/{{revision}}/deployments")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/sharedflows/{{sharedflow_id}}/revisions/{{revision}}/deployments")
 	if err != nil {
 		return err
 	}
@@ -279,7 +320,19 @@ func flattenApigeeSharedflowDeploymentRevision(v interface{}, d *schema.Resource
 }
 
 func flattenApigeeSharedflowDeploymentServiceAccount(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
+	// The Apigee API may return service accounts as a full resource name
+	// (e.g. "projects/-/serviceAccounts/sa@project.iam.gserviceaccount.com")
+	// while the schema documents (and Create accepts) the bare email form.
+	// Strip the prefix when present so a Read after a Create using the bare
+	// email does not show drift.
+	if v == nil {
+		return v
+	}
+	s, ok := v.(string)
+	if !ok {
+		return v
+	}
+	return strings.TrimPrefix(s, "projects/-/serviceAccounts/")
 }
 
 func init() {

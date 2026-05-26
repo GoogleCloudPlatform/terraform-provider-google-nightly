@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vectorsearch"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = vectorsearch.Product
 )
 
 func TestAccVectorSearchCollection_vectorsearchCollectionBasicExample(t *testing.T) {
@@ -127,6 +130,108 @@ EOF
 `, context)
 }
 
+func TestAccVectorSearchCollection_vectorsearchCollectionCmekExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"collection_id": "tf-test-example-cmek-collection" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckVectorSearchCollectionDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccVectorSearchCollection_vectorsearchCollectionCmekExample(context),
+			},
+			{
+				ResourceName:            "google_vector_search_collection.example-cmek-collection",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"collection_id", "labels", "location", "terraform_labels"},
+			},
+			{
+				ResourceName:       "google_vector_search_collection.example-cmek-collection",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccVectorSearchCollection_vectorsearchCollectionCmekExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_vector_search_collection" "example-cmek-collection" {
+  location      = "us-central1"
+  collection_id = "%{collection_id}"
+
+  display_name = "My Awesome Encrypted Collection"
+  description  = "This collection stores important data."
+
+  encryption_spec {
+    crypto_key_name = google_kms_crypto_key.crypto_key.id
+  }
+
+  labels = {
+    env  = "dev"
+    team = "my-team"
+  }
+
+  data_schema = <<EOF
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "plot": {
+      "type": "string"
+    }
+  }
+}
+EOF
+
+  vector_schema {
+    field_name = "text_embedding"
+    dense_vector {
+      dimensions = 768
+      vertex_embedding_config {
+        model_id   = "textembedding-gecko@003"
+        task_type  = "RETRIEVAL_DOCUMENT"
+        text_template = "Title: {title} ---- Plot: {plot}"
+      }
+    }
+  }
+
+  depends_on = [google_kms_crypto_key_iam_member.crypto_key_member_vs_sa]
+}
+
+resource "google_kms_crypto_key" "crypto_key" {
+  name     = "%{collection_id}"
+  key_ring = google_kms_key_ring.key_ring.id
+}
+
+resource "google_kms_key_ring" "key_ring" {
+  name     = "%{collection_id}"
+  location = "us-central1"
+}
+
+resource "google_kms_crypto_key_iam_member" "crypto_key_member_vs_sa" {
+  crypto_key_id = google_kms_crypto_key.crypto_key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+
+  member = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-vectorsearch.iam.gserviceaccount.com"
+}
+
+data "google_project" "project" {}
+`, context)
+}
+
 func testAccCheckVectorSearchCollectionDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {
@@ -138,8 +243,7 @@ func testAccCheckVectorSearchCollectionDestroyProducer(t *testing.T) func(s *ter
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{VectorSearchBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(vectorsearch.Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
 			if err != nil {
 				return err
 			}

@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/gkeonprem"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = gkeonprem.Product
 )
 
 func TestAccGkeonpremBareMetalCluster_gkeonpremBareMetalClusterBasicExample(t *testing.T) {
@@ -442,8 +444,7 @@ func testAccCheckGkeonpremBareMetalClusterDestroyProducer(t *testing.T) func(s *
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{GkeonpremBasePath}}projects/{{project}}/locations/{{location}}/bareMetalClusters/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(gkeonprem.Product, config)+"projects/{{project}}/locations/{{location}}/bareMetalClusters/{{name}}")
 			if err != nil {
 				return err
 			}

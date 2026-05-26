@@ -30,6 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vertexai"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +52,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = vertexai.Product
 )
 
 func TestAccVertexAIIndex_vertexAiIndexExample(t *testing.T) {
@@ -59,7 +64,7 @@ func TestAccVertexAIIndex_vertexAiIndexExample(t *testing.T) {
 		"project":       envvar.GetTestProjectFromEnv(),
 		"bucket_name":   "tf-test-vertex-ai-index-test" + randomSuffix,
 		"display_name":  "tf-test-test-index" + randomSuffix,
-		"kms_key_name":  acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name":  kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"random_suffix": randomSuffix,
 	}
 
@@ -164,7 +169,7 @@ func TestAccVertexAIIndex_vertexAiIndexStreamingExample(t *testing.T) {
 		"project":       envvar.GetTestProjectFromEnv(),
 		"bucket_name":   "tf-test-vertex-ai-index-test" + randomSuffix,
 		"display_name":  "tf-test-test-index" + randomSuffix,
-		"kms_key_name":  acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name":  kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"random_suffix": randomSuffix,
 	}
 
@@ -246,8 +251,7 @@ func testAccCheckVertexAIIndexDestroyProducer(t *testing.T) func(s *terraform.St
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/indexes/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(vertexai.Product, config)+"projects/{{project}}/locations/{{region}}/indexes/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -116,6 +116,7 @@ func ResourceEventarcChannel() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -225,6 +226,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -263,7 +276,7 @@ func resourceEventarcChannelCreate(d *schema.ResourceData, meta interface{}) err
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/channels?channelId={{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/channels?channelId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -348,7 +361,7 @@ func resourceEventarcChannelRead(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/channels/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/channels/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -382,45 +395,26 @@ func resourceEventarcChannelRead(d *schema.ResourceData, meta interface{}) error
 
 	log.Printf("[DEBUG] Finished reading EventarcChannel %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Channel: %s", err)
 	}
 
-	if err := d.Set("name", flattenEventarcChannelName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("labels", flattenEventarcChannelLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("uid", flattenEventarcChannelUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("create_time", flattenEventarcChannelCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("update_time", flattenEventarcChannelUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("third_party_provider", flattenEventarcChannelThirdPartyProvider(res["provider"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("pubsub_topic", flattenEventarcChannelPubsubTopic(res["pubsubTopic"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("state", flattenEventarcChannelState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("activation_token", flattenEventarcChannelActivationToken(res["activationToken"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("crypto_key_name", flattenEventarcChannelCryptoKeyName(res["cryptoKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenEventarcChannelTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenEventarcChannelEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Channel: %s", err)
+	err = ResourceEventarcChannelFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -451,6 +445,19 @@ func resourceEventarcChannelRead(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceEventarcChannelUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceEventarcChannel().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceEventarcChannelRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -499,7 +506,7 @@ func resourceEventarcChannelUpdate(d *schema.ResourceData, meta interface{}) err
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/channels/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/channels/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -560,6 +567,13 @@ func resourceEventarcChannelUpdate(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceEventarcChannelDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy EventarcChannel without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Channel %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -573,8 +587,7 @@ func resourceEventarcChannelDelete(d *schema.ResourceData, meta interface{}) err
 		return fmt.Errorf("Error fetching project for Channel: %s", err)
 	}
 	billingProject = strings.TrimPrefix(project, "projects/")
-
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/channels/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/channels/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -727,4 +740,47 @@ func expandEventarcChannelEffectiveLabels(v interface{}, d tpgresource.Terraform
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceEventarcChannelFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenEventarcChannelName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("labels", flattenEventarcChannelLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("uid", flattenEventarcChannelUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("create_time", flattenEventarcChannelCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("update_time", flattenEventarcChannelUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("third_party_provider", flattenEventarcChannelThirdPartyProvider(res["provider"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("pubsub_topic", flattenEventarcChannelPubsubTopic(res["pubsubTopic"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("state", flattenEventarcChannelState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("activation_token", flattenEventarcChannelActivationToken(res["activationToken"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("crypto_key_name", flattenEventarcChannelCryptoKeyName(res["cryptoKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenEventarcChannelTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenEventarcChannelEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Channel: %s", err)
+	}
+
+	return nil
 }

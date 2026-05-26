@@ -117,6 +117,7 @@ func ResourceEventarcMessageBus() *schema.Resource {
 			tpgresource.SetLabelsDiff,
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -263,6 +264,18 @@ string and guaranteed to remain unchanged until the resource is deleted.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -307,7 +320,7 @@ func resourceEventarcMessageBusCreate(d *schema.ResourceData, meta interface{}) 
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/messageBuses?messageBusId={{message_bus_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/messageBuses?messageBusId={{message_bus_id}}")
 	if err != nil {
 		return err
 	}
@@ -391,7 +404,7 @@ func resourceEventarcMessageBusRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/messageBuses/{{message_bus_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/messageBuses/{{message_bus_id}}")
 	if err != nil {
 		return err
 	}
@@ -424,48 +437,26 @@ func resourceEventarcMessageBusRead(d *schema.ResourceData, meta interface{}) er
 
 	log.Printf("[DEBUG] Finished reading EventarcMessageBus %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading MessageBus: %s", err)
 	}
 
-	if err := d.Set("name", flattenEventarcMessageBusName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("logging_config", flattenEventarcMessageBusLoggingConfig(res["loggingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("update_time", flattenEventarcMessageBusUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("labels", flattenEventarcMessageBusLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("annotations", flattenEventarcMessageBusAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("uid", flattenEventarcMessageBusUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("etag", flattenEventarcMessageBusEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("create_time", flattenEventarcMessageBusCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("display_name", flattenEventarcMessageBusDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("crypto_key_name", flattenEventarcMessageBusCryptoKeyName(res["cryptoKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenEventarcMessageBusTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenEventarcMessageBusEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenEventarcMessageBusEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MessageBus: %s", err)
+	err = ResourceEventarcMessageBusFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -496,6 +487,19 @@ func resourceEventarcMessageBusRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceEventarcMessageBusUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceEventarcMessageBus().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceEventarcMessageBusRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -562,7 +566,7 @@ func resourceEventarcMessageBusUpdate(d *schema.ResourceData, meta interface{}) 
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/messageBuses/{{message_bus_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/messageBuses/{{message_bus_id}}")
 	if err != nil {
 		return err
 	}
@@ -634,6 +638,13 @@ func resourceEventarcMessageBusUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceEventarcMessageBusDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy EventarcMessageBus without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing MessageBus %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -647,8 +658,7 @@ func resourceEventarcMessageBusDelete(d *schema.ResourceData, meta interface{}) 
 		return fmt.Errorf("Error fetching project for MessageBus: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/messageBuses/{{message_bus_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/messageBuses/{{message_bus_id}}")
 	if err != nil {
 		return err
 	}
@@ -861,4 +871,50 @@ func expandEventarcMessageBusEffectiveAnnotations(v interface{}, d tpgresource.T
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceEventarcMessageBusFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenEventarcMessageBusName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("logging_config", flattenEventarcMessageBusLoggingConfig(res["loggingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("update_time", flattenEventarcMessageBusUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("labels", flattenEventarcMessageBusLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("annotations", flattenEventarcMessageBusAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("uid", flattenEventarcMessageBusUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("etag", flattenEventarcMessageBusEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("create_time", flattenEventarcMessageBusCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("display_name", flattenEventarcMessageBusDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("crypto_key_name", flattenEventarcMessageBusCryptoKeyName(res["cryptoKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenEventarcMessageBusTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenEventarcMessageBusEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenEventarcMessageBusEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MessageBus: %s", err)
+	}
+
+	return nil
 }

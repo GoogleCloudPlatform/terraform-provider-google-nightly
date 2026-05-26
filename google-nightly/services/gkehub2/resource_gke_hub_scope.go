@@ -116,6 +116,7 @@ func ResourceGKEHub2Scope() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -222,6 +223,18 @@ share a key. Keys and values must be Kubernetes-conformant.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -248,7 +261,7 @@ func resourceGKEHub2ScopeCreate(d *schema.ResourceData, meta interface{}) error 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GKEHub2BasePath}}projects/{{project}}/locations/global/scopes?scopeId={{scope_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/scopes?scopeId={{scope_id}}")
 	if err != nil {
 		return err
 	}
@@ -327,7 +340,7 @@ func resourceGKEHub2ScopeRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GKEHub2BasePath}}projects/{{project}}/locations/global/scopes/{{scope_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/scopes/{{scope_id}}")
 	if err != nil {
 		return err
 	}
@@ -360,39 +373,26 @@ func resourceGKEHub2ScopeRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading GKEHub2Scope %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Scope: %s", err)
 	}
 
-	if err := d.Set("name", flattenGKEHub2ScopeName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
-	}
-	if err := d.Set("uid", flattenGKEHub2ScopeUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
-	}
-	if err := d.Set("create_time", flattenGKEHub2ScopeCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
-	}
-	if err := d.Set("update_time", flattenGKEHub2ScopeUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
-	}
-	if err := d.Set("delete_time", flattenGKEHub2ScopeDeleteTime(res["deleteTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
-	}
-	if err := d.Set("state", flattenGKEHub2ScopeState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
-	}
-	if err := d.Set("namespace_labels", flattenGKEHub2ScopeNamespaceLabels(res["namespaceLabels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
-	}
-	if err := d.Set("labels", flattenGKEHub2ScopeLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenGKEHub2ScopeTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenGKEHub2ScopeEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Scope: %s", err)
+	err = ResourceGKEHub2ScopeFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -417,6 +417,19 @@ func resourceGKEHub2ScopeRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceGKEHub2ScopeUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceGKEHub2Scope().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceGKEHub2ScopeRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -460,7 +473,7 @@ func resourceGKEHub2ScopeUpdate(d *schema.ResourceData, meta interface{}) error 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GKEHub2BasePath}}projects/{{project}}/locations/global/scopes/{{scope_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/scopes/{{scope_id}}")
 	if err != nil {
 		return err
 	}
@@ -520,6 +533,13 @@ func resourceGKEHub2ScopeUpdate(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceGKEHub2ScopeDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy GKEHub2Scope without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Scope %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -533,8 +553,7 @@ func resourceGKEHub2ScopeDelete(d *schema.ResourceData, meta interface{}) error 
 		return fmt.Errorf("Error fetching project for Scope: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{GKEHub2BasePath}}projects/{{project}}/locations/global/scopes/{{scope_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/scopes/{{scope_id}}")
 	if err != nil {
 		return err
 	}
@@ -690,4 +709,41 @@ func expandGKEHub2ScopeEffectiveLabels(v interface{}, d tpgresource.TerraformRes
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceGKEHub2ScopeFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenGKEHub2ScopeName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+	if err = d.Set("uid", flattenGKEHub2ScopeUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+	if err = d.Set("create_time", flattenGKEHub2ScopeCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+	if err = d.Set("update_time", flattenGKEHub2ScopeUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+	if err = d.Set("delete_time", flattenGKEHub2ScopeDeleteTime(res["deleteTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+	if err = d.Set("state", flattenGKEHub2ScopeState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+	if err = d.Set("namespace_labels", flattenGKEHub2ScopeNamespaceLabels(res["namespaceLabels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+	if err = d.Set("labels", flattenGKEHub2ScopeLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenGKEHub2ScopeTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenGKEHub2ScopeEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Scope: %s", err)
+	}
+
+	return nil
 }

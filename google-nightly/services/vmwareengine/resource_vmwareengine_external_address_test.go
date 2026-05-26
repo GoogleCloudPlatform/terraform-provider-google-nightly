@@ -26,6 +26,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vmwareengine"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -273,7 +274,7 @@ func testAccCheckVmwareengineExternalAddressDestroyProducer(t *testing.T) func(s
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{VmwareengineBasePath}}{{parent}}/externalAddresses/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(vmwareengine.Product, config)+"{{parent}}/externalAddresses/{{name}}")
 			if err != nil {
 				return err
 			}

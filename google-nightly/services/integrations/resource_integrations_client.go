@@ -100,6 +100,7 @@ func ResourceIntegrationsClient() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceIntegrationsClientCreate,
 		Read:   resourceIntegrationsClientRead,
+		Update: resourceIntegrationsClientUpdate,
 		Delete: resourceIntegrationsClientDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +114,7 @@ func ResourceIntegrationsClient() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -211,6 +213,18 @@ encrypted with GMEK.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -250,7 +264,7 @@ func resourceIntegrationsClientCreate(d *schema.ResourceData, meta interface{}) 
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IntegrationsBasePath}}projects/{{project}}/locations/{{location}}/clients:provision")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clients:provision")
 	if err != nil {
 		return err
 	}
@@ -324,7 +338,7 @@ func resourceIntegrationsClientRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IntegrationsBasePath}}projects/{{project}}/locations/{{location}}/clients")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clients")
 	if err != nil {
 		return err
 	}
@@ -369,8 +383,26 @@ func resourceIntegrationsClientRead(d *schema.ResourceData, meta interface{}) er
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Client: %s", err)
+	}
+
+	err = ResourceIntegrationsClientFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -394,7 +426,19 @@ func resourceIntegrationsClientRead(d *schema.ResourceData, meta interface{}) er
 	return nil
 }
 
+func resourceIntegrationsClientUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceIntegrationsClientRead(d, meta)
+}
+
 func resourceIntegrationsClientDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy IntegrationsClient without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Client %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -415,8 +459,7 @@ func resourceIntegrationsClientDelete(d *schema.ResourceData, meta interface{}) 
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{IntegrationsBasePath}}projects/{{project}}/locations/{{location}}/clients:deprovision")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clients:deprovision")
 	if err != nil {
 		return err
 	}
@@ -552,4 +595,9 @@ func resourceIntegrationsClientDecoder(d *schema.ResourceData, meta interface{},
 	// Adding this decoder as placeholder else the linter will
 	// complain that the returned `res` is never used afterwards.
 	return res, nil
+}
+
+func ResourceIntegrationsClientFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+
+	return nil
 }

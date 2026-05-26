@@ -240,7 +240,7 @@ func resourceComputeNetworkPeeringRoutesConfigCreate(d *schema.ResourceData, met
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/networks/{{network}}/updatePeering")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/networks/{{network}}/updatePeering")
 	if err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func resourceComputeNetworkPeeringRoutesConfigRead(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/networks/{{network}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/networks/{{network}}")
 	if err != nil {
 		return err
 	}
@@ -373,20 +373,9 @@ func resourceComputeNetworkPeeringRoutesConfigRead(d *schema.ResourceData, meta 
 		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
 	}
 
-	if err := d.Set("peering", flattenNestedComputeNetworkPeeringRoutesConfigPeering(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
-	}
-	if err := d.Set("export_custom_routes", flattenNestedComputeNetworkPeeringRoutesConfigExportCustomRoutes(res["exportCustomRoutes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
-	}
-	if err := d.Set("import_custom_routes", flattenNestedComputeNetworkPeeringRoutesConfigImportCustomRoutes(res["importCustomRoutes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
-	}
-	if err := d.Set("export_subnet_routes_with_public_ip", flattenNestedComputeNetworkPeeringRoutesConfigExportSubnetRoutesWithPublicIp(res["exportSubnetRoutesWithPublicIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
-	}
-	if err := d.Set("import_subnet_routes_with_public_ip", flattenNestedComputeNetworkPeeringRoutesConfigImportSubnetRoutesWithPublicIp(res["importSubnetRoutesWithPublicIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
+	err = ResourceComputeNetworkPeeringRoutesConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -417,6 +406,7 @@ func resourceComputeNetworkPeeringRoutesConfigRead(d *schema.ResourceData, meta 
 }
 
 func resourceComputeNetworkPeeringRoutesConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -495,7 +485,7 @@ func resourceComputeNetworkPeeringRoutesConfigUpdate(d *schema.ResourceData, met
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/networks/{{network}}/updatePeering")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/networks/{{network}}/updatePeering")
 	if err != nil {
 		return err
 	}
@@ -663,4 +653,26 @@ func resourceComputeNetworkPeeringRoutesConfigFindNestedObjectInList(d *schema.R
 		return idx, item, nil
 	}
 	return -1, nil, nil
+}
+
+func ResourceComputeNetworkPeeringRoutesConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("peering", flattenNestedComputeNetworkPeeringRoutesConfigPeering(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
+	}
+	if err = d.Set("export_custom_routes", flattenNestedComputeNetworkPeeringRoutesConfigExportCustomRoutes(res["exportCustomRoutes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
+	}
+	if err = d.Set("import_custom_routes", flattenNestedComputeNetworkPeeringRoutesConfigImportCustomRoutes(res["importCustomRoutes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
+	}
+	if err = d.Set("export_subnet_routes_with_public_ip", flattenNestedComputeNetworkPeeringRoutesConfigExportSubnetRoutesWithPublicIp(res["exportSubnetRoutesWithPublicIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
+	}
+	if err = d.Set("import_subnet_routes_with_public_ip", flattenNestedComputeNetworkPeeringRoutesConfigImportSubnetRoutesWithPublicIp(res["importSubnetRoutesWithPublicIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkPeeringRoutesConfig: %s", err)
+	}
+
+	return nil
 }

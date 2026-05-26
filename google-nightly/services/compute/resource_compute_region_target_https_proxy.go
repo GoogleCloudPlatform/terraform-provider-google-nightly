@@ -115,6 +115,7 @@ func ResourceComputeRegionTargetHttpsProxy() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -256,6 +257,18 @@ resource will not have any SSL policy configured.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -329,7 +342,7 @@ func resourceComputeRegionTargetHttpsProxyCreate(d *schema.ResourceData, meta in
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetHttpsProxies")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetHttpsProxies")
 	if err != nil {
 		return err
 	}
@@ -413,7 +426,7 @@ func resourceComputeRegionTargetHttpsProxyRead(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -458,45 +471,26 @@ func resourceComputeRegionTargetHttpsProxyRead(d *schema.ResourceData, meta inte
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeRegionTargetHttpsProxyCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("description", flattenComputeRegionTargetHttpsProxyDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("proxy_id", flattenComputeRegionTargetHttpsProxyProxyId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("name", flattenComputeRegionTargetHttpsProxyName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("certificate_manager_certificates", flattenComputeRegionTargetHttpsProxyCertificateManagerCertificates(res["certificateManagerCertificates"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("ssl_certificates", flattenComputeRegionTargetHttpsProxySslCertificates(res["sslCertificates"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("ssl_policy", flattenComputeRegionTargetHttpsProxySslPolicy(res["sslPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("url_map", flattenComputeRegionTargetHttpsProxyUrlMap(res["urlMap"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("http_keep_alive_timeout_sec", flattenComputeRegionTargetHttpsProxyHttpKeepAliveTimeoutSec(res["httpKeepAliveTimeoutSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("server_tls_policy", flattenComputeRegionTargetHttpsProxyServerTlsPolicy(res["serverTlsPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("region", flattenComputeRegionTargetHttpsProxyRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	err = ResourceComputeRegionTargetHttpsProxyFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -527,6 +521,19 @@ func resourceComputeRegionTargetHttpsProxyRead(d *schema.ResourceData, meta inte
 }
 
 func resourceComputeRegionTargetHttpsProxyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeRegionTargetHttpsProxy().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeRegionTargetHttpsProxyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -584,7 +591,7 @@ func resourceComputeRegionTargetHttpsProxyUpdate(d *schema.ResourceData, meta in
 			return err
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}/setSslCertificates")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}/setSslCertificates")
 		if err != nil {
 			return err
 		}
@@ -634,7 +641,7 @@ func resourceComputeRegionTargetHttpsProxyUpdate(d *schema.ResourceData, meta in
 			return err
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}/setUrlMap")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}/setUrlMap")
 		if err != nil {
 			return err
 		}
@@ -672,7 +679,7 @@ func resourceComputeRegionTargetHttpsProxyUpdate(d *schema.ResourceData, meta in
 	if d.HasChange("server_tls_policy") {
 		obj := make(map[string]interface{})
 
-		getUrl, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
+		getUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -707,7 +714,7 @@ func resourceComputeRegionTargetHttpsProxyUpdate(d *schema.ResourceData, meta in
 			return err
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -745,7 +752,7 @@ func resourceComputeRegionTargetHttpsProxyUpdate(d *schema.ResourceData, meta in
 	if d.HasChange("ssl_policy") {
 		obj := make(map[string]interface{})
 
-		getUrl, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
+		getUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -780,7 +787,7 @@ func resourceComputeRegionTargetHttpsProxyUpdate(d *schema.ResourceData, meta in
 			return err
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -822,6 +829,13 @@ func resourceComputeRegionTargetHttpsProxyUpdate(d *schema.ResourceData, meta in
 }
 
 func resourceComputeRegionTargetHttpsProxyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeRegionTargetHttpsProxy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RegionTargetHttpsProxy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -835,8 +849,7 @@ func resourceComputeRegionTargetHttpsProxyDelete(d *schema.ResourceData, meta in
 		return fmt.Errorf("Error fetching project for RegionTargetHttpsProxy: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetHttpsProxies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1122,4 +1135,46 @@ func resourceComputeRegionTargetHttpsProxyDecoder(d *schema.ResourceData, meta i
 		}
 	}
 	return res, nil
+}
+
+func ResourceComputeRegionTargetHttpsProxyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeRegionTargetHttpsProxyCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("description", flattenComputeRegionTargetHttpsProxyDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("proxy_id", flattenComputeRegionTargetHttpsProxyProxyId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("name", flattenComputeRegionTargetHttpsProxyName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("certificate_manager_certificates", flattenComputeRegionTargetHttpsProxyCertificateManagerCertificates(res["certificateManagerCertificates"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("ssl_certificates", flattenComputeRegionTargetHttpsProxySslCertificates(res["sslCertificates"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("ssl_policy", flattenComputeRegionTargetHttpsProxySslPolicy(res["sslPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("url_map", flattenComputeRegionTargetHttpsProxyUrlMap(res["urlMap"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("http_keep_alive_timeout_sec", flattenComputeRegionTargetHttpsProxyHttpKeepAliveTimeoutSec(res["httpKeepAliveTimeoutSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("server_tls_policy", flattenComputeRegionTargetHttpsProxyServerTlsPolicy(res["serverTlsPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("region", flattenComputeRegionTargetHttpsProxyRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading RegionTargetHttpsProxy: %s", err)
+	}
+	return nil
 }

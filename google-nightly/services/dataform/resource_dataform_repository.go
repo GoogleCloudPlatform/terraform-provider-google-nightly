@@ -116,6 +116,7 @@ func ResourceDataformRepository() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -276,18 +277,17 @@ Please refer to the field 'effective_labels' for all of the labels present on th
  and default labels configured on the provider.`,
 				Elem: &schema.Schema{Type: schema.TypeString},
 			},
-			"deletion_policy": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				ValidateFunc: verify.ValidateEnum([]string{"DELETE", "FORCE", ""}),
-				Description:  `Policy to control how the repository and its child resources are deleted. When set to 'FORCE', any child resources of this repository will also be deleted. Possible values: 'DELETE', 'FORCE'. Defaults to 'DELETE'. Default value: "DELETE" Possible values: ["DELETE", "FORCE"]`,
-				Default:      "DELETE",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/dataform_repository.html.markdown for specifics`,
 			},
 		},
 		UseJSONNumber: true,
@@ -351,7 +351,7 @@ func resourceDataformRepositoryCreate(d *schema.ResourceData, meta interface{}) 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataformBasePath}}projects/{{project}}/locations/{{region}}/repositories?repositoryId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/repositories?repositoryId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -425,7 +425,7 @@ func resourceDataformRepositoryRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataformBasePath}}projects/{{project}}/locations/{{region}}/repositories/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/repositories/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -460,43 +460,24 @@ func resourceDataformRepositoryRead(d *schema.ResourceData, meta interface{}) er
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DELETE"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Repository: %s", err)
 	}
 
-	if err := d.Set("name", flattenDataformRepositoryName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("git_remote_settings", flattenDataformRepositoryGitRemoteSettings(res["gitRemoteSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("workspace_compilation_overrides", flattenDataformRepositoryWorkspaceCompilationOverrides(res["workspaceCompilationOverrides"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("service_account", flattenDataformRepositoryServiceAccount(res["serviceAccount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("npmrc_environment_variables_secret_version", flattenDataformRepositoryNpmrcEnvironmentVariablesSecretVersion(res["npmrcEnvironmentVariablesSecretVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("display_name", flattenDataformRepositoryDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("kms_key_name", flattenDataformRepositoryKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("labels", flattenDataformRepositoryLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDataformRepositoryTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDataformRepositoryEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
+	err = ResourceDataformRepositoryFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -527,6 +508,19 @@ func resourceDataformRepositoryRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceDataformRepositoryUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDataformRepository().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDataformRepositoryRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -605,7 +599,7 @@ func resourceDataformRepositoryUpdate(d *schema.ResourceData, meta interface{}) 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataformBasePath}}projects/{{project}}/locations/{{region}}/repositories/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/repositories/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -639,6 +633,13 @@ func resourceDataformRepositoryUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceDataformRepositoryDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DataformRepository without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Repository %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -652,8 +653,7 @@ func resourceDataformRepositoryDelete(d *schema.ResourceData, meta interface{}) 
 		return fmt.Errorf("Error fetching project for Repository: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataformBasePath}}projects/{{project}}/locations/{{region}}/repositories/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/repositories/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -715,9 +715,6 @@ func resourceDataformRepositoryImport(d *schema.ResourceData, meta interface{}) 
 	d.SetId(id)
 
 	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "DELETE"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -1048,4 +1045,41 @@ func expandDataformRepositoryEffectiveLabels(v interface{}, d tpgresource.Terraf
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceDataformRepositoryFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDataformRepositoryName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("git_remote_settings", flattenDataformRepositoryGitRemoteSettings(res["gitRemoteSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("workspace_compilation_overrides", flattenDataformRepositoryWorkspaceCompilationOverrides(res["workspaceCompilationOverrides"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("service_account", flattenDataformRepositoryServiceAccount(res["serviceAccount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("npmrc_environment_variables_secret_version", flattenDataformRepositoryNpmrcEnvironmentVariablesSecretVersion(res["npmrcEnvironmentVariablesSecretVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("display_name", flattenDataformRepositoryDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("kms_key_name", flattenDataformRepositoryKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("labels", flattenDataformRepositoryLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDataformRepositoryTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDataformRepositoryEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+
+	return nil
 }

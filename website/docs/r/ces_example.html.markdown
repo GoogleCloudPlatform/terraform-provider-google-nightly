@@ -98,7 +98,7 @@ resource "google_ces_agent" "ces_base_agent" {
     instruction = "You are a helpful assistant for this example."
 
     model_settings {
-        model       = "gemini-2.5-flash"
+        model       = "gemini-3.0-flash-001"
         temperature = 0.5
     }
 
@@ -115,7 +115,7 @@ resource "google_ces_agent" "ces_child_agent" {
     instruction = "You are a helpful assistant for this example."
 
     model_settings {
-        model       = "gemini-2.5-flash"
+        model       = "gemini-3.0-flash-001"
         temperature = 0.5
     }
 
@@ -241,6 +241,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_messages"></a>The `messages` block supports:

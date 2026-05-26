@@ -212,6 +212,7 @@ func ResourceAccessContextManagerServicePerimeterIngressPolicy() *schema.Resourc
 	return &schema.Resource{
 		Create: resourceAccessContextManagerServicePerimeterIngressPolicyCreate,
 		Read:   resourceAccessContextManagerServicePerimeterIngressPolicyRead,
+		Update: resourceAccessContextManagerServicePerimeterIngressPolicyUpdate,
 		Delete: resourceAccessContextManagerServicePerimeterIngressPolicyDelete,
 
 		Timeouts: &schema.ResourceTimeout{
@@ -418,6 +419,19 @@ are allowed to perform.`,
 				Computed:    true,
 				Description: `The perimeter etag is internally used to prevent overwriting the list of policies on PATCH calls. It is retrieved from the same GET perimeter API call that's used to get the current list of policies. The policy defined in this resource is added or removed from that list, and then this etag is sent with the PATCH call along with the updated policies.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -462,7 +476,7 @@ func resourceAccessContextManagerServicePerimeterIngressPolicyCreate(d *schema.R
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{perimeter}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{perimeter}}")
 	if err != nil {
 		return err
 	}
@@ -554,7 +568,7 @@ func resourceAccessContextManagerServicePerimeterIngressPolicyRead(d *schema.Res
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{perimeter}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{perimeter}}")
 	if err != nil {
 		return err
 	}
@@ -596,17 +610,23 @@ func resourceAccessContextManagerServicePerimeterIngressPolicyRead(d *schema.Res
 		return nil
 	}
 
-	if err := d.Set("ingress_from", flattenNestedAccessContextManagerServicePerimeterIngressPolicyIngressFrom(res["ingressFrom"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServicePerimeterIngressPolicy: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("ingress_to", flattenNestedAccessContextManagerServicePerimeterIngressPolicyIngressTo(res["ingressTo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServicePerimeterIngressPolicy: %s", err)
-	}
-	if err := d.Set("title", flattenNestedAccessContextManagerServicePerimeterIngressPolicyTitle(res["title"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServicePerimeterIngressPolicy: %s", err)
-	}
-	if err := d.Set("etag", flattenNestedAccessContextManagerServicePerimeterIngressPolicyEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServicePerimeterIngressPolicy: %s", err)
+
+	err = ResourceAccessContextManagerServicePerimeterIngressPolicyFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -624,7 +644,19 @@ func resourceAccessContextManagerServicePerimeterIngressPolicyRead(d *schema.Res
 	return nil
 }
 
+func resourceAccessContextManagerServicePerimeterIngressPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceAccessContextManagerServicePerimeterIngressPolicyRead(d, meta)
+}
+
 func resourceAccessContextManagerServicePerimeterIngressPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy AccessContextManagerServicePerimeterIngressPolicy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ServicePerimeterIngressPolicy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -639,8 +671,7 @@ func resourceAccessContextManagerServicePerimeterIngressPolicyDelete(d *schema.R
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{perimeter}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{perimeter}}")
 	if err != nil {
 		return err
 	}
@@ -651,6 +682,7 @@ func resourceAccessContextManagerServicePerimeterIngressPolicyDelete(d *schema.R
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, "ServicePerimeterIngressPolicy")
 	}
+
 	url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": "status.ingressPolicies"})
 	if err != nil {
 		return err
@@ -1299,4 +1331,23 @@ func resourceAccessContextManagerServicePerimeterIngressPolicyListForPatch(d *sc
 		return ls, nil
 	}
 	return nil, nil
+}
+
+func ResourceAccessContextManagerServicePerimeterIngressPolicyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("ingress_from", flattenNestedAccessContextManagerServicePerimeterIngressPolicyIngressFrom(res["ingressFrom"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServicePerimeterIngressPolicy: %s", err)
+	}
+	if err = d.Set("ingress_to", flattenNestedAccessContextManagerServicePerimeterIngressPolicyIngressTo(res["ingressTo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServicePerimeterIngressPolicy: %s", err)
+	}
+	if err = d.Set("title", flattenNestedAccessContextManagerServicePerimeterIngressPolicyTitle(res["title"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServicePerimeterIngressPolicy: %s", err)
+	}
+	if err = d.Set("etag", flattenNestedAccessContextManagerServicePerimeterIngressPolicyEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServicePerimeterIngressPolicy: %s", err)
+	}
+
+	return nil
 }

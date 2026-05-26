@@ -29,6 +29,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataplex"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 )
 
@@ -91,7 +92,6 @@ func TestAccDataplexAspectTypeIamMemberGenerated(t *testing.T) {
 		},
 	})
 }
-
 func TestAccDataplexAspectTypeIamPolicyGenerated(t *testing.T) {
 	t.Parallel()
 

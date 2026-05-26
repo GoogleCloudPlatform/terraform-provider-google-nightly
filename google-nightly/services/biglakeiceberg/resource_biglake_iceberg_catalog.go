@@ -115,6 +115,7 @@ func ResourceBiglakeIcebergIcebergCatalog() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -221,6 +222,18 @@ catalog's location.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -247,7 +260,7 @@ func resourceBiglakeIcebergIcebergCatalogCreate(d *schema.ResourceData, meta int
 		obj["catalog-type"] = catalogTypeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeIcebergBasePath}}iceberg/v1/restcatalog/extensions/projects/{{project}}/catalogs?iceberg-catalog-id={{name}}&primary_location={{primary_location}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"iceberg/v1/restcatalog/extensions/projects/{{project}}/catalogs?iceberg-catalog-id={{name}}&primary_location={{primary_location}}")
 	if err != nil {
 		return err
 	}
@@ -320,7 +333,7 @@ func resourceBiglakeIcebergIcebergCatalogRead(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeIcebergBasePath}}iceberg/v1/restcatalog/extensions/projects/{{project}}/catalogs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"iceberg/v1/restcatalog/extensions/projects/{{project}}/catalogs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -357,33 +370,26 @@ func resourceBiglakeIcebergIcebergCatalogRead(d *schema.ResourceData, meta inter
 
 	log.Printf("[DEBUG] Finished reading BiglakeIcebergIcebergCatalog %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
 	}
 
-	if err := d.Set("credential_mode", flattenBiglakeIcebergIcebergCatalogCredentialMode(res["credential-mode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
-	}
-	if err := d.Set("biglake_service_account", flattenBiglakeIcebergIcebergCatalogBiglakeServiceAccount(res["biglake-service-account"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
-	}
-	if err := d.Set("catalog_type", flattenBiglakeIcebergIcebergCatalogCatalogType(res["catalog-type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
-	}
-	if err := d.Set("default_location", flattenBiglakeIcebergIcebergCatalogDefaultLocation(res["default-location"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
-	}
-	if err := d.Set("storage_regions", flattenBiglakeIcebergIcebergCatalogStorageRegions(res["storage-regions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
-	}
-	if err := d.Set("create_time", flattenBiglakeIcebergIcebergCatalogCreateTime(res["create-time"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
-	}
-	if err := d.Set("update_time", flattenBiglakeIcebergIcebergCatalogUpdateTime(res["update-time"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
-	}
-	if err := d.Set("replicas", flattenBiglakeIcebergIcebergCatalogReplicas(res["replicas"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
+	err = ResourceBiglakeIcebergIcebergCatalogFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -408,6 +414,19 @@ func resourceBiglakeIcebergIcebergCatalogRead(d *schema.ResourceData, meta inter
 }
 
 func resourceBiglakeIcebergIcebergCatalogUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceBiglakeIcebergIcebergCatalog().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceBiglakeIcebergIcebergCatalogRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -482,6 +501,13 @@ func resourceBiglakeIcebergIcebergCatalogUpdate(d *schema.ResourceData, meta int
 }
 
 func resourceBiglakeIcebergIcebergCatalogDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BiglakeIcebergIcebergCatalog without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing IcebergCatalog %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -495,8 +521,7 @@ func resourceBiglakeIcebergIcebergCatalogDelete(d *schema.ResourceData, meta int
 		return fmt.Errorf("Error fetching project for IcebergCatalog: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeIcebergBasePath}}iceberg/v1/restcatalog/extensions/projects/{{project}}/catalogs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"iceberg/v1/restcatalog/extensions/projects/{{project}}/catalogs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -613,4 +638,35 @@ func expandBiglakeIcebergIcebergCatalogCredentialMode(v interface{}, d tpgresour
 
 func expandBiglakeIcebergIcebergCatalogCatalogType(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceBiglakeIcebergIcebergCatalogFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("credential_mode", flattenBiglakeIcebergIcebergCatalogCredentialMode(res["credential-mode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
+	}
+	if err = d.Set("biglake_service_account", flattenBiglakeIcebergIcebergCatalogBiglakeServiceAccount(res["biglake-service-account"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
+	}
+	if err = d.Set("catalog_type", flattenBiglakeIcebergIcebergCatalogCatalogType(res["catalog-type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
+	}
+	if err = d.Set("default_location", flattenBiglakeIcebergIcebergCatalogDefaultLocation(res["default-location"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
+	}
+	if err = d.Set("storage_regions", flattenBiglakeIcebergIcebergCatalogStorageRegions(res["storage-regions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
+	}
+	if err = d.Set("create_time", flattenBiglakeIcebergIcebergCatalogCreateTime(res["create-time"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
+	}
+	if err = d.Set("update_time", flattenBiglakeIcebergIcebergCatalogUpdateTime(res["update-time"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
+	}
+	if err = d.Set("replicas", flattenBiglakeIcebergIcebergCatalogReplicas(res["replicas"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IcebergCatalog: %s", err)
+	}
+
+	return nil
 }

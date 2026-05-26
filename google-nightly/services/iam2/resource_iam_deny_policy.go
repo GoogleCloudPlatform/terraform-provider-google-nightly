@@ -248,6 +248,19 @@ For example, you could add a Google group to the deniedPrincipals, then exclude 
 				Computed:    true,
 				Description: `The hash of the resource. Used internally during updates.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -280,7 +293,7 @@ func resourceIAM2DenyPolicyCreate(d *schema.ResourceData, meta interface{}) erro
 		obj["rules"] = rulesProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAM2BasePath}}policies/{{parent}}/denypolicies?policyId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"policies/{{parent}}/denypolicies?policyId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -353,7 +366,7 @@ func resourceIAM2DenyPolicyRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAM2BasePath}}policies/{{parent}}/denypolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"policies/{{parent}}/denypolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -380,14 +393,23 @@ func resourceIAM2DenyPolicyRead(d *schema.ResourceData, meta interface{}) error 
 
 	log.Printf("[DEBUG] Finished reading IAM2DenyPolicy %q: %#v", d.Id(), res)
 
-	if err := d.Set("display_name", flattenIAM2DenyPolicyDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DenyPolicy: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("etag", flattenIAM2DenyPolicyEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DenyPolicy: %s", err)
-	}
-	if err := d.Set("rules", flattenIAM2DenyPolicyRules(res["rules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DenyPolicy: %s", err)
+
+	err = ResourceIAM2DenyPolicyFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -412,6 +434,19 @@ func resourceIAM2DenyPolicyRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceIAM2DenyPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceIAM2DenyPolicy().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceIAM2DenyPolicyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -455,7 +490,7 @@ func resourceIAM2DenyPolicyUpdate(d *schema.ResourceData, meta interface{}) erro
 		obj["rules"] = rulesProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAM2BasePath}}policies/{{parent}}/denypolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"policies/{{parent}}/denypolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -497,6 +532,13 @@ func resourceIAM2DenyPolicyUpdate(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceIAM2DenyPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy IAM2DenyPolicy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DenyPolicy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -505,7 +547,7 @@ func resourceIAM2DenyPolicyDelete(d *schema.ResourceData, meta interface{}) erro
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAM2BasePath}}policies/{{parent}}/denypolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"policies/{{parent}}/denypolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -834,4 +876,20 @@ func expandIAM2DenyPolicyRulesDenyRuleDenialConditionDescription(v interface{}, 
 
 func expandIAM2DenyPolicyRulesDenyRuleDenialConditionLocation(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceIAM2DenyPolicyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("display_name", flattenIAM2DenyPolicyDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DenyPolicy: %s", err)
+	}
+	if err = d.Set("etag", flattenIAM2DenyPolicyEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DenyPolicy: %s", err)
+	}
+	if err = d.Set("rules", flattenIAM2DenyPolicyRules(res["rules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DenyPolicy: %s", err)
+	}
+
+	return nil
 }

@@ -25,13 +25,15 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/observability"
 )
 
 func TestAccObservabilityOrganizationSettings_update(t *testing.T) {
 
 	context := map[string]interface{}{
 		"org_id":       envvar.GetTestOrgFromEnv(t),
-		"kms_key_name": acctest.BootstrapKMSKeyInLocation(t, "us").CryptoKey.Name,
+		"kms_key_name": kms.BootstrapKMSKeyInLocation(t, "us").CryptoKey.Name,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{

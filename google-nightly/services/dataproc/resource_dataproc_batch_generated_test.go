@@ -30,6 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataproc"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataprocmetastore"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +52,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = dataproc.Product
 )
 
 func TestAccDataprocBatch_dataprocBatchSparkExample(t *testing.T) {
@@ -58,7 +63,7 @@ func TestAccDataprocBatch_dataprocBatchSparkExample(t *testing.T) {
 	context := map[string]interface{}{
 		"project_name":    envvar.GetTestProjectFromEnv(),
 		"prevent_destroy": false,
-		"subnetwork_name": acctest.BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-spark-test-network", "dataproc-spark-test-subnetwork"),
+		"subnetwork_name": BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-spark-test-network", "dataproc-spark-test-subnetwork"),
 		"random_suffix":   randomSuffix,
 	}
 
@@ -124,7 +129,7 @@ func TestAccDataprocBatch_dataprocBatchSparkFullExample(t *testing.T) {
 		"project_name":    envvar.GetTestProjectFromEnv(),
 		"bucket_name":     "tf-test-dataproc-bucket" + randomSuffix,
 		"dataproc_batch":  "tf-test-dataproc-batch" + randomSuffix,
-		"kms_key_name":    acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-dataproc-batch-key1").CryptoKey.Name,
+		"kms_key_name":    kms.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-dataproc-batch-key1").CryptoKey.Name,
 		"prevent_destroy": false,
 		"random_suffix":   randomSuffix,
 	}
@@ -272,7 +277,7 @@ func TestAccDataprocBatch_dataprocBatchSparksqlExample(t *testing.T) {
 	context := map[string]interface{}{
 		"project_name":    envvar.GetTestProjectFromEnv(),
 		"prevent_destroy": false,
-		"subnetwork_name": acctest.BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-sparksql-test-network", "dataproc-sparksql-test-subnetwork"),
+		"subnetwork_name": BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-sparksql-test-network", "dataproc-sparksql-test-subnetwork"),
 		"random_suffix":   randomSuffix,
 	}
 
@@ -336,7 +341,7 @@ func TestAccDataprocBatch_dataprocBatchPysparkExample(t *testing.T) {
 	context := map[string]interface{}{
 		"project_name":    envvar.GetTestProjectFromEnv(),
 		"prevent_destroy": false,
-		"subnetwork_name": acctest.BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-pyspark-test-network", "dataproc-pyspark-test-subnetwork"),
+		"subnetwork_name": BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-pyspark-test-network", "dataproc-pyspark-test-subnetwork"),
 		"random_suffix":   randomSuffix,
 	}
 
@@ -404,7 +409,7 @@ func TestAccDataprocBatch_dataprocBatchSparkrExample(t *testing.T) {
 	context := map[string]interface{}{
 		"project_name":    envvar.GetTestProjectFromEnv(),
 		"prevent_destroy": false,
-		"subnetwork_name": acctest.BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-pyspark-test-network", "dataproc-pyspark-test-subnetwork"),
+		"subnetwork_name": BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-pyspark-test-network", "dataproc-pyspark-test-subnetwork"),
 		"random_suffix":   randomSuffix,
 	}
 
@@ -468,7 +473,7 @@ func TestAccDataprocBatch_dataprocBatchAutotuningExample(t *testing.T) {
 	context := map[string]interface{}{
 		"project_name":    envvar.GetTestProjectFromEnv(),
 		"prevent_destroy": false,
-		"subnetwork_name": acctest.BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-autotuning-test-network", "dataproc-autotuning-test-subnetwork"),
+		"subnetwork_name": BootstrapSubnetWithFirewallForDataprocBatches(t, "dataproc-autotuning-test-network", "dataproc-autotuning-test-subnetwork"),
 		"random_suffix":   randomSuffix,
 	}
 
@@ -540,8 +545,7 @@ func testAccCheckDataprocBatchDestroyProducer(t *testing.T) func(s *terraform.St
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DataprocBasePath}}projects/{{project}}/locations/{{location}}/batches/{{batch_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(dataproc.Product, config)+"projects/{{project}}/locations/{{location}}/batches/{{batch_id}}")
 			if err != nil {
 				return err
 			}

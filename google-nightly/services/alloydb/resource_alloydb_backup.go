@@ -117,6 +117,7 @@ func ResourceAlloydbBackup() *schema.Resource {
 			tpgresource.SetLabelsDiff,
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -343,6 +344,18 @@ Examples: "2014-10-02T15:01:23Z" and "2014-10-02T15:01:23.045123456Z".`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -404,7 +417,7 @@ func resourceAlloydbBackupCreate(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AlloydbBasePath}}projects/{{project}}/locations/{{location}}/backups?backupId={{backup_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backups?backupId={{backup_id}}")
 	if err != nil {
 		return err
 	}
@@ -488,7 +501,7 @@ func resourceAlloydbBackupRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AlloydbBasePath}}projects/{{project}}/locations/{{location}}/backups/{{backup_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backups/{{backup_id}}")
 	if err != nil {
 		return err
 	}
@@ -521,78 +534,26 @@ func resourceAlloydbBackupRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading AlloydbBackup %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Backup: %s", err)
 	}
 
-	if err := d.Set("name", flattenAlloydbBackupName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("display_name", flattenAlloydbBackupDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("uid", flattenAlloydbBackupUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("create_time", flattenAlloydbBackupCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("update_time", flattenAlloydbBackupUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("delete_time", flattenAlloydbBackupDeleteTime(res["deleteTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("labels", flattenAlloydbBackupLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("state", flattenAlloydbBackupState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("type", flattenAlloydbBackupType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("description", flattenAlloydbBackupDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("cluster_uid", flattenAlloydbBackupClusterUid(res["clusterUid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("cluster_name", flattenAlloydbBackupClusterName(res["clusterName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("reconciling", flattenAlloydbBackupReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("encryption_config", flattenAlloydbBackupEncryptionConfig(res["encryptionConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("encryption_info", flattenAlloydbBackupEncryptionInfo(res["encryptionInfo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("etag", flattenAlloydbBackupEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("annotations", flattenAlloydbBackupAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("size_bytes", flattenAlloydbBackupSizeBytes(res["sizeBytes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("expiry_time", flattenAlloydbBackupExpiryTime(res["expiryTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("expiry_quantity", flattenAlloydbBackupExpiryQuantity(res["expiryQuantity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenAlloydbBackupTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenAlloydbBackupEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenAlloydbBackupEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Backup: %s", err)
+	err = ResourceAlloydbBackupFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -623,6 +584,19 @@ func resourceAlloydbBackupRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceAlloydbBackupUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceAlloydbBackup().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceAlloydbBackupRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -700,7 +674,7 @@ func resourceAlloydbBackupUpdate(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AlloydbBasePath}}projects/{{project}}/locations/{{location}}/backups/{{backup_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backups/{{backup_id}}")
 	if err != nil {
 		return err
 	}
@@ -776,6 +750,13 @@ func resourceAlloydbBackupUpdate(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceAlloydbBackupDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy AlloydbBackup without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Backup %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -789,8 +770,7 @@ func resourceAlloydbBackupDelete(d *schema.ResourceData, meta interface{}) error
 		return fmt.Errorf("Error fetching project for Backup: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{AlloydbBasePath}}projects/{{project}}/locations/{{location}}/backups/{{backup_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backups/{{backup_id}}")
 	if err != nil {
 		return err
 	}
@@ -1121,4 +1101,80 @@ func resourceAlloydbBackupEncoder(d *schema.ResourceData, meta interface{}, obj 
 	// The only other available type is AUTOMATED which cannot be set manually
 	obj["type"] = "ON_DEMAND"
 	return obj, nil
+}
+
+func ResourceAlloydbBackupFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenAlloydbBackupName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("display_name", flattenAlloydbBackupDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("uid", flattenAlloydbBackupUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("create_time", flattenAlloydbBackupCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("update_time", flattenAlloydbBackupUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("delete_time", flattenAlloydbBackupDeleteTime(res["deleteTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("labels", flattenAlloydbBackupLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("state", flattenAlloydbBackupState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("type", flattenAlloydbBackupType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("description", flattenAlloydbBackupDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("cluster_uid", flattenAlloydbBackupClusterUid(res["clusterUid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("cluster_name", flattenAlloydbBackupClusterName(res["clusterName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("reconciling", flattenAlloydbBackupReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("encryption_config", flattenAlloydbBackupEncryptionConfig(res["encryptionConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("encryption_info", flattenAlloydbBackupEncryptionInfo(res["encryptionInfo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("etag", flattenAlloydbBackupEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("annotations", flattenAlloydbBackupAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("size_bytes", flattenAlloydbBackupSizeBytes(res["sizeBytes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("expiry_time", flattenAlloydbBackupExpiryTime(res["expiryTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("expiry_quantity", flattenAlloydbBackupExpiryQuantity(res["expiryQuantity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenAlloydbBackupTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenAlloydbBackupEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenAlloydbBackupEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Backup: %s", err)
+	}
+
+	return nil
 }

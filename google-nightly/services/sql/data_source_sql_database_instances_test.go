@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/sql"
 )
 
 func TestAccDataSourceSqlDatabaseInstances_basic(t *testing.T) {
@@ -49,6 +50,7 @@ func TestAccDataSourceSqlDatabaseInstances_basic(t *testing.T) {
 						map[string]struct{}{
 							"deletion_protection": {},
 							"id":                  {},
+							"deletion_policy":     {},
 						},
 					),
 				),
@@ -79,6 +81,7 @@ func TestAccDataSourceSqlDatabaseInstances_databaseVersionFilter(t *testing.T) {
 						map[string]struct{}{
 							"deletion_protection": {},
 							"id":                  {},
+							"deletion_policy":     {},
 						},
 					),
 				),
@@ -109,6 +112,7 @@ func TestAccDataSourceSqlDatabaseInstances_regionFilter(t *testing.T) {
 						map[string]struct{}{
 							"deletion_protection": {},
 							"id":                  {},
+							"deletion_policy":     {},
 						},
 					),
 				),
@@ -140,6 +144,7 @@ func TestAccDataSourceSqlDatabaseInstances_tierFilter(t *testing.T) {
 							"deletion_protection": {},
 							"id":                  {},
 							"settings.0.version":  {},
+							"deletion_policy":     {},
 						},
 					),
 				),

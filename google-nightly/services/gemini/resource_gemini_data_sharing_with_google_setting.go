@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -116,6 +117,7 @@ func ResourceGeminiDataSharingWithGoogleSetting() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -208,6 +210,18 @@ Format:projects/{project}/locations/{location}/dataSharingWithGoogleSettings/{da
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -247,7 +261,7 @@ func resourceGeminiDataSharingWithGoogleSettingCreate(d *schema.ResourceData, me
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/dataSharingWithGoogleSettings?dataSharingWithGoogleSettingId={{data_sharing_with_google_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataSharingWithGoogleSettings?dataSharingWithGoogleSettingId={{data_sharing_with_google_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -288,6 +302,16 @@ func resourceGeminiDataSharingWithGoogleSettingCreate(d *schema.ResourceData, me
 	}
 	d.SetId(id)
 
+	err = GeminiOperationWaitTime(
+		config, res, project, "Creating DataSharingWithGoogleSetting", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create DataSharingWithGoogleSetting: %s", err)
+	}
+
 	log.Printf("[DEBUG] Finished creating DataSharingWithGoogleSetting %q: %#v", d.Id(), res)
 
 	identity, err := d.Identity()
@@ -321,7 +345,7 @@ func resourceGeminiDataSharingWithGoogleSettingRead(d *schema.ResourceData, meta
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/dataSharingWithGoogleSettings/{{data_sharing_with_google_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataSharingWithGoogleSettings/{{data_sharing_with_google_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -354,33 +378,26 @@ func resourceGeminiDataSharingWithGoogleSettingRead(d *schema.ResourceData, meta
 
 	log.Printf("[DEBUG] Finished reading GeminiDataSharingWithGoogleSetting %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
 	}
 
-	if err := d.Set("name", flattenGeminiDataSharingWithGoogleSettingName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
-	}
-	if err := d.Set("create_time", flattenGeminiDataSharingWithGoogleSettingCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
-	}
-	if err := d.Set("update_time", flattenGeminiDataSharingWithGoogleSettingUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
-	}
-	if err := d.Set("labels", flattenGeminiDataSharingWithGoogleSettingLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
-	}
-	if err := d.Set("enable_preview_data_sharing", flattenGeminiDataSharingWithGoogleSettingEnablePreviewDataSharing(res["enablePreviewDataSharing"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
-	}
-	if err := d.Set("enable_data_sharing", flattenGeminiDataSharingWithGoogleSettingEnableDataSharing(res["enableDataSharing"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenGeminiDataSharingWithGoogleSettingTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenGeminiDataSharingWithGoogleSettingEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
+	err = ResourceGeminiDataSharingWithGoogleSettingFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -411,6 +428,19 @@ func resourceGeminiDataSharingWithGoogleSettingRead(d *schema.ResourceData, meta
 }
 
 func resourceGeminiDataSharingWithGoogleSettingUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceGeminiDataSharingWithGoogleSetting().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceGeminiDataSharingWithGoogleSettingRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -472,7 +502,7 @@ func resourceGeminiDataSharingWithGoogleSettingUpdate(d *schema.ResourceData, me
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/dataSharingWithGoogleSettings/{{data_sharing_with_google_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataSharingWithGoogleSettings/{{data_sharing_with_google_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -523,12 +553,26 @@ func resourceGeminiDataSharingWithGoogleSettingUpdate(d *schema.ResourceData, me
 			log.Printf("[DEBUG] Finished updating DataSharingWithGoogleSetting %q: %#v", d.Id(), res)
 		}
 
+		err = GeminiOperationWaitTime(
+			config, res, project, "Updating DataSharingWithGoogleSetting", userAgent,
+			d.Timeout(schema.TimeoutUpdate))
+
+		if err != nil {
+			return err
+		}
 	}
 
 	return resourceGeminiDataSharingWithGoogleSettingRead(d, meta)
 }
 
 func resourceGeminiDataSharingWithGoogleSettingDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy GeminiDataSharingWithGoogleSetting without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DataSharingWithGoogleSetting %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -549,8 +593,7 @@ func resourceGeminiDataSharingWithGoogleSettingDelete(d *schema.ResourceData, me
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/dataSharingWithGoogleSettings/{{data_sharing_with_google_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataSharingWithGoogleSettings/{{data_sharing_with_google_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -577,6 +620,14 @@ func resourceGeminiDataSharingWithGoogleSettingDelete(d *schema.ResourceData, me
 	})
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, "DataSharingWithGoogleSetting")
+	}
+
+	err = GeminiOperationWaitTime(
+		config, res, project, "Deleting DataSharingWithGoogleSetting", userAgent,
+		d.Timeout(schema.TimeoutDelete))
+
+	if err != nil {
+		return err
 	}
 
 	log.Printf("[DEBUG] Finished deleting DataSharingWithGoogleSetting %q: %#v", d.Id(), res)
@@ -674,4 +725,35 @@ func expandGeminiDataSharingWithGoogleSettingEffectiveLabels(v interface{}, d tp
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceGeminiDataSharingWithGoogleSettingFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenGeminiDataSharingWithGoogleSettingName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
+	}
+	if err = d.Set("create_time", flattenGeminiDataSharingWithGoogleSettingCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
+	}
+	if err = d.Set("update_time", flattenGeminiDataSharingWithGoogleSettingUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
+	}
+	if err = d.Set("labels", flattenGeminiDataSharingWithGoogleSettingLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
+	}
+	if err = d.Set("enable_preview_data_sharing", flattenGeminiDataSharingWithGoogleSettingEnablePreviewDataSharing(res["enablePreviewDataSharing"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
+	}
+	if err = d.Set("enable_data_sharing", flattenGeminiDataSharingWithGoogleSettingEnableDataSharing(res["enableDataSharing"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenGeminiDataSharingWithGoogleSettingTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenGeminiDataSharingWithGoogleSettingEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataSharingWithGoogleSetting: %s", err)
+	}
+
+	return nil
 }

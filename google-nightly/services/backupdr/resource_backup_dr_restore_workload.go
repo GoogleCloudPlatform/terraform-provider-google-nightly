@@ -100,6 +100,7 @@ func ResourceBackupDRRestoreWorkload() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceBackupDRRestoreWorkloadCreate,
 		Read:   resourceBackupDRRestoreWorkloadRead,
+		Update: resourceBackupDRRestoreWorkloadUpdate,
 		Delete: resourceBackupDRRestoreWorkloadDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -309,12 +310,14 @@ func ResourceBackupDRRestoreWorkload() *schema.Resource {
 													Optional:    true,
 													ForceNew:    true,
 													Description: `Optional. Specifies a 256-bit customer-supplied encryption key.`,
+													Sensitive:   true,
 												},
 												"rsa_encrypted_key": {
 													Type:        schema.TypeString,
 													Optional:    true,
 													ForceNew:    true,
 													Description: `Optional. RSA-wrapped 2048-bit customer-supplied encryption key.`,
+													Sensitive:   true,
 												},
 											},
 										},
@@ -502,12 +505,14 @@ func ResourceBackupDRRestoreWorkload() *schema.Resource {
 										Optional:    true,
 										ForceNew:    true,
 										Description: ``,
+										Sensitive:   true,
 									},
 									"rsa_encrypted_key": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										ForceNew:    true,
 										Description: ``,
+										Sensitive:   true,
 									},
 								},
 							},
@@ -1179,12 +1184,14 @@ If false, only the restore record is removed from the state, leaving the resourc
 										Optional:    true,
 										ForceNew:    true,
 										Description: ``,
+										Sensitive:   true,
 									},
 									"rsa_encrypted_key": {
 										Type:        schema.TypeString,
 										Optional:    true,
 										ForceNew:    true,
 										Description: ``,
+										Sensitive:   true,
 									},
 								},
 							},
@@ -1402,6 +1409,19 @@ the request if it has already been completed.`,
 						},
 					},
 				},
+			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -2308,7 +2328,7 @@ func resourceBackupDRRestoreWorkloadCreate(d *schema.ResourceData, meta interfac
 	// ==================== Build Restore URL & Execute Request ====================
 	// Construct the restore URL using base path and url params
 	url := fmt.Sprintf("%sprojects/%s/locations/%s/backupVaults/%s/dataSources/%s/backups/%s:restore",
-		config.BackupDRBasePath,
+		transport_tpg.BaseUrl(Product, config),
 		project,
 		d.Get("location").(string),
 		d.Get("backup_vault_id").(string),
@@ -2421,7 +2441,19 @@ func resourceBackupDRRestoreWorkloadRead(d *schema.ResourceData, meta interface{
 	return nil
 }
 
+func resourceBackupDRRestoreWorkloadUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceBackupDRRestoreWorkloadRead(d, meta)
+}
+
 func resourceBackupDRRestoreWorkloadDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BackupDRRestoreWorkload without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RestoreWorkload %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {

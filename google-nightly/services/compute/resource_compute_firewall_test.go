@@ -24,6 +24,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 )
 
 func TestAccComputeFirewall_update(t *testing.T) {
@@ -338,9 +341,9 @@ func TestAccComputeFirewall_resourceManagerTags(t *testing.T) {
 	networkName := fmt.Sprintf("tf-test-firewall-%s", acctest.RandString(t, 10))
 	firewallName := fmt.Sprintf("tf-test-firewall-%s", acctest.RandString(t, 10))
 
-	tagKeyResult := acctest.BootstrapSharedTestTagKeyDetails(t, "crm-firewall-tagkey", "organizations/"+org, make(map[string]interface{}))
+	tagKeyResult := tags.BootstrapSharedTestTagKeyDetails(t, "crm-firewall-tagkey", "organizations/"+org, make(map[string]interface{}))
 	sharedTagkey, _ := tagKeyResult["shared_tag_key"]
-	tagValueResult := acctest.BootstrapSharedTestTagValueDetails(t, "crm-firewall-tagvalue", sharedTagkey, org)
+	tagValueResult := tags.BootstrapSharedTestTagValueDetails(t, "crm-firewall-tagvalue", sharedTagkey, org)
 
 	context := map[string]interface{}{
 		"network_name":  networkName,

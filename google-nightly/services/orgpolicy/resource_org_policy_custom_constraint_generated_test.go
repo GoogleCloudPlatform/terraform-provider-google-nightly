@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/orgpolicy"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = orgpolicy.Product
 )
 
 func TestAccOrgPolicyCustomConstraint_orgPolicyCustomConstraintBasicExample(t *testing.T) {
@@ -175,8 +177,7 @@ func testAccCheckOrgPolicyCustomConstraintDestroyProducer(t *testing.T) func(s *
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{OrgPolicyBasePath}}{{parent}}/customConstraints/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(orgpolicy.Product, config)+"{{parent}}/customConstraints/{{name}}")
 			if err != nil {
 				return err
 			}

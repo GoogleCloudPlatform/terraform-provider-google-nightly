@@ -30,6 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vertexai"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +52,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = vertexai.Product
 )
 
 func TestAccVertexAIIndexEndpoint_vertexAiIndexEndpointTestExample(t *testing.T) {
@@ -56,9 +61,10 @@ func TestAccVertexAIIndexEndpoint_vertexAiIndexEndpointTestExample(t *testing.T)
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"kms_key_name":  acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "vpc-network-1"),
-		"random_suffix": randomSuffix,
+		"index_endpoint_display_name": "tf-test-sample-endpoint" + randomSuffix,
+		"kms_key_name":                kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"network_name":                servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "vpc-network-1"),
+		"random_suffix":               randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -101,7 +107,7 @@ resource "google_kms_crypto_key_iam_member" "vertexai_encrypterdecrypter" {
 
 resource "google_vertex_ai_index_endpoint" "index_endpoint" {
   provider = google-beta
-  display_name = "sample-endpoint"
+  display_name = "%{index_endpoint_display_name}"
   description  = "A sample vertex endpoint"
   region       = "us-central1"
   labels       = {
@@ -135,7 +141,8 @@ func TestAccVertexAIIndexEndpoint_vertexAiIndexEndpointWithPscExample(t *testing
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"random_suffix": randomSuffix,
+		"index_endpoint_display_name": "tf-test-sample-endpoint" + randomSuffix,
+		"random_suffix":               randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -165,7 +172,7 @@ func TestAccVertexAIIndexEndpoint_vertexAiIndexEndpointWithPscExample(t *testing
 func testAccVertexAIIndexEndpoint_vertexAiIndexEndpointWithPscExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_vertex_ai_index_endpoint" "index_endpoint" {
-  display_name = "sample-endpoint"
+  display_name = "%{index_endpoint_display_name}"
   description  = "A sample vertex endpoint"
   region       = "us-central1"
   labels       = {
@@ -190,7 +197,8 @@ func TestAccVertexAIIndexEndpoint_vertexAiIndexEndpointWithFalsePscExample(t *te
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"random_suffix": randomSuffix,
+		"index_endpoint_display_name": "tf-test-sample-endpoint" + randomSuffix,
+		"random_suffix":               randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -208,7 +216,7 @@ func TestAccVertexAIIndexEndpoint_vertexAiIndexEndpointWithFalsePscExample(t *te
 func testAccVertexAIIndexEndpoint_vertexAiIndexEndpointWithFalsePscExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_vertex_ai_index_endpoint" "index_endpoint" {
-  display_name = "sample-endpoint"
+  display_name = "%{index_endpoint_display_name}"
   description  = "A sample vertex endpoint"
   region       = "us-central1"
   labels       = {
@@ -228,8 +236,8 @@ func TestAccVertexAIIndexEndpoint_vertexAiIndexEndpointWithPublicEndpointExample
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedTestNetwork(t, "vertex-ai-index-endpoint"),
-		"random_suffix": randomSuffix,
+		"index_endpoint_display_name": "tf-test-sample-endpoint" + randomSuffix,
+		"random_suffix":               randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -259,7 +267,7 @@ func TestAccVertexAIIndexEndpoint_vertexAiIndexEndpointWithPublicEndpointExample
 func testAccVertexAIIndexEndpoint_vertexAiIndexEndpointWithPublicEndpointExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_vertex_ai_index_endpoint" "index_endpoint" {
-  display_name = "sample-endpoint"
+  display_name = "%{index_endpoint_display_name}"
   description  = "A sample vertex endpoint with an public endpoint"
   region       = "us-central1"
   labels       = {
@@ -282,8 +290,7 @@ func testAccCheckVertexAIIndexEndpointDestroyProducer(t *testing.T) func(s *terr
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/indexEndpoints/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(vertexai.Product, config)+"projects/{{project}}/locations/{{region}}/indexEndpoints/{{name}}")
 			if err != nil {
 				return err
 			}

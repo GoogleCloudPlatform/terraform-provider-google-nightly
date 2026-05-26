@@ -116,6 +116,7 @@ func ResourceNetworkConnectivityPolicyBasedRoute() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -326,6 +327,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -394,7 +407,7 @@ func resourceNetworkConnectivityPolicyBasedRouteCreate(d *schema.ResourceData, m
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/global/policyBasedRoutes?policyBasedRouteId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/policyBasedRoutes?policyBasedRouteId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -473,7 +486,7 @@ func resourceNetworkConnectivityPolicyBasedRouteRead(d *schema.ResourceData, met
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/global/policyBasedRoutes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/policyBasedRoutes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -506,54 +519,26 @@ func resourceNetworkConnectivityPolicyBasedRouteRead(d *schema.ResourceData, met
 
 	log.Printf("[DEBUG] Finished reading NetworkConnectivityPolicyBasedRoute %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
 	}
 
-	if err := d.Set("description", flattenNetworkConnectivityPolicyBasedRouteDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkConnectivityPolicyBasedRouteLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("network", flattenNetworkConnectivityPolicyBasedRouteNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("filter", flattenNetworkConnectivityPolicyBasedRouteFilter(res["filter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("next_hop_other_routes", flattenNetworkConnectivityPolicyBasedRouteNextHopOtherRoutes(res["nextHopOtherRoutes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("next_hop_ilb_ip", flattenNetworkConnectivityPolicyBasedRouteNextHopIlbIp(res["nextHopIlbIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("priority", flattenNetworkConnectivityPolicyBasedRoutePriority(res["priority"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("virtual_machine", flattenNetworkConnectivityPolicyBasedRouteVirtualMachine(res["virtualMachine"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("interconnect_attachment", flattenNetworkConnectivityPolicyBasedRouteInterconnectAttachment(res["interconnectAttachment"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetworkConnectivityPolicyBasedRouteCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkConnectivityPolicyBasedRouteUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("kind", flattenNetworkConnectivityPolicyBasedRouteKind(res["kind"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("warnings", flattenNetworkConnectivityPolicyBasedRouteWarnings(res["warnings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkConnectivityPolicyBasedRouteTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkConnectivityPolicyBasedRouteEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	err = ResourceNetworkConnectivityPolicyBasedRouteFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -578,11 +563,18 @@ func resourceNetworkConnectivityPolicyBasedRouteRead(d *schema.ResourceData, met
 }
 
 func resourceNetworkConnectivityPolicyBasedRouteUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceNetworkConnectivityPolicyBasedRouteRead(d, meta)
 }
 
 func resourceNetworkConnectivityPolicyBasedRouteDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkConnectivityPolicyBasedRoute without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PolicyBasedRoute %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -596,8 +588,7 @@ func resourceNetworkConnectivityPolicyBasedRouteDelete(d *schema.ResourceData, m
 		return fmt.Errorf("Error fetching project for PolicyBasedRoute: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/global/policyBasedRoutes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/policyBasedRoutes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -978,4 +969,56 @@ func expandNetworkConnectivityPolicyBasedRouteEffectiveLabels(v interface{}, d t
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkConnectivityPolicyBasedRouteFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("description", flattenNetworkConnectivityPolicyBasedRouteDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkConnectivityPolicyBasedRouteLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("network", flattenNetworkConnectivityPolicyBasedRouteNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("filter", flattenNetworkConnectivityPolicyBasedRouteFilter(res["filter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("next_hop_other_routes", flattenNetworkConnectivityPolicyBasedRouteNextHopOtherRoutes(res["nextHopOtherRoutes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("next_hop_ilb_ip", flattenNetworkConnectivityPolicyBasedRouteNextHopIlbIp(res["nextHopIlbIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("priority", flattenNetworkConnectivityPolicyBasedRoutePriority(res["priority"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("virtual_machine", flattenNetworkConnectivityPolicyBasedRouteVirtualMachine(res["virtualMachine"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("interconnect_attachment", flattenNetworkConnectivityPolicyBasedRouteInterconnectAttachment(res["interconnectAttachment"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkConnectivityPolicyBasedRouteCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkConnectivityPolicyBasedRouteUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("kind", flattenNetworkConnectivityPolicyBasedRouteKind(res["kind"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("warnings", flattenNetworkConnectivityPolicyBasedRouteWarnings(res["warnings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkConnectivityPolicyBasedRouteTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkConnectivityPolicyBasedRouteEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyBasedRoute: %s", err)
+	}
+
+	return nil
 }

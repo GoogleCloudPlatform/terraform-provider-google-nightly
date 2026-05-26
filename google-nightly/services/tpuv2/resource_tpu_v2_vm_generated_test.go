@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tpuv2"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = tpuv2.Product
 )
 
 func TestAccTpuV2Vm_tpuV2VmBasicExample(t *testing.T) {
@@ -266,8 +270,7 @@ func testAccCheckTpuV2VmDestroyProducer(t *testing.T) func(s *terraform.State) e
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{TpuV2BasePath}}projects/{{project}}/locations/{{zone}}/nodes/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(tpuv2.Product, config)+"projects/{{project}}/locations/{{zone}}/nodes/{{name}}")
 			if err != nil {
 				return err
 			}

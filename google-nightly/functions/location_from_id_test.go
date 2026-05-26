@@ -23,6 +23,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudrun"
 )
 
 func TestAccProviderFunction_location_from_id(t *testing.T) {

@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -149,7 +150,7 @@ func testAccCheckParentHasSubPrefix(t *testing.T, project, region, parentName, s
 		newSubPrefixName := rs.Primary.Attributes["name"]
 
 		config := acctest.GoogleProviderConfig(t)
-		computeService := config.NewComputeClient(config.UserAgent)
+		computeService := compute.NewClient(config, config.UserAgent)
 
 		parent, err := computeService.PublicDelegatedPrefixes.Get(project, region, parentName).Do()
 		if err != nil {
@@ -463,7 +464,7 @@ func testAccCheckComputePublicDelegatedPrefixDestroyProducer(t *testing.T) func(
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/publicDelegatedPrefixes/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(compute.Product, config)+"projects/{{project}}/regions/{{region}}/publicDelegatedPrefixes/{{name}}")
 			if err != nil {
 				return err
 			}
@@ -502,7 +503,7 @@ func testAccCheckComputePublicAdvertisedPrefixDestroyProducer(t *testing.T) func
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/global/publicAdvertisedPrefixes/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(compute.Product, config)+"projects/{{project}}/global/publicAdvertisedPrefixes/{{name}}")
 			if err != nil {
 				return err
 			}

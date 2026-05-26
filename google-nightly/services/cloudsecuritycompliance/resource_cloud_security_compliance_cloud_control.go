@@ -980,6 +980,19 @@ organizations/{organization}/locations/{location}/cloudControls/{cloud_control_i
 					Type: schema.TypeString,
 				},
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1053,7 +1066,7 @@ func resourceCloudSecurityComplianceCloudControlCreate(d *schema.ResourceData, m
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudSecurityComplianceBasePath}}organizations/{{organization}}/locations/{{location}}/cloudControls?cloudControlId={{cloud_control_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/locations/{{location}}/cloudControls?cloudControlId={{cloud_control_id}}")
 	if err != nil {
 		return err
 	}
@@ -1121,7 +1134,7 @@ func resourceCloudSecurityComplianceCloudControlRead(d *schema.ResourceData, met
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudSecurityComplianceBasePath}}organizations/{{organization}}/locations/{{location}}/cloudControls/{{cloud_control_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/locations/{{location}}/cloudControls/{{cloud_control_id}}")
 	if err != nil {
 		return err
 	}
@@ -1148,50 +1161,23 @@ func resourceCloudSecurityComplianceCloudControlRead(d *schema.ResourceData, met
 
 	log.Printf("[DEBUG] Finished reading CloudSecurityComplianceCloudControl %q: %#v", d.Id(), res)
 
-	if err := d.Set("categories", flattenCloudSecurityComplianceCloudControlCategories(res["categories"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("create_time", flattenCloudSecurityComplianceCloudControlCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("description", flattenCloudSecurityComplianceCloudControlDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("display_name", flattenCloudSecurityComplianceCloudControlDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("finding_category", flattenCloudSecurityComplianceCloudControlFindingCategory(res["findingCategory"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("major_revision_id", flattenCloudSecurityComplianceCloudControlMajorRevisionId(res["majorRevisionId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("name", flattenCloudSecurityComplianceCloudControlName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("parameter_spec", flattenCloudSecurityComplianceCloudControlParameterSpec(res["parameterSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("related_frameworks", flattenCloudSecurityComplianceCloudControlRelatedFrameworks(res["relatedFrameworks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("remediation_steps", flattenCloudSecurityComplianceCloudControlRemediationSteps(res["remediationSteps"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("rules", flattenCloudSecurityComplianceCloudControlRules(res["rules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("severity", flattenCloudSecurityComplianceCloudControlSeverity(res["severity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("supported_cloud_providers", flattenCloudSecurityComplianceCloudControlSupportedCloudProviders(res["supportedCloudProviders"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("supported_enforcement_modes", flattenCloudSecurityComplianceCloudControlSupportedEnforcementModes(res["supportedEnforcementModes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
-	}
-	if err := d.Set("supported_target_resource_types", flattenCloudSecurityComplianceCloudControlSupportedTargetResourceTypes(res["supportedTargetResourceTypes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CloudControl: %s", err)
+
+	err = ResourceCloudSecurityComplianceCloudControlFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1222,6 +1208,19 @@ func resourceCloudSecurityComplianceCloudControlRead(d *schema.ResourceData, met
 }
 
 func resourceCloudSecurityComplianceCloudControlUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCloudSecurityComplianceCloudControl().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCloudSecurityComplianceCloudControlRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1293,7 +1292,7 @@ func resourceCloudSecurityComplianceCloudControlUpdate(d *schema.ResourceData, m
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudSecurityComplianceBasePath}}organizations/{{organization}}/locations/{{location}}/cloudControls/{{cloud_control_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/locations/{{location}}/cloudControls/{{cloud_control_id}}")
 	if err != nil {
 		return err
 	}
@@ -1362,6 +1361,13 @@ func resourceCloudSecurityComplianceCloudControlUpdate(d *schema.ResourceData, m
 }
 
 func resourceCloudSecurityComplianceCloudControlDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CloudSecurityComplianceCloudControl without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing CloudControl %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1370,7 +1376,7 @@ func resourceCloudSecurityComplianceCloudControlDelete(d *schema.ResourceData, m
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudSecurityComplianceBasePath}}organizations/{{organization}}/locations/{{location}}/cloudControls/{{cloud_control_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/locations/{{location}}/cloudControls/{{cloud_control_id}}")
 	if err != nil {
 		return err
 	}
@@ -3918,4 +3924,56 @@ func resourceCloudSecurityComplianceCloudControlEncoder(d *schema.ResourceData, 
 	name := fmt.Sprintf("organizations/%s/locations/%s/cloudControls/%s", org, loc, ccid)
 	obj["name"] = name
 	return obj, nil
+}
+
+func ResourceCloudSecurityComplianceCloudControlFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("categories", flattenCloudSecurityComplianceCloudControlCategories(res["categories"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("create_time", flattenCloudSecurityComplianceCloudControlCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("description", flattenCloudSecurityComplianceCloudControlDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("display_name", flattenCloudSecurityComplianceCloudControlDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("finding_category", flattenCloudSecurityComplianceCloudControlFindingCategory(res["findingCategory"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("major_revision_id", flattenCloudSecurityComplianceCloudControlMajorRevisionId(res["majorRevisionId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("name", flattenCloudSecurityComplianceCloudControlName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("parameter_spec", flattenCloudSecurityComplianceCloudControlParameterSpec(res["parameterSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("related_frameworks", flattenCloudSecurityComplianceCloudControlRelatedFrameworks(res["relatedFrameworks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("remediation_steps", flattenCloudSecurityComplianceCloudControlRemediationSteps(res["remediationSteps"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("rules", flattenCloudSecurityComplianceCloudControlRules(res["rules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("severity", flattenCloudSecurityComplianceCloudControlSeverity(res["severity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("supported_cloud_providers", flattenCloudSecurityComplianceCloudControlSupportedCloudProviders(res["supportedCloudProviders"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("supported_enforcement_modes", flattenCloudSecurityComplianceCloudControlSupportedEnforcementModes(res["supportedEnforcementModes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+	if err = d.Set("supported_target_resource_types", flattenCloudSecurityComplianceCloudControlSupportedTargetResourceTypes(res["supportedTargetResourceTypes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CloudControl: %s", err)
+	}
+
+	return nil
 }

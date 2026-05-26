@@ -115,6 +115,7 @@ func ResourceHealthcarePipelineJob() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -367,6 +368,19 @@ in the format of: project/{projectID}/locations/{locationID}/datasets/{datasetNa
  and default labels configured on the provider.`,
 				Elem: &schema.Schema{Type: schema.TypeString},
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -417,7 +431,7 @@ func resourceHealthcarePipelineJobCreate(d *schema.ResourceData, meta interface{
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/pipelineJobs?pipelineJobId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/pipelineJobs?pipelineJobId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -490,7 +504,7 @@ func resourceHealthcarePipelineJobRead(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/pipelineJobs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/pipelineJobs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -529,29 +543,23 @@ func resourceHealthcarePipelineJobRead(d *schema.ResourceData, meta interface{})
 		return nil
 	}
 
-	if err := d.Set("name", flattenHealthcarePipelineJobName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PipelineJob: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("disable_lineage", flattenHealthcarePipelineJobDisableLineage(res["disableLineage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PipelineJob: %s", err)
-	}
-	if err := d.Set("labels", flattenHealthcarePipelineJobLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PipelineJob: %s", err)
-	}
-	if err := d.Set("mapping_pipeline_job", flattenHealthcarePipelineJobMappingPipelineJob(res["mappingPipelineJob"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PipelineJob: %s", err)
-	}
-	if err := d.Set("reconciliation_pipeline_job", flattenHealthcarePipelineJobReconciliationPipelineJob(res["reconciliationPipelineJob"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PipelineJob: %s", err)
-	}
-	if err := d.Set("backfill_pipeline_job", flattenHealthcarePipelineJobBackfillPipelineJob(res["backfillPipelineJob"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PipelineJob: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenHealthcarePipelineJobTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PipelineJob: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenHealthcarePipelineJobEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PipelineJob: %s", err)
+
+	err = ResourceHealthcarePipelineJobFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -576,6 +584,19 @@ func resourceHealthcarePipelineJobRead(d *schema.ResourceData, meta interface{})
 }
 
 func resourceHealthcarePipelineJobUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceHealthcarePipelineJob().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceHealthcarePipelineJobRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -637,7 +658,7 @@ func resourceHealthcarePipelineJobUpdate(d *schema.ResourceData, meta interface{
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/pipelineJobs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/pipelineJobs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -713,6 +734,13 @@ func resourceHealthcarePipelineJobUpdate(d *schema.ResourceData, meta interface{
 }
 
 func resourceHealthcarePipelineJobDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy HealthcarePipelineJob without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PipelineJob %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -721,7 +749,7 @@ func resourceHealthcarePipelineJobDelete(d *schema.ResourceData, meta interface{
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/pipelineJobs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/pipelineJobs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1320,4 +1348,35 @@ func resourceHealthcarePipelineJobDecoder(d *schema.ResourceData, meta interface
 	}
 	res["name"] = d.Get("name").(string)
 	return res, nil
+}
+
+func ResourceHealthcarePipelineJobFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenHealthcarePipelineJobName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PipelineJob: %s", err)
+	}
+	if err = d.Set("disable_lineage", flattenHealthcarePipelineJobDisableLineage(res["disableLineage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PipelineJob: %s", err)
+	}
+	if err = d.Set("labels", flattenHealthcarePipelineJobLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PipelineJob: %s", err)
+	}
+	if err = d.Set("mapping_pipeline_job", flattenHealthcarePipelineJobMappingPipelineJob(res["mappingPipelineJob"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PipelineJob: %s", err)
+	}
+	if err = d.Set("reconciliation_pipeline_job", flattenHealthcarePipelineJobReconciliationPipelineJob(res["reconciliationPipelineJob"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PipelineJob: %s", err)
+	}
+	if err = d.Set("backfill_pipeline_job", flattenHealthcarePipelineJobBackfillPipelineJob(res["backfillPipelineJob"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PipelineJob: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenHealthcarePipelineJobTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PipelineJob: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenHealthcarePipelineJobEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PipelineJob: %s", err)
+	}
+
+	return nil
 }

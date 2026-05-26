@@ -77,6 +77,7 @@ func ResourceComputeSecurityPolicy() *schema.Resource {
 			State: resourceSecurityPolicyStateImporter,
 		},
 		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 			tpgresource.DefaultProviderProject,
 			tpgresource.SetLabelsDiff,
 			rulesCustomizeDiff,
@@ -741,6 +742,9 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed:    true,
 				Description: `The unique fingerprint of the labels.`,
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -825,7 +829,7 @@ func resourceComputeSecurityPolicyCreate(d *schema.ResourceData, meta interface{
 		securityPolicy.RecaptchaOptionsConfig = expandSecurityPolicyRecaptchaOptionsConfig(v.([]interface{}), d)
 	}
 
-	client := config.NewComputeClient(userAgent)
+	client := NewClient(config, userAgent)
 
 	op, err := client.SecurityPolicies.Insert(project, securityPolicy).Do()
 
@@ -903,7 +907,7 @@ func resourceComputeSecurityPolicyRead(d *schema.ResourceData, meta interface{})
 
 	sp := d.Get("name").(string)
 
-	client := config.NewComputeClient(userAgent)
+	client := NewClient(config, userAgent)
 
 	securityPolicy, err := client.SecurityPolicies.Get(project, sp).Do()
 	if err != nil {
@@ -959,10 +963,19 @@ func resourceComputeSecurityPolicyRead(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error setting label_fingerprint: %s", err)
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func resourceComputeSecurityPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+
+	if tpgresource.DeletionPolicyPreUpdate(d, ResourceComputeSecurityPolicy) {
+		return ResourceComputeSecurityPolicy().Read(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1018,7 +1031,7 @@ func resourceComputeSecurityPolicyUpdate(d *schema.ResourceData, meta interface{
 		labelFingerprint := d.Get("label_fingerprint").(string)
 		req := compute.GlobalSetLabelsRequest{Labels: labels, LabelFingerprint: labelFingerprint}
 
-		op, err := config.NewComputeClient(userAgent).SecurityPolicies.SetLabels(project, sp, &req).Do()
+		op, err := NewClient(config, userAgent).SecurityPolicies.SetLabels(project, sp, &req).Do()
 		if err != nil {
 			return fmt.Errorf("Error updating labels: %s", err)
 		}
@@ -1030,7 +1043,7 @@ func resourceComputeSecurityPolicyUpdate(d *schema.ResourceData, meta interface{
 	}
 
 	if len(securityPolicy.ForceSendFields) > 0 {
-		client := config.NewComputeClient(userAgent)
+		client := NewClient(config, userAgent)
 
 		op, err := client.SecurityPolicies.Patch(project, sp, securityPolicy).UpdateMask(strings.Join(updateMask, ",")).Do()
 
@@ -1065,7 +1078,7 @@ func resourceComputeSecurityPolicyUpdate(d *schema.ResourceData, meta interface{
 			nPriorities[priority] = true
 
 			if !oPriorities[priority] {
-				client := config.NewComputeClient(userAgent)
+				client := NewClient(config, userAgent)
 
 				// If the rule is in new and its priority does not exist in old, then add it.
 				op, err := client.SecurityPolicies.AddRule(project, sp, expandSecurityPolicyRule(rule)).Do()
@@ -1113,7 +1126,15 @@ func resourceComputeSecurityPolicyUpdate(d *schema.ResourceData, meta interface{
 					updateMask = append(updateMask, "rate_limit_options.enforce_on_key_name")
 				}
 
-				client := config.NewComputeClient(userAgent)
+				// Detect changes to preconfigured_waf_config so that removing or clearing
+				// the block is propagated to the API. Without listing the field in the
+				// updateMask, the PatchRule call will not clear the existing value because
+				// the request body omits nil pointers.
+				if fmt.Sprintf("%v", oRules[priority]["preconfigured_waf_config"]) != fmt.Sprintf("%v", nRules[priority]["preconfigured_waf_config"]) {
+					updateMask = append(updateMask, "preconfigured_waf_config")
+				}
+
+				client := NewClient(config, userAgent)
 
 				// If the rule is in new, and its priority is in old, but its hash is different than the one in old, update it.
 				op, err := client.SecurityPolicies.PatchRule(project, sp, expandSecurityPolicyRule(rule)).Priority(priority).UpdateMask(strings.Join(updateMask, ",")).Do()
@@ -1132,7 +1153,7 @@ func resourceComputeSecurityPolicyUpdate(d *schema.ResourceData, meta interface{
 		for _, rule := range oSet.List() {
 			priority := int64(rule.(map[string]interface{})["priority"].(int))
 			if !nPriorities[priority] {
-				client := config.NewComputeClient(userAgent)
+				client := NewClient(config, userAgent)
 
 				// If the rule's priority is in old but not new, remove it.
 				op, err := client.SecurityPolicies.RemoveRule(project, sp).Priority(priority).Do()
@@ -1153,6 +1174,13 @@ func resourceComputeSecurityPolicyUpdate(d *schema.ResourceData, meta interface{
 }
 
 func resourceComputeSecurityPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1164,7 +1192,7 @@ func resourceComputeSecurityPolicyDelete(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	client := config.NewComputeClient(userAgent)
+	client := NewClient(config, userAgent)
 
 	// Delete the SecurityPolicy
 	op, err := client.SecurityPolicies.Delete(project, d.Get("name").(string)).Do()

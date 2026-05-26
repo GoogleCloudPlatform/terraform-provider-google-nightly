@@ -273,6 +273,19 @@ see [CidrRange](https://cloud.google.com/apigee/docs/reference/apis/apigee/rest/
 the format: projects/*/regions/*/serviceAttachments/* Apigee customers can privately
 forward traffic to this service attachment using the PSC endpoints.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -348,7 +361,7 @@ func resourceApigeeInstanceCreate(d *schema.ResourceData, meta interface{}) erro
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/instances")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/instances")
 	if err != nil {
 		return err
 	}
@@ -422,7 +435,7 @@ func resourceApigeeInstanceRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -450,38 +463,23 @@ func resourceApigeeInstanceRead(d *schema.ResourceData, meta interface{}) error 
 
 	log.Printf("[DEBUG] Finished reading ApigeeInstance %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenApigeeInstanceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("location", flattenApigeeInstanceLocation(res["location"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("peering_cidr_range", flattenApigeeInstancePeeringCidrRange(res["peeringCidrRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("description", flattenApigeeInstanceDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("display_name", flattenApigeeInstanceDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("disk_encryption_key_name", flattenApigeeInstanceDiskEncryptionKeyName(res["diskEncryptionKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("host", flattenApigeeInstanceHost(res["host"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("port", flattenApigeeInstancePort(res["port"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("consumer_accept_list", flattenApigeeInstanceConsumerAcceptList(res["consumerAcceptList"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("service_attachment", flattenApigeeInstanceServiceAttachment(res["serviceAttachment"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("access_logging_config", flattenApigeeInstanceAccessLoggingConfig(res["accessLoggingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+
+	err = ResourceApigeeInstanceFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -506,6 +504,19 @@ func resourceApigeeInstanceRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceApigeeInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceApigeeInstance().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceApigeeInstanceRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -544,7 +555,7 @@ func resourceApigeeInstanceUpdate(d *schema.ResourceData, meta interface{}) erro
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -601,6 +612,13 @@ func resourceApigeeInstanceUpdate(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceApigeeInstanceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ApigeeInstance without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Instance %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -615,8 +633,7 @@ func resourceApigeeInstanceDelete(d *schema.ResourceData, meta interface{}) erro
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -833,4 +850,44 @@ func expandApigeeInstanceAccessLoggingConfigEnabled(v interface{}, d tpgresource
 
 func expandApigeeInstanceAccessLoggingConfigFilter(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceApigeeInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenApigeeInstanceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("location", flattenApigeeInstanceLocation(res["location"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("peering_cidr_range", flattenApigeeInstancePeeringCidrRange(res["peeringCidrRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("description", flattenApigeeInstanceDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("display_name", flattenApigeeInstanceDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("disk_encryption_key_name", flattenApigeeInstanceDiskEncryptionKeyName(res["diskEncryptionKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("host", flattenApigeeInstanceHost(res["host"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("port", flattenApigeeInstancePort(res["port"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("consumer_accept_list", flattenApigeeInstanceConsumerAcceptList(res["consumerAcceptList"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("service_attachment", flattenApigeeInstanceServiceAttachment(res["serviceAttachment"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("access_logging_config", flattenApigeeInstanceAccessLoggingConfig(res["accessLoggingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+
+	return nil
 }

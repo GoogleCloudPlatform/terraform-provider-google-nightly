@@ -116,6 +116,7 @@ func ResourceCertificateManagerCertificateMap() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -238,6 +239,18 @@ Examples: "2014-10-02T15:01:23Z" and "2014-10-02T15:01:23.045123456Z".`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -264,7 +277,7 @@ func resourceCertificateManagerCertificateMapCreate(d *schema.ResourceData, meta
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CertificateManagerBasePath}}projects/{{project}}/locations/global/certificateMaps?certificateMapId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/certificateMaps?certificateMapId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -343,7 +356,7 @@ func resourceCertificateManagerCertificateMapRead(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CertificateManagerBasePath}}projects/{{project}}/locations/global/certificateMaps/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/certificateMaps/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -376,30 +389,26 @@ func resourceCertificateManagerCertificateMapRead(d *schema.ResourceData, meta i
 
 	log.Printf("[DEBUG] Finished reading CertificateManagerCertificateMap %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading CertificateMap: %s", err)
 	}
 
-	if err := d.Set("description", flattenCertificateManagerCertificateMapDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CertificateMap: %s", err)
-	}
-	if err := d.Set("create_time", flattenCertificateManagerCertificateMapCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CertificateMap: %s", err)
-	}
-	if err := d.Set("update_time", flattenCertificateManagerCertificateMapUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CertificateMap: %s", err)
-	}
-	if err := d.Set("labels", flattenCertificateManagerCertificateMapLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CertificateMap: %s", err)
-	}
-	if err := d.Set("gclb_targets", flattenCertificateManagerCertificateMapGclbTargets(res["gclbTargets"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CertificateMap: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenCertificateManagerCertificateMapTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CertificateMap: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenCertificateManagerCertificateMapEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CertificateMap: %s", err)
+	err = ResourceCertificateManagerCertificateMapFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -424,6 +433,19 @@ func resourceCertificateManagerCertificateMapRead(d *schema.ResourceData, meta i
 }
 
 func resourceCertificateManagerCertificateMapUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCertificateManagerCertificateMap().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCertificateManagerCertificateMapRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -467,7 +489,7 @@ func resourceCertificateManagerCertificateMapUpdate(d *schema.ResourceData, meta
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CertificateManagerBasePath}}projects/{{project}}/locations/global/certificateMaps/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/certificateMaps/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -527,6 +549,13 @@ func resourceCertificateManagerCertificateMapUpdate(d *schema.ResourceData, meta
 }
 
 func resourceCertificateManagerCertificateMapDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CertificateManagerCertificateMap without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing CertificateMap %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -540,8 +569,7 @@ func resourceCertificateManagerCertificateMapDelete(d *schema.ResourceData, meta
 		return fmt.Errorf("Error fetching project for CertificateMap: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CertificateManagerBasePath}}projects/{{project}}/locations/global/certificateMaps/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/certificateMaps/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -716,4 +744,32 @@ func expandCertificateManagerCertificateMapEffectiveLabels(v interface{}, d tpgr
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceCertificateManagerCertificateMapFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("description", flattenCertificateManagerCertificateMapDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CertificateMap: %s", err)
+	}
+	if err = d.Set("create_time", flattenCertificateManagerCertificateMapCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CertificateMap: %s", err)
+	}
+	if err = d.Set("update_time", flattenCertificateManagerCertificateMapUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CertificateMap: %s", err)
+	}
+	if err = d.Set("labels", flattenCertificateManagerCertificateMapLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CertificateMap: %s", err)
+	}
+	if err = d.Set("gclb_targets", flattenCertificateManagerCertificateMapGclbTargets(res["gclbTargets"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CertificateMap: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenCertificateManagerCertificateMapTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CertificateMap: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenCertificateManagerCertificateMapEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CertificateMap: %s", err)
+	}
+
+	return nil
 }

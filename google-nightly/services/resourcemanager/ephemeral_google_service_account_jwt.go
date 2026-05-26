@@ -30,11 +30,21 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwutils"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwvalidators"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
+	iamcredentials_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamcredentials"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"google.golang.org/api/iamcredentials/v1"
 )
 
 var _ ephemeral.EphemeralResource = &googleEphemeralServiceAccountJwt{}
+
+func init() {
+	registry.FrameworkEphemeralResource{
+		Name:        "google_service_account_jwt",
+		ProductName: "resourcemanager",
+		Func:        GoogleEphemeralServiceAccountJwt,
+	}.Register()
+}
 
 func GoogleEphemeralServiceAccountJwt() ephemeral.EphemeralResource {
 	return &googleEphemeralServiceAccountJwt{}
@@ -141,7 +151,7 @@ func (p *googleEphemeralServiceAccountJwt) Open(ctx context.Context, req ephemer
 
 	name := fmt.Sprintf("projects/-/serviceAccounts/%s", data.TargetServiceAccount.ValueString())
 
-	service := p.providerConfig.NewIamCredentialsClient(p.providerConfig.UserAgent)
+	service := iamcredentials_tpg.NewClient(p.providerConfig, p.providerConfig.UserAgent)
 	jwtRequest := &iamcredentials.SignJwtRequest{
 		Payload:   payload,
 		Delegates: fwutils.StringSet(data.Delegates),

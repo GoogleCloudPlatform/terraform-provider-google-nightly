@@ -117,6 +117,7 @@ func ResourceCloudRunV2Job() *schema.Resource {
 			tpgresource.SetLabelsDiff,
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -508,8 +509,8 @@ A duration in seconds with up to nine fractional digits, ending with 's'. Exampl
 															"medium": {
 																Type:         schema.TypeString,
 																Optional:     true,
-																ValidateFunc: verify.ValidateEnum([]string{"MEMORY", ""}),
-																Description:  `The different types of medium supported for EmptyDir. Default value: "MEMORY" Possible values: ["MEMORY"]`,
+																ValidateFunc: verify.ValidateEnum([]string{"MEMORY", "DISK", ""}),
+																Description:  `The different types of medium supported for EmptyDir. Default value: "MEMORY" Possible values: ["MEMORY", "DISK"]`,
 																Default:      "MEMORY",
 															},
 															"size_limit": {
@@ -1038,6 +1039,18 @@ When the field is set to false, deleting the job is allowed.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1154,7 +1167,7 @@ func resourceCloudRunV2JobCreate(d *schema.ResourceData, meta interface{}) error
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudRunV2BasePath}}projects/{{project}}/locations/{{location}}/jobs?jobId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/jobs?jobId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -1237,7 +1250,7 @@ func resourceCloudRunV2JobRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudRunV2BasePath}}projects/{{project}}/locations/{{location}}/jobs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/jobs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1276,90 +1289,25 @@ func resourceCloudRunV2JobRead(d *schema.ResourceData, meta interface{}) error {
 			return fmt.Errorf("Error setting deletion_protection: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Job: %s", err)
 	}
 
-	if err := d.Set("uid", flattenCloudRunV2JobUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("generation", flattenCloudRunV2JobGeneration(res["generation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("labels", flattenCloudRunV2JobLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("annotations", flattenCloudRunV2JobAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("create_time", flattenCloudRunV2JobCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("update_time", flattenCloudRunV2JobUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("delete_time", flattenCloudRunV2JobDeleteTime(res["deleteTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("expire_time", flattenCloudRunV2JobExpireTime(res["expireTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("creator", flattenCloudRunV2JobCreator(res["creator"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("last_modifier", flattenCloudRunV2JobLastModifier(res["lastModifier"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("client", flattenCloudRunV2JobClient(res["client"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("client_version", flattenCloudRunV2JobClientVersion(res["clientVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("launch_stage", flattenCloudRunV2JobLaunchStage(res["launchStage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("binary_authorization", flattenCloudRunV2JobBinaryAuthorization(res["binaryAuthorization"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("start_execution_token", flattenCloudRunV2JobStartExecutionToken(res["startExecutionToken"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("run_execution_token", flattenCloudRunV2JobRunExecutionToken(res["runExecutionToken"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("template", flattenCloudRunV2JobTemplate(res["template"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("observed_generation", flattenCloudRunV2JobObservedGeneration(res["observedGeneration"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("terminal_condition", flattenCloudRunV2JobTerminalCondition(res["terminalCondition"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("conditions", flattenCloudRunV2JobConditions(res["conditions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("execution_count", flattenCloudRunV2JobExecutionCount(res["executionCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("latest_created_execution", flattenCloudRunV2JobLatestCreatedExecution(res["latestCreatedExecution"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("reconciling", flattenCloudRunV2JobReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("etag", flattenCloudRunV2JobEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenCloudRunV2JobTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenCloudRunV2JobEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenCloudRunV2JobEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
+	err = ResourceCloudRunV2JobFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1390,6 +1338,19 @@ func resourceCloudRunV2JobRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceCloudRunV2JobUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCloudRunV2Job().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCloudRunV2JobRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1480,7 +1441,7 @@ func resourceCloudRunV2JobUpdate(d *schema.ResourceData, meta interface{}) error
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudRunV2BasePath}}projects/{{project}}/locations/{{location}}/jobs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/jobs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1522,6 +1483,13 @@ func resourceCloudRunV2JobUpdate(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceCloudRunV2JobDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CloudRunV2Job without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Job %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1535,8 +1503,7 @@ func resourceCloudRunV2JobDelete(d *schema.ResourceData, meta interface{}) error
 		return fmt.Errorf("Error fetching project for Job: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudRunV2BasePath}}projects/{{project}}/locations/{{location}}/jobs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/jobs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -4054,4 +4021,92 @@ func expandCloudRunV2JobEffectiveAnnotations(v interface{}, d tpgresource.Terraf
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceCloudRunV2JobFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("uid", flattenCloudRunV2JobUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("generation", flattenCloudRunV2JobGeneration(res["generation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("labels", flattenCloudRunV2JobLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("annotations", flattenCloudRunV2JobAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("create_time", flattenCloudRunV2JobCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("update_time", flattenCloudRunV2JobUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("delete_time", flattenCloudRunV2JobDeleteTime(res["deleteTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("expire_time", flattenCloudRunV2JobExpireTime(res["expireTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("creator", flattenCloudRunV2JobCreator(res["creator"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("last_modifier", flattenCloudRunV2JobLastModifier(res["lastModifier"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("client", flattenCloudRunV2JobClient(res["client"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("client_version", flattenCloudRunV2JobClientVersion(res["clientVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("launch_stage", flattenCloudRunV2JobLaunchStage(res["launchStage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("binary_authorization", flattenCloudRunV2JobBinaryAuthorization(res["binaryAuthorization"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("start_execution_token", flattenCloudRunV2JobStartExecutionToken(res["startExecutionToken"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("run_execution_token", flattenCloudRunV2JobRunExecutionToken(res["runExecutionToken"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("template", flattenCloudRunV2JobTemplate(res["template"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("observed_generation", flattenCloudRunV2JobObservedGeneration(res["observedGeneration"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("terminal_condition", flattenCloudRunV2JobTerminalCondition(res["terminalCondition"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("conditions", flattenCloudRunV2JobConditions(res["conditions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("execution_count", flattenCloudRunV2JobExecutionCount(res["executionCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("latest_created_execution", flattenCloudRunV2JobLatestCreatedExecution(res["latestCreatedExecution"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("reconciling", flattenCloudRunV2JobReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("etag", flattenCloudRunV2JobEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenCloudRunV2JobTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenCloudRunV2JobEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenCloudRunV2JobEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+
+	return nil
 }

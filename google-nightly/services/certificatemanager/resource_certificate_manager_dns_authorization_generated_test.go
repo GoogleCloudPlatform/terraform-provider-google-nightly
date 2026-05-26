@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/certificatemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = certificatemanager.Product
 )
 
 func TestAccCertificateManagerDnsAuthorization_certificateManagerDnsAuthorizationBasicExample(t *testing.T) {
@@ -168,8 +170,7 @@ func testAccCheckCertificateManagerDnsAuthorizationDestroyProducer(t *testing.T)
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{CertificateManagerBasePath}}projects/{{project}}/locations/{{location}}/dnsAuthorizations/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(certificatemanager.Product, config)+"projects/{{project}}/locations/{{location}}/dnsAuthorizations/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -115,6 +115,7 @@ func ResourceFirebaseWebApp() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -170,19 +171,23 @@ This identifier should be treated as an opaque token, as the data format is not 
 				Description: `The fully qualified resource name of the App, for example:
 projects/projectId/webApps/appId`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `Set to 'ABANDON' to allow the WebApp to be untracked from terraform state
-rather than deleted upon 'terraform destroy'. This is useful becaue the WebApp may be
-serving traffic. Set to 'DELETE' to delete the WebApp. Default to 'DELETE'`,
-				Default: "DELETE",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -210,7 +215,7 @@ func resourceFirebaseWebAppCreate(d *schema.ResourceData, meta interface{}) erro
 		obj["apiKeyId"] = apiKeyIdProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseBasePath}}projects/{{project}}/webApps")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/webApps")
 	if err != nil {
 		return err
 	}
@@ -303,7 +308,7 @@ func resourceFirebaseWebAppRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseBasePath}}projects/{{project}}/webApps/{{app_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/webApps/{{app_id}}")
 	if err != nil {
 		return err
 	}
@@ -338,28 +343,24 @@ func resourceFirebaseWebAppRead(d *schema.ResourceData, meta interface{}) error 
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DELETE"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading WebApp: %s", err)
 	}
 
-	if err := d.Set("name", flattenFirebaseWebAppName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WebApp: %s", err)
-	}
-	if err := d.Set("display_name", flattenFirebaseWebAppDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WebApp: %s", err)
-	}
-	if err := d.Set("app_id", flattenFirebaseWebAppAppId(res["appId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WebApp: %s", err)
-	}
-	if err := d.Set("app_urls", flattenFirebaseWebAppAppUrls(res["appUrls"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WebApp: %s", err)
-	}
-	if err := d.Set("api_key_id", flattenFirebaseWebAppApiKeyId(res["apiKeyId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WebApp: %s", err)
+	err = ResourceFirebaseWebAppFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -384,6 +385,19 @@ func resourceFirebaseWebAppRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceFirebaseWebAppUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceFirebaseWebApp().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceFirebaseWebAppRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -427,7 +441,7 @@ func resourceFirebaseWebAppUpdate(d *schema.ResourceData, meta interface{}) erro
 		obj["apiKeyId"] = apiKeyIdProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseBasePath}}projects/{{project}}/webApps/{{app_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/webApps/{{app_id}}")
 	if err != nil {
 		return err
 	}
@@ -480,6 +494,13 @@ func resourceFirebaseWebAppUpdate(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceFirebaseWebAppDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy FirebaseWebApp without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing WebApp %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -564,11 +585,6 @@ func resourceFirebaseWebAppImport(d *schema.ResourceData, meta interface{}) ([]*
 	}
 	d.SetId(id)
 
-	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "DELETE"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
-
 	return []*schema.ResourceData{d}, nil
 }
 
@@ -598,4 +614,26 @@ func expandFirebaseWebAppDisplayName(v interface{}, d tpgresource.TerraformResou
 
 func expandFirebaseWebAppApiKeyId(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceFirebaseWebAppFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenFirebaseWebAppName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WebApp: %s", err)
+	}
+	if err = d.Set("display_name", flattenFirebaseWebAppDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WebApp: %s", err)
+	}
+	if err = d.Set("app_id", flattenFirebaseWebAppAppId(res["appId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WebApp: %s", err)
+	}
+	if err = d.Set("app_urls", flattenFirebaseWebAppAppUrls(res["appUrls"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WebApp: %s", err)
+	}
+	if err = d.Set("api_key_id", flattenFirebaseWebAppApiKeyId(res["apiKeyId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WebApp: %s", err)
+	}
+
+	return nil
 }

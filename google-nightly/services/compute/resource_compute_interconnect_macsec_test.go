@@ -23,6 +23,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 )
 
 func TestAccComputeInterconnect_computeInterconnectMacsecTest(t *testing.T) {
@@ -116,9 +118,9 @@ func TestAccComputeInterconnect_resourceManagerTags(t *testing.T) {
 	t.Parallel()
 	org := envvar.GetTestOrgFromEnv(t)
 
-	tagKeyResult := acctest.BootstrapSharedTestTagKeyDetails(t, "crm-interconnects-tagkey", "organizations/"+org, make(map[string]interface{}))
+	tagKeyResult := tags.BootstrapSharedTestTagKeyDetails(t, "crm-interconnects-tagkey", "organizations/"+org, make(map[string]interface{}))
 	sharedTagkey, _ := tagKeyResult["shared_tag_key"]
-	tagValueResult := acctest.BootstrapSharedTestTagValueDetails(t, "crm-interconnects-tagvalue", sharedTagkey, org)
+	tagValueResult := tags.BootstrapSharedTestTagValueDetails(t, "crm-interconnects-tagvalue", sharedTagkey, org)
 
 	context := map[string]interface{}{
 		"tag_key_id":    tagKeyResult["name"],

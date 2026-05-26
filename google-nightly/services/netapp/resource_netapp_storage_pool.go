@@ -108,14 +108,15 @@ func ResourceNetappStoragePool() *schema.Resource {
 		},
 
 		Timeouts: &schema.ResourceTimeout{
-			Create: schema.DefaultTimeout(45 * time.Minute),
-			Update: schema.DefaultTimeout(60 * time.Minute),
+			Create: schema.DefaultTimeout(120 * time.Minute),
+			Update: schema.DefaultTimeout(120 * time.Minute),
 			Delete: schema.DefaultTimeout(45 * time.Minute),
 		},
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -355,6 +356,18 @@ If you want to create a zonal Flex pool, specify a zone name for 'location' and 
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -495,7 +508,7 @@ func resourceNetappStoragePoolCreate(d *schema.ResourceData, meta interface{}) e
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/storagePools?storagePoolId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/storagePools?storagePoolId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -579,7 +592,7 @@ func resourceNetappStoragePoolRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/storagePools/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/storagePools/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -612,93 +625,26 @@ func resourceNetappStoragePoolRead(d *schema.ResourceData, meta interface{}) err
 
 	log.Printf("[DEBUG] Finished reading NetappStoragePool %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading StoragePool: %s", err)
 	}
 
-	if err := d.Set("service_level", flattenNetappStoragePoolServiceLevel(res["serviceLevel"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("capacity_gib", flattenNetappStoragePoolCapacityGib(res["capacityGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("volume_capacity_gib", flattenNetappStoragePoolVolumeCapacityGib(res["volumeCapacityGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("volume_count", flattenNetappStoragePoolVolumeCount(res["volumeCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("description", flattenNetappStoragePoolDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("labels", flattenNetappStoragePoolLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("network", flattenNetappStoragePoolNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("active_directory", flattenNetappStoragePoolActiveDirectory(res["activeDirectory"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("kms_config", flattenNetappStoragePoolKmsConfig(res["kmsConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("ldap_enabled", flattenNetappStoragePoolLdapEnabled(res["ldapEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("encryption_type", flattenNetappStoragePoolEncryptionType(res["encryptionType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("zone", flattenNetappStoragePoolZone(res["zone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("replica_zone", flattenNetappStoragePoolReplicaZone(res["replicaZone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("allow_auto_tiering", flattenNetappStoragePoolAllowAutoTiering(res["allowAutoTiering"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("custom_performance_enabled", flattenNetappStoragePoolCustomPerformanceEnabled(res["customPerformanceEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("total_throughput_mibps", flattenNetappStoragePoolTotalThroughputMibps(res["totalThroughputMibps"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("total_iops", flattenNetappStoragePoolTotalIops(res["totalIops"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("hot_tier_size_gib", flattenNetappStoragePoolHotTierSizeGib(res["hotTierSizeGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("qos_type", flattenNetappStoragePoolQosType(res["qosType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("available_throughput_mibps", flattenNetappStoragePoolAvailableThroughputMibps(res["availableThroughputMibps"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("cold_tier_size_used_gib", flattenNetappStoragePoolColdTierSizeUsedGib(res["coldTierSizeUsedGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("hot_tier_size_used_gib", flattenNetappStoragePoolHotTierSizeUsedGib(res["hotTierSizeUsedGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("type", flattenNetappStoragePoolType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("scale_tier", flattenNetappStoragePoolScaleTier(res["scaleTier"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("scale_type", flattenNetappStoragePoolScaleType(res["scaleType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("mode", flattenNetappStoragePoolMode(res["mode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetappStoragePoolTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetappStoragePoolEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
+	err = ResourceNetappStoragePoolFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -729,6 +675,19 @@ func resourceNetappStoragePoolRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceNetappStoragePoolUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetappStoragePool().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetappStoragePoolRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -837,7 +796,7 @@ func resourceNetappStoragePoolUpdate(d *schema.ResourceData, meta interface{}) e
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/storagePools/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/storagePools/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1002,6 +961,13 @@ func resourceNetappStoragePoolUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceNetappStoragePoolDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetappStoragePool without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing StoragePool %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1015,8 +981,7 @@ func resourceNetappStoragePoolDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for StoragePool: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/storagePools/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/storagePools/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1313,4 +1278,95 @@ func expandNetappStoragePoolEffectiveLabels(v interface{}, d tpgresource.Terrafo
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetappStoragePoolFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("service_level", flattenNetappStoragePoolServiceLevel(res["serviceLevel"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("capacity_gib", flattenNetappStoragePoolCapacityGib(res["capacityGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("volume_capacity_gib", flattenNetappStoragePoolVolumeCapacityGib(res["volumeCapacityGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("volume_count", flattenNetappStoragePoolVolumeCount(res["volumeCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("description", flattenNetappStoragePoolDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("labels", flattenNetappStoragePoolLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("network", flattenNetappStoragePoolNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("active_directory", flattenNetappStoragePoolActiveDirectory(res["activeDirectory"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("kms_config", flattenNetappStoragePoolKmsConfig(res["kmsConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("ldap_enabled", flattenNetappStoragePoolLdapEnabled(res["ldapEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("encryption_type", flattenNetappStoragePoolEncryptionType(res["encryptionType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("zone", flattenNetappStoragePoolZone(res["zone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("replica_zone", flattenNetappStoragePoolReplicaZone(res["replicaZone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("allow_auto_tiering", flattenNetappStoragePoolAllowAutoTiering(res["allowAutoTiering"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("custom_performance_enabled", flattenNetappStoragePoolCustomPerformanceEnabled(res["customPerformanceEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("total_throughput_mibps", flattenNetappStoragePoolTotalThroughputMibps(res["totalThroughputMibps"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("total_iops", flattenNetappStoragePoolTotalIops(res["totalIops"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("hot_tier_size_gib", flattenNetappStoragePoolHotTierSizeGib(res["hotTierSizeGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("qos_type", flattenNetappStoragePoolQosType(res["qosType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("available_throughput_mibps", flattenNetappStoragePoolAvailableThroughputMibps(res["availableThroughputMibps"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("cold_tier_size_used_gib", flattenNetappStoragePoolColdTierSizeUsedGib(res["coldTierSizeUsedGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("hot_tier_size_used_gib", flattenNetappStoragePoolHotTierSizeUsedGib(res["hotTierSizeUsedGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("type", flattenNetappStoragePoolType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("scale_tier", flattenNetappStoragePoolScaleTier(res["scaleTier"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("scale_type", flattenNetappStoragePoolScaleType(res["scaleType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("mode", flattenNetappStoragePoolMode(res["mode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetappStoragePoolTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetappStoragePoolEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+
+	return nil
 }

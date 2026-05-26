@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
@@ -32,7 +33,7 @@ import (
 func TestAccKmsSecretCiphertext_basic(t *testing.T) {
 	t.Parallel()
 
-	kms := acctest.BootstrapKMSKey(t)
+	bootstrapped := kms.BootstrapKMSKey(t)
 
 	plaintext := fmt.Sprintf("secret-%s", acctest.RandString(t, 10))
 	aad := "plainaad"
@@ -42,9 +43,9 @@ func TestAccKmsSecretCiphertext_basic(t *testing.T) {
 		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		Steps: []resource.TestStep{
 			{
-				Config: testGoogleKmsSecretCiphertext(kms.CryptoKey.Name, plaintext),
+				Config: testGoogleKmsSecretCiphertext(bootstrapped.CryptoKey.Name, plaintext),
 				Check: func(s *terraform.State) error {
-					plaintext, err := testAccDecryptSecretDataWithCryptoKey(t, s, kms.CryptoKey.Name, "google_kms_secret_ciphertext.acceptance", "")
+					plaintext, err := testAccDecryptSecretDataWithCryptoKey(t, s, bootstrapped.CryptoKey.Name, "google_kms_secret_ciphertext.acceptance", "")
 
 					if err != nil {
 						return err
@@ -55,9 +56,9 @@ func TestAccKmsSecretCiphertext_basic(t *testing.T) {
 			},
 			// With AAD
 			{
-				Config: testGoogleKmsSecretCiphertext_withAAD(kms.CryptoKey.Name, plaintext, aad),
+				Config: testGoogleKmsSecretCiphertext_withAAD(bootstrapped.CryptoKey.Name, plaintext, aad),
 				Check: func(s *terraform.State) error {
-					plaintext, err := testAccDecryptSecretDataWithCryptoKey(t, s, kms.CryptoKey.Name, "google_kms_secret_ciphertext.acceptance", aad)
+					plaintext, err := testAccDecryptSecretDataWithCryptoKey(t, s, bootstrapped.CryptoKey.Name, "google_kms_secret_ciphertext.acceptance", aad)
 
 					if err != nil {
 						return err
@@ -89,7 +90,7 @@ func testAccDecryptSecretDataWithCryptoKey(t *testing.T, s *terraform.State, cry
 		kmsDecryptRequest.AdditionalAuthenticatedData = base64.StdEncoding.EncodeToString([]byte(aad))
 	}
 
-	decryptResponse, err := config.NewKmsClient(config.UserAgent).Projects.Locations.KeyRings.CryptoKeys.Decrypt(cryptoKeyId, kmsDecryptRequest).Do()
+	decryptResponse, err := kms.NewClient(config, config.UserAgent).Projects.Locations.KeyRings.CryptoKeys.Decrypt(cryptoKeyId, kmsDecryptRequest).Do()
 
 	if err != nil {
 		return "", fmt.Errorf("Error decrypting ciphertext: %s", err)

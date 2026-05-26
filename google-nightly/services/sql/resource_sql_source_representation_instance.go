@@ -100,6 +100,7 @@ func ResourceSQLSourceRepresentationInstance() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceSQLSourceRepresentationInstanceCreate,
 		Read:   resourceSQLSourceRepresentationInstanceRead,
+		Update: resourceSQLSourceRepresentationInstanceUpdate,
 		Delete: resourceSQLSourceRepresentationInstanceDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +114,7 @@ func ResourceSQLSourceRepresentationInstance() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -214,6 +216,18 @@ If it is not provided, the provider region is used.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -257,7 +271,7 @@ func resourceSQLSourceRepresentationInstanceCreate(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SQLBasePath}}projects/{{project}}/instances")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances")
 	if err != nil {
 		return err
 	}
@@ -336,7 +350,7 @@ func resourceSQLSourceRepresentationInstanceRead(d *schema.ResourceData, meta in
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SQLBasePath}}projects/{{project}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -381,33 +395,26 @@ func resourceSQLSourceRepresentationInstanceRead(d *schema.ResourceData, meta in
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading SourceRepresentationInstance: %s", err)
 	}
 
-	if err := d.Set("name", flattenSQLSourceRepresentationInstanceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SourceRepresentationInstance: %s", err)
-	}
-	if err := d.Set("region", flattenSQLSourceRepresentationInstanceRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SourceRepresentationInstance: %s", err)
-	}
-	if err := d.Set("database_version", flattenSQLSourceRepresentationInstanceDatabaseVersion(res["databaseVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SourceRepresentationInstance: %s", err)
-	}
-	// Terraform must set the top level schema field, but since this object contains collapsed properties
-	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
-	if flattenedProp := flattenSQLSourceRepresentationInstanceOnPremisesConfiguration(res["onPremisesConfiguration"], d, config); flattenedProp != nil {
-		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
-			return fmt.Errorf("Error reading SourceRepresentationInstance: %s", gerr)
-		}
-		casted := flattenedProp.([]interface{})[0]
-		if casted != nil {
-			for k, v := range casted.(map[string]interface{}) {
-				if err := d.Set(k, v); err != nil {
-					return fmt.Errorf("Error setting %s: %s", k, err)
-				}
-			}
-		}
+	err = ResourceSQLSourceRepresentationInstanceFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -431,7 +438,19 @@ func resourceSQLSourceRepresentationInstanceRead(d *schema.ResourceData, meta in
 	return nil
 }
 
+func resourceSQLSourceRepresentationInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceSQLSourceRepresentationInstanceRead(d, meta)
+}
+
 func resourceSQLSourceRepresentationInstanceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SQLSourceRepresentationInstance without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing SourceRepresentationInstance %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -445,8 +464,7 @@ func resourceSQLSourceRepresentationInstanceDelete(d *schema.ResourceData, meta 
 		return fmt.Errorf("Error fetching project for SourceRepresentationInstance: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SQLBasePath}}projects/{{project}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -721,4 +739,35 @@ func resourceSQLSourceRepresentationInstanceDecoder(d *schema.ResourceData, meta
 		delete(opc, "hostPort")
 	}
 	return res, nil
+}
+
+func ResourceSQLSourceRepresentationInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSQLSourceRepresentationInstanceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SourceRepresentationInstance: %s", err)
+	}
+	if err = d.Set("region", flattenSQLSourceRepresentationInstanceRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SourceRepresentationInstance: %s", err)
+	}
+	if err = d.Set("database_version", flattenSQLSourceRepresentationInstanceDatabaseVersion(res["databaseVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SourceRepresentationInstance: %s", err)
+	}
+	// Terraform must set the top level schema field, but since this object contains collapsed properties
+	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
+	if flattenedProp := flattenSQLSourceRepresentationInstanceOnPremisesConfiguration(res["onPremisesConfiguration"], d, config); flattenedProp != nil {
+		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
+			return fmt.Errorf("Error reading SourceRepresentationInstance: %s", gerr)
+		}
+		casted := flattenedProp.([]interface{})[0]
+		if casted != nil {
+			for k, v := range casted.(map[string]interface{}) {
+				if err := d.Set(k, v); err != nil {
+					return fmt.Errorf("Error setting %s: %s", k, err)
+				}
+			}
+		}
+	}
+
+	return nil
 }

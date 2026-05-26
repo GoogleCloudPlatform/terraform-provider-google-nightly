@@ -117,6 +117,7 @@ func ResourceClouddeployAutomation() *schema.Resource {
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -470,6 +471,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -526,7 +539,7 @@ func resourceClouddeployAutomationCreate(d *schema.ResourceData, meta interface{
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ClouddeployBasePath}}projects/{{project}}/locations/{{location}}/deliveryPipelines/{{delivery_pipeline}}/automations?automationId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/deliveryPipelines/{{delivery_pipeline}}/automations?automationId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -615,7 +628,7 @@ func resourceClouddeployAutomationRead(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ClouddeployBasePath}}projects/{{project}}/locations/{{location}}/deliveryPipelines/{{delivery_pipeline}}/automations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/deliveryPipelines/{{delivery_pipeline}}/automations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -648,51 +661,26 @@ func resourceClouddeployAutomationRead(d *schema.ResourceData, meta interface{})
 
 	log.Printf("[DEBUG] Finished reading ClouddeployAutomation %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Automation: %s", err)
 	}
 
-	if err := d.Set("uid", flattenClouddeployAutomationUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("description", flattenClouddeployAutomationDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("create_time", flattenClouddeployAutomationCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("update_time", flattenClouddeployAutomationUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("annotations", flattenClouddeployAutomationAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("labels", flattenClouddeployAutomationLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("etag", flattenClouddeployAutomationEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("suspended", flattenClouddeployAutomationSuspended(res["suspended"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("service_account", flattenClouddeployAutomationServiceAccount(res["serviceAccount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("selector", flattenClouddeployAutomationSelector(res["selector"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("rules", flattenClouddeployAutomationRules(res["rules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenClouddeployAutomationEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenClouddeployAutomationTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenClouddeployAutomationEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Automation: %s", err)
+	err = ResourceClouddeployAutomationFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -729,6 +717,19 @@ func resourceClouddeployAutomationRead(d *schema.ResourceData, meta interface{})
 }
 
 func resourceClouddeployAutomationUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceClouddeployAutomation().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceClouddeployAutomationRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -812,7 +813,7 @@ func resourceClouddeployAutomationUpdate(d *schema.ResourceData, meta interface{
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ClouddeployBasePath}}projects/{{project}}/locations/{{location}}/deliveryPipelines/{{delivery_pipeline}}/automations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/deliveryPipelines/{{delivery_pipeline}}/automations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -892,6 +893,13 @@ func resourceClouddeployAutomationUpdate(d *schema.ResourceData, meta interface{
 }
 
 func resourceClouddeployAutomationDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ClouddeployAutomation without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Automation %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -905,8 +913,7 @@ func resourceClouddeployAutomationDelete(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error fetching project for Automation: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ClouddeployBasePath}}projects/{{project}}/locations/{{location}}/deliveryPipelines/{{delivery_pipeline}}/automations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/deliveryPipelines/{{delivery_pipeline}}/automations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1814,4 +1821,53 @@ func expandClouddeployAutomationEffectiveLabels(v interface{}, d tpgresource.Ter
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceClouddeployAutomationFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("uid", flattenClouddeployAutomationUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("description", flattenClouddeployAutomationDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("create_time", flattenClouddeployAutomationCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("update_time", flattenClouddeployAutomationUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("annotations", flattenClouddeployAutomationAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("labels", flattenClouddeployAutomationLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("etag", flattenClouddeployAutomationEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("suspended", flattenClouddeployAutomationSuspended(res["suspended"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("service_account", flattenClouddeployAutomationServiceAccount(res["serviceAccount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("selector", flattenClouddeployAutomationSelector(res["selector"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("rules", flattenClouddeployAutomationRules(res["rules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenClouddeployAutomationEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenClouddeployAutomationTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenClouddeployAutomationEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Automation: %s", err)
+	}
+
+	return nil
 }

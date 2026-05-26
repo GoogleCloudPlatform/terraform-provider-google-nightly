@@ -115,6 +115,7 @@ func ResourceChronicleDataTable() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DEFAULT"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -319,20 +320,17 @@ SEARCH`,
 				Computed:    true,
 				Description: `Table update time`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `The policy governing the deletion of the data table.
-If set to 'FORCE', allows the deletion of the data table even if it contains rows.
-If set to 'DEFAULT',or if the field is omitted, the data table must be empty before it can be deleted.
-Possible values: DEFAULT, FORCE`,
-				Default: "DEFAULT",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/chronicle_data_table.html.markdown for specifics`,
 			},
 		},
 		UseJSONNumber: true,
@@ -372,7 +370,7 @@ func resourceChronicleDataTableCreate(d *schema.ResourceData, meta interface{}) 
 		obj["scopeInfo"] = scopeInfoProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables?dataTableId={{data_table_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables?dataTableId={{data_table_id}}")
 	if err != nil {
 		return err
 	}
@@ -451,7 +449,7 @@ func resourceChronicleDataTableRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables/{{data_table_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables/{{data_table_id}}")
 	if err != nil {
 		return err
 	}
@@ -486,55 +484,24 @@ func resourceChronicleDataTableRead(d *schema.ResourceData, meta interface{}) er
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DataTable: %s", err)
 	}
 
-	if err := d.Set("approximate_row_count", flattenChronicleDataTableApproximateRowCount(res["approximateRowCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("column_info", flattenChronicleDataTableColumnInfo(res["columnInfo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("create_time", flattenChronicleDataTableCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("data_table_uuid", flattenChronicleDataTableDataTableUuid(res["dataTableUuid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("description", flattenChronicleDataTableDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("display_name", flattenChronicleDataTableDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("name", flattenChronicleDataTableName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("row_time_to_live", flattenChronicleDataTableRowTimeToLive(res["rowTimeToLive"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("row_time_to_live_update_time", flattenChronicleDataTableRowTimeToLiveUpdateTime(res["rowTimeToLiveUpdateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("rule_associations_count", flattenChronicleDataTableRuleAssociationsCount(res["ruleAssociationsCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("rules", flattenChronicleDataTableRules(res["rules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("scope_info", flattenChronicleDataTableScopeInfo(res["scopeInfo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("update_source", flattenChronicleDataTableUpdateSource(res["updateSource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
-	}
-	if err := d.Set("update_time", flattenChronicleDataTableUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataTable: %s", err)
+	err = ResourceChronicleDataTableFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -571,6 +538,19 @@ func resourceChronicleDataTableRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceChronicleDataTableUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceChronicleDataTable().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceChronicleDataTableRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -630,7 +610,7 @@ func resourceChronicleDataTableUpdate(d *schema.ResourceData, meta interface{}) 
 		obj["scopeInfo"] = scopeInfoProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables/{{data_table_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables/{{data_table_id}}")
 	if err != nil {
 		return err
 	}
@@ -687,6 +667,13 @@ func resourceChronicleDataTableUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceChronicleDataTableDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ChronicleDataTable without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DataTable %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -700,8 +687,7 @@ func resourceChronicleDataTableDelete(d *schema.ResourceData, meta interface{}) 
 		return fmt.Errorf("Error fetching project for DataTable: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables/{{data_table_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables/{{data_table_id}}")
 	if err != nil {
 		return err
 	}
@@ -756,9 +742,6 @@ func resourceChronicleDataTableImport(d *schema.ResourceData, meta interface{}) 
 	d.SetId(id)
 
 	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -1030,4 +1013,53 @@ func expandChronicleDataTableScopeInfo(v interface{}, d tpgresource.TerraformRes
 
 func expandChronicleDataTableScopeInfoDataAccessScopes(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceChronicleDataTableFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("approximate_row_count", flattenChronicleDataTableApproximateRowCount(res["approximateRowCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("column_info", flattenChronicleDataTableColumnInfo(res["columnInfo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("create_time", flattenChronicleDataTableCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("data_table_uuid", flattenChronicleDataTableDataTableUuid(res["dataTableUuid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("description", flattenChronicleDataTableDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("display_name", flattenChronicleDataTableDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("name", flattenChronicleDataTableName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("row_time_to_live", flattenChronicleDataTableRowTimeToLive(res["rowTimeToLive"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("row_time_to_live_update_time", flattenChronicleDataTableRowTimeToLiveUpdateTime(res["rowTimeToLiveUpdateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("rule_associations_count", flattenChronicleDataTableRuleAssociationsCount(res["ruleAssociationsCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("rules", flattenChronicleDataTableRules(res["rules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("scope_info", flattenChronicleDataTableScopeInfo(res["scopeInfo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("update_source", flattenChronicleDataTableUpdateSource(res["updateSource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+	if err = d.Set("update_time", flattenChronicleDataTableUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataTable: %s", err)
+	}
+
+	return nil
 }

@@ -115,6 +115,7 @@ func ResourceCESTool() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -762,8 +763,9 @@ https://cloud.google.com/generative-ai-app-builder/docs/filter-search-metadata`,
 							},
 						},
 						"max_results": {
-							Type:     schema.TypeInt,
-							Optional: true,
+							Type:       schema.TypeInt,
+							Optional:   true,
+							Deprecated: "`max_results` is deprecated and will be removed in a future release.",
 							Description: `Number of search results to return per query.
 The default value is 10. The maximum allowed value is 10.`,
 						},
@@ -1284,6 +1286,18 @@ placeholder in the schema.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1328,7 +1342,7 @@ func resourceCESToolCreate(d *schema.ResourceData, meta interface{}) error {
 		obj["pythonFunction"] = pythonFunctionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/tools?toolId={{tool_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/tools?toolId={{tool_id}}")
 	if err != nil {
 		return err
 	}
@@ -1413,7 +1427,7 @@ func resourceCESToolRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/tools/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/tools/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1446,48 +1460,26 @@ func resourceCESToolRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading CESTool %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Tool: %s", err)
 	}
 
-	if err := d.Set("client_function", flattenCESToolClientFunction(res["clientFunction"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("create_time", flattenCESToolCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("data_store_tool", flattenCESToolDataStoreTool(res["dataStoreTool"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("display_name", flattenCESToolDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("etag", flattenCESToolEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("execution_type", flattenCESToolExecutionType(res["executionType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("generated_summary", flattenCESToolGeneratedSummary(res["generatedSummary"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("google_search_tool", flattenCESToolGoogleSearchTool(res["googleSearchTool"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("name", flattenCESToolName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("open_api_tool", flattenCESToolOpenApiTool(res["openApiTool"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("python_function", flattenCESToolPythonFunction(res["pythonFunction"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("update_time", flattenCESToolUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
-	}
-	if err := d.Set("system_tool", flattenCESToolSystemTool(res["systemTool"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Tool: %s", err)
+	err = ResourceCESToolFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1524,6 +1516,19 @@ func resourceCESToolRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceCESToolUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCESTool().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCESToolRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1595,7 +1600,7 @@ func resourceCESToolUpdate(d *schema.ResourceData, meta interface{}) error {
 		obj["pythonFunction"] = pythonFunctionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/tools/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/tools/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1660,6 +1665,13 @@ func resourceCESToolUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceCESToolDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CESTool without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Tool %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1673,8 +1685,7 @@ func resourceCESToolDelete(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Error fetching project for Tool: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/tools/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/tools/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -4400,5 +4411,51 @@ func resourceCESToolPostCreateSetComputedFields(d *schema.ResourceData, meta int
 	if err := d.Set("name", flattenCESToolName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceCESToolFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("client_function", flattenCESToolClientFunction(res["clientFunction"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("create_time", flattenCESToolCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("data_store_tool", flattenCESToolDataStoreTool(res["dataStoreTool"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("display_name", flattenCESToolDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("etag", flattenCESToolEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("execution_type", flattenCESToolExecutionType(res["executionType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("generated_summary", flattenCESToolGeneratedSummary(res["generatedSummary"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("google_search_tool", flattenCESToolGoogleSearchTool(res["googleSearchTool"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("name", flattenCESToolName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("open_api_tool", flattenCESToolOpenApiTool(res["openApiTool"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("python_function", flattenCESToolPythonFunction(res["pythonFunction"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("update_time", flattenCESToolUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+	if err = d.Set("system_tool", flattenCESToolSystemTool(res["systemTool"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Tool: %s", err)
+	}
+
 	return nil
 }

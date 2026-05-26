@@ -26,6 +26,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/ephemeral"
 	"github.com/hashicorp/terraform-plugin-framework/function"
+	"github.com/hashicorp/terraform-plugin-framework/list"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/metaschema"
@@ -37,11 +38,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/functions"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwmodels"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwvalidators"
-	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/apigee"
-	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebase"
-	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
-	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
-	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/version"
 
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -53,6 +50,7 @@ var (
 	_ provider.ProviderWithMetaSchema         = &FrameworkProvider{}
 	_ provider.ProviderWithFunctions          = &FrameworkProvider{}
 	_ provider.ProviderWithEphemeralResources = &FrameworkProvider{}
+	_ provider.ProviderWithListResources      = &FrameworkProvider{}
 )
 
 // New is a helper function to simplify provider server and testing implementation.
@@ -169,6 +167,9 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					fwvalidators.NonNegativeDurationValidator(),
 				},
 			},
+			"deletion_policy": schema.StringAttribute{
+				Optional: true,
+			},
 			"request_reason": schema.StringAttribute{
 				Optional: true,
 			},
@@ -185,7 +186,54 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 			"terraform_attribution_label_addition_strategy": schema.StringAttribute{
 				Optional: true,
 			},
-			// Generated Products
+			"prefer_global_endpoints": schema.BoolAttribute{
+				Optional: true,
+			},
+
+			"prefer_regional_endpoints": schema.BoolAttribute{
+				Optional: true,
+			},
+
+			// Tombstoned - nonfunctional. https://github.com/hashicorp/terraform-provider-google/issues/26814
+			"runtimeconfig_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"core_billing_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"billing_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"resource_manager3_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"iam_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"cloud_resource_manager_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+
+			// Generated Products. Although these will only be _populated_ for registered products, they
+			// must always be present to match the ProviderModel struct.
 			"access_approval_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
@@ -234,6 +282,12 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					transport_tpg.CustomEndpointValidator(),
 				},
 			},
+			"apikeys_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
 			"app_engine_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
@@ -247,6 +301,12 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 				},
 			},
 			"artifact_registry_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"assured_workloads_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
 					transport_tpg.CustomEndpointValidator(),
@@ -324,7 +384,7 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					transport_tpg.CustomEndpointValidator(),
 				},
 			},
-			"billing_custom_endpoint": &schema.StringAttribute{
+			"billing_budgets_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
 					transport_tpg.CustomEndpointValidator(),
@@ -361,6 +421,12 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 				},
 			},
 			"cloud_asset_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"cloud_billing_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
 					transport_tpg.CustomEndpointValidator(),
@@ -468,6 +534,12 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					transport_tpg.CustomEndpointValidator(),
 				},
 			},
+			"config_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
 			"contact_center_insights_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
@@ -492,7 +564,13 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					transport_tpg.CustomEndpointValidator(),
 				},
 			},
-			"core_billing_custom_endpoint": &schema.StringAttribute{
+			"container_aws_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"container_azure_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
 					transport_tpg.CustomEndpointValidator(),
@@ -510,6 +588,12 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					transport_tpg.CustomEndpointValidator(),
 				},
 			},
+			"dataflow_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
 			"dataform_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
@@ -517,6 +601,12 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 				},
 			},
 			"data_fusion_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"data_lineage_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
 					transport_tpg.CustomEndpointValidator(),
@@ -690,6 +780,18 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					transport_tpg.CustomEndpointValidator(),
 				},
 			},
+			"firebase_remote_config_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"firebaserules_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
 			"firebase_storage_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
@@ -763,6 +865,12 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 				},
 			},
 			"iam_connectors_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
+			"iam_credentials_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
 					transport_tpg.CustomEndpointValidator(),
@@ -996,6 +1104,12 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					transport_tpg.CustomEndpointValidator(),
 				},
 			},
+			"recaptcha_enterprise_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
 			"redis_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
@@ -1008,7 +1122,7 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					transport_tpg.CustomEndpointValidator(),
 				},
 			},
-			"resource_manager3_custom_endpoint": &schema.StringAttribute{
+			"resource_manager_v3_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
 					transport_tpg.CustomEndpointValidator(),
@@ -1158,6 +1272,12 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 					transport_tpg.CustomEndpointValidator(),
 				},
 			},
+			"tags_location_custom_endpoint": &schema.StringAttribute{
+				Optional: true,
+				Validators: []validator.String{
+					transport_tpg.CustomEndpointValidator(),
+				},
+			},
 			"tpu_v2_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
@@ -1213,94 +1333,6 @@ func (p *FrameworkProvider) Schema(_ context.Context, _ provider.SchemaRequest, 
 				},
 			},
 			"workstations_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-
-			// Handwritten Products / Versioned / Atypical Entries
-			"cloud_billing_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"dataflow_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"iam_credentials_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"resource_manager_v3_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"runtimeconfig_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"iam_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"tags_location_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-
-			// DCL
-			"container_aws_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"container_azure_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"apikeys_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"assured_workloads_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"cloud_resource_manager_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"firebaserules_custom_endpoint": &schema.StringAttribute{
-				Optional: true,
-				Validators: []validator.String{
-					transport_tpg.CustomEndpointValidator(),
-				},
-			},
-			"recaptcha_enterprise_custom_endpoint": &schema.StringAttribute{
 				Optional: true,
 				Validators: []validator.String{
 					transport_tpg.CustomEndpointValidator(),
@@ -1372,32 +1404,24 @@ func (p *FrameworkProvider) Configure(ctx context.Context, req provider.Configur
 	//    E.g. GetProjectFramework treats Null and "" the same way : https://github.com/hashicorp/terraform-provider-google/blob/74c815ee4ad059453e06b84448af244d80490ec1/google/fwresource/field_helpers.go#L21-L36
 	//    See also, new approaches to handle this: https://github.com/GoogleCloudPlatform/magic-modules/pull/11925
 
-	// This is how we make provider configuration info (configured clients, default project, etc) available to resources and data sources
-	// implemented using the plugin-framework. The resources' Configure functions receive this data in the ConfigureRequest argument.
+	// This is how we make provider configuration info (configured clients, default project, etc) available to resources, data sources,
+	// ephemeral resources, and list resources implemented using the plugin-framework. Their Configure functions receive this data via ConfigureRequest.ProviderData
+	// (list resources use ConfigureResponse.ListResourceData — see terraform-plugin-framework list.ConfigureRequest).
 	meta := p.Primary.Meta().(*transport_tpg.Config)
 	resp.DataSourceData = meta
 	resp.ResourceData = meta
 	resp.EphemeralResourceData = meta
+	resp.ListResourceData = meta
 }
 
 // DataSources defines the data sources implemented in the provider.
 func (p *FrameworkProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{
-		resourcemanager.NewGoogleClientConfigDataSource,
-		resourcemanager.NewGoogleClientOpenIDUserinfoDataSource,
-		firebase.NewGoogleFirebaseAdminSdkConfigDataSource,
-		firebase.NewGoogleFirebaseAndroidAppConfigDataSource,
-		firebase.NewGoogleFirebaseAppleAppConfigDataSource,
-		firebase.NewGoogleFirebaseWebAppConfigDataSource,
-	}
+	return registry.FrameworkDataSourceFuncs()
 }
 
 // Resources defines the resources implemented in the provider.
 func (p *FrameworkProvider) Resources(_ context.Context) []func() resource.Resource {
-	return []func() resource.Resource{
-		apigee.NewApigeeKeystoresAliasesKeyCertFileResource,
-		storage.NewStorageNotificationResource,
-	}
+	return registry.FrameworkResourceFuncs()
 }
 
 // Functions defines the provider functions implemented in the provider.
@@ -1414,12 +1438,13 @@ func (p *FrameworkProvider) Functions(_ context.Context) []func() function.Funct
 
 // EphemeralResources defines the resources that are of ephemeral type implemented in the provider.
 func (p *FrameworkProvider) EphemeralResources(_ context.Context) []func() ephemeral.EphemeralResource {
-	return []func() ephemeral.EphemeralResource{
-		resourcemanager.GoogleEphemeralClientConfig,
-		resourcemanager.GoogleEphemeralServiceAccountAccessToken,
-		resourcemanager.GoogleEphemeralServiceAccountIdToken,
-		resourcemanager.GoogleEphemeralServiceAccountJwt,
-		resourcemanager.GoogleEphemeralServiceAccountKey,
-		secretmanager.GoogleEphemeralSecretManagerSecretVersion,
-	}
+	return registry.FrameworkEphemeralResourceFuncs()
+}
+
+func (p *FrameworkProvider) ListResources(_ context.Context) []func() list.ListResource {
+	return registry.FrameworkListResourceFuncs()
+}
+
+func (p *FrameworkProvider) GenerateResourceConfig(context.Context, any) (any, error) {
+	return nil, nil
 }

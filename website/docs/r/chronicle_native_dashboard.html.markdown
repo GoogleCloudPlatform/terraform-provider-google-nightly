@@ -23,12 +23,10 @@ description: |-
 
 A configuration for a native dashboard within a Google SecOps (Chronicle) instance.
 
-~> **Warning:** This resource is in beta, and should be used with the terraform-provider-google-beta provider.
-See [Provider Versions](../guides/provider_versions.html.markdown) for more details on beta resources.
 
 To get more information about NativeDashboard, see:
 
-* [API documentation](https://cloud.google.com/chronicle/docs/reference/rest/v1beta/projects.locations.instances.nativeDashboards)
+* [API documentation](https://cloud.google.com/chronicle/docs/reference/rest/v1/projects.locations.instances.nativeDashboards)
 * How-to Guides
     * [Google SecOps Guides](https://cloud.google.com/chronicle/docs/secops/secops-overview)
 
@@ -37,7 +35,6 @@ To get more information about NativeDashboard, see:
 
 ```hcl
 resource "google_chronicle_native_dashboard" "my_basic_dashboard" {
-  provider     = google-beta
   location     = "us"
   instance     = "00000000-0000-0000-0000-000000000000"
   display_name = "dashboard"
@@ -111,6 +108,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_charts"></a>The `charts` block supports:

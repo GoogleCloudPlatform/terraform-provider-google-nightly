@@ -178,7 +178,7 @@ func resourceKMSFolderKajPolicyConfigCreate(d *schema.ResourceData, meta interfa
 		obj["defaultKeyAccessJustificationPolicy"] = defaultKeyAccessJustificationPolicyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}folders/{{folder}}/kajPolicyConfig?updateMask=defaultKeyAccessJustificationPolicy")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/kajPolicyConfig?updateMask=defaultKeyAccessJustificationPolicy")
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func resourceKMSFolderKajPolicyConfigRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}folders/{{folder}}/kajPolicyConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/kajPolicyConfig")
 	if err != nil {
 		return err
 	}
@@ -268,8 +268,9 @@ func resourceKMSFolderKajPolicyConfigRead(d *schema.ResourceData, meta interface
 
 	log.Printf("[DEBUG] Finished reading KMSFolderKajPolicyConfig %q: %#v", d.Id(), res)
 
-	if err := d.Set("default_key_access_justification_policy", flattenKMSFolderKajPolicyConfigDefaultKeyAccessJustificationPolicy(res["defaultKeyAccessJustificationPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderKajPolicyConfig: %s", err)
+	err = ResourceKMSFolderKajPolicyConfigFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -288,6 +289,7 @@ func resourceKMSFolderKajPolicyConfigRead(d *schema.ResourceData, meta interface
 }
 
 func resourceKMSFolderKajPolicyConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -314,7 +316,7 @@ func resourceKMSFolderKajPolicyConfigUpdate(d *schema.ResourceData, meta interfa
 		obj["defaultKeyAccessJustificationPolicy"] = defaultKeyAccessJustificationPolicyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}folders/{{folder}}/kajPolicyConfig?updateMask=defaultKeyAccessJustificationPolicy")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/kajPolicyConfig?updateMask=defaultKeyAccessJustificationPolicy")
 	if err != nil {
 		return err
 	}
@@ -420,4 +422,14 @@ func expandKMSFolderKajPolicyConfigDefaultKeyAccessJustificationPolicy(v interfa
 
 func expandKMSFolderKajPolicyConfigDefaultKeyAccessJustificationPolicyAllowedAccessReasons(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceKMSFolderKajPolicyConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("default_key_access_justification_policy", flattenKMSFolderKajPolicyConfigDefaultKeyAccessJustificationPolicy(res["defaultKeyAccessJustificationPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderKajPolicyConfig: %s", err)
+	}
+
+	return nil
 }

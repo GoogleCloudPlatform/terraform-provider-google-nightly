@@ -191,9 +191,12 @@ func resourceArtifactRegistryVPCSCConfigCreate(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ArtifactRegistryBasePath}}projects/{{project}}/locations/{{location}}/vpcscConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vpcscConfig")
 	if err != nil {
 		return err
+	}
+	if strings.Contains(url, "{{location}}") {
+		return fmt.Errorf("failed to qualify endpoint for a resource with a regionalized endpoint %s", url)
 	}
 
 	log.Printf("[DEBUG] Creating new VPCSCConfig: %#v", obj)
@@ -265,9 +268,12 @@ func resourceArtifactRegistryVPCSCConfigRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ArtifactRegistryBasePath}}projects/{{project}}/locations/{{location}}/vpcscConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vpcscConfig")
 	if err != nil {
 		return err
+	}
+	if strings.Contains(url, "{{location}}") {
+		return fmt.Errorf("failed to qualify endpoint for a resource with a regionalized endpoint %s", url)
 	}
 
 	billingProject := ""
@@ -302,11 +308,9 @@ func resourceArtifactRegistryVPCSCConfigRead(d *schema.ResourceData, meta interf
 		return fmt.Errorf("Error reading VPCSCConfig: %s", err)
 	}
 
-	if err := d.Set("vpcsc_policy", flattenArtifactRegistryVPCSCConfigVpcscPolicy(res["vpcscPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VPCSCConfig: %s", err)
-	}
-	if err := d.Set("name", flattenArtifactRegistryVPCSCConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VPCSCConfig: %s", err)
+	err = ResourceArtifactRegistryVPCSCConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -337,6 +341,7 @@ func resourceArtifactRegistryVPCSCConfigRead(d *schema.ResourceData, meta interf
 }
 
 func resourceArtifactRegistryVPCSCConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -384,9 +389,12 @@ func resourceArtifactRegistryVPCSCConfigUpdate(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ArtifactRegistryBasePath}}projects/{{project}}/locations/{{location}}/vpcscConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vpcscConfig")
 	if err != nil {
 		return err
+	}
+	if strings.Contains(url, "{{location}}") {
+		return fmt.Errorf("failed to qualify endpoint for a resource with a regionalized endpoint %s", url)
 	}
 
 	log.Printf("[DEBUG] Updating VPCSCConfig %q: %#v", d.Id(), obj)
@@ -470,4 +478,17 @@ func resourceArtifactRegistryVPCSCConfigEncoder(d *schema.ResourceData, meta int
 		}
 	}
 	return obj, nil
+}
+
+func ResourceArtifactRegistryVPCSCConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("vpcsc_policy", flattenArtifactRegistryVPCSCConfigVpcscPolicy(res["vpcscPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VPCSCConfig: %s", err)
+	}
+	if err = d.Set("name", flattenArtifactRegistryVPCSCConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VPCSCConfig: %s", err)
+	}
+
+	return nil
 }

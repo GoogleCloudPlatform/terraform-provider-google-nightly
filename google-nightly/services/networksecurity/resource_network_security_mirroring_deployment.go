@@ -116,6 +116,7 @@ func ResourceNetworkSecurityMirroringDeployment() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -245,6 +246,18 @@ See https://google.aip.dev/148#timestamps.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -283,7 +296,7 @@ func resourceNetworkSecurityMirroringDeploymentCreate(d *schema.ResourceData, me
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/mirroringDeployments?mirroringDeploymentId={{mirroring_deployment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/mirroringDeployments?mirroringDeploymentId={{mirroring_deployment_id}}")
 	if err != nil {
 		return err
 	}
@@ -367,7 +380,7 @@ func resourceNetworkSecurityMirroringDeploymentRead(d *schema.ResourceData, meta
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/mirroringDeployments/{{mirroring_deployment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/mirroringDeployments/{{mirroring_deployment_id}}")
 	if err != nil {
 		return err
 	}
@@ -400,42 +413,26 @@ func resourceNetworkSecurityMirroringDeploymentRead(d *schema.ResourceData, meta
 
 	log.Printf("[DEBUG] Finished reading NetworkSecurityMirroringDeployment %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
 	}
 
-	if err := d.Set("name", flattenNetworkSecurityMirroringDeploymentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetworkSecurityMirroringDeploymentCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkSecurityMirroringDeploymentUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkSecurityMirroringDeploymentLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("forwarding_rule", flattenNetworkSecurityMirroringDeploymentForwardingRule(res["forwardingRule"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("mirroring_deployment_group", flattenNetworkSecurityMirroringDeploymentMirroringDeploymentGroup(res["mirroringDeploymentGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("state", flattenNetworkSecurityMirroringDeploymentState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("reconciling", flattenNetworkSecurityMirroringDeploymentReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkSecurityMirroringDeploymentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkSecurityMirroringDeploymentTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkSecurityMirroringDeploymentEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	err = ResourceNetworkSecurityMirroringDeploymentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -466,6 +463,19 @@ func resourceNetworkSecurityMirroringDeploymentRead(d *schema.ResourceData, meta
 }
 
 func resourceNetworkSecurityMirroringDeploymentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkSecurityMirroringDeployment().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkSecurityMirroringDeploymentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -514,7 +524,7 @@ func resourceNetworkSecurityMirroringDeploymentUpdate(d *schema.ResourceData, me
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/mirroringDeployments/{{mirroring_deployment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/mirroringDeployments/{{mirroring_deployment_id}}")
 	if err != nil {
 		return err
 	}
@@ -574,6 +584,13 @@ func resourceNetworkSecurityMirroringDeploymentUpdate(d *schema.ResourceData, me
 }
 
 func resourceNetworkSecurityMirroringDeploymentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkSecurityMirroringDeployment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing MirroringDeployment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -587,8 +604,7 @@ func resourceNetworkSecurityMirroringDeploymentDelete(d *schema.ResourceData, me
 		return fmt.Errorf("Error fetching project for MirroringDeployment: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/mirroringDeployments/{{mirroring_deployment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/mirroringDeployments/{{mirroring_deployment_id}}")
 	if err != nil {
 		return err
 	}
@@ -736,4 +752,44 @@ func expandNetworkSecurityMirroringDeploymentEffectiveLabels(v interface{}, d tp
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkSecurityMirroringDeploymentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenNetworkSecurityMirroringDeploymentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkSecurityMirroringDeploymentCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkSecurityMirroringDeploymentUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkSecurityMirroringDeploymentLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("forwarding_rule", flattenNetworkSecurityMirroringDeploymentForwardingRule(res["forwardingRule"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("mirroring_deployment_group", flattenNetworkSecurityMirroringDeploymentMirroringDeploymentGroup(res["mirroringDeploymentGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("state", flattenNetworkSecurityMirroringDeploymentState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("reconciling", flattenNetworkSecurityMirroringDeploymentReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkSecurityMirroringDeploymentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkSecurityMirroringDeploymentTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkSecurityMirroringDeploymentEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MirroringDeployment: %s", err)
+	}
+
+	return nil
 }

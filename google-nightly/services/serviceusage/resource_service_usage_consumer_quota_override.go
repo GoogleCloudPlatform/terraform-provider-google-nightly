@@ -115,6 +115,7 @@ func ResourceServiceUsageConsumerQuotaOverride() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -200,6 +201,18 @@ If 'force' is 'true', that safety check is ignored.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -226,7 +239,7 @@ func resourceServiceUsageConsumerQuotaOverrideCreate(d *schema.ResourceData, met
 		obj["dimensions"] = dimensionsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ServiceUsageBasePath}}projects/{{project}}/services/{{service}}/consumerQuotaMetrics/{{metric}}/limits/{{limit}}/consumerOverrides/{{name}}?force={{force}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/services/{{service}}/consumerQuotaMetrics/{{metric}}/limits/{{limit}}/consumerOverrides/{{name}}?force={{force}}")
 	if err != nil {
 		return err
 	}
@@ -344,7 +357,7 @@ func resourceServiceUsageConsumerQuotaOverrideRead(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ServiceUsageBasePath}}projects/{{project}}/services/{{service}}/consumerQuotaMetrics/{{metric}}/limits/{{limit}}/consumerOverrides/")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/services/{{service}}/consumerQuotaMetrics/{{metric}}/limits/{{limit}}/consumerOverrides/")
 	if err != nil {
 		return err
 	}
@@ -389,18 +402,26 @@ func resourceServiceUsageConsumerQuotaOverrideRead(d *schema.ResourceData, meta 
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading ConsumerQuotaOverride: %s", err)
 	}
 
-	if err := d.Set("override_value", flattenNestedServiceUsageConsumerQuotaOverrideOverrideValue(res["overrideValue"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConsumerQuotaOverride: %s", err)
-	}
-	if err := d.Set("dimensions", flattenNestedServiceUsageConsumerQuotaOverrideDimensions(res["dimensions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConsumerQuotaOverride: %s", err)
-	}
-	if err := d.Set("name", flattenNestedServiceUsageConsumerQuotaOverrideName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConsumerQuotaOverride: %s", err)
+	err = ResourceServiceUsageConsumerQuotaOverrideFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -443,6 +464,19 @@ func resourceServiceUsageConsumerQuotaOverrideRead(d *schema.ResourceData, meta 
 }
 
 func resourceServiceUsageConsumerQuotaOverrideUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceServiceUsageConsumerQuotaOverride().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceServiceUsageConsumerQuotaOverrideRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -495,7 +529,7 @@ func resourceServiceUsageConsumerQuotaOverrideUpdate(d *schema.ResourceData, met
 		obj["overrideValue"] = overrideValueProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ServiceUsageBasePath}}projects/{{project}}/services/{{service}}/consumerQuotaMetrics/{{metric}}/limits/{{limit}}/consumerOverrides/{{name}}?force={{force}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/services/{{service}}/consumerQuotaMetrics/{{metric}}/limits/{{limit}}/consumerOverrides/{{name}}?force={{force}}")
 	if err != nil {
 		return err
 	}
@@ -537,6 +571,13 @@ func resourceServiceUsageConsumerQuotaOverrideUpdate(d *schema.ResourceData, met
 }
 
 func resourceServiceUsageConsumerQuotaOverrideDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ServiceUsageConsumerQuotaOverride without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ConsumerQuotaOverride %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -550,8 +591,7 @@ func resourceServiceUsageConsumerQuotaOverrideDelete(d *schema.ResourceData, met
 		return fmt.Errorf("Error fetching project for ConsumerQuotaOverride: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ServiceUsageBasePath}}projects/{{project}}/services/{{service}}/consumerQuotaMetrics/{{metric}}/limits/{{limit}}/consumerOverrides/{{name}}?force={{force}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/services/{{service}}/consumerQuotaMetrics/{{metric}}/limits/{{limit}}/consumerOverrides/{{name}}?force={{force}}")
 	if err != nil {
 		return err
 	}
@@ -692,4 +732,20 @@ func resourceServiceUsageConsumerQuotaOverrideFindNestedObjectInList(d *schema.R
 		return idx, item, nil
 	}
 	return -1, nil, nil
+}
+
+func ResourceServiceUsageConsumerQuotaOverrideFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("override_value", flattenNestedServiceUsageConsumerQuotaOverrideOverrideValue(res["overrideValue"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConsumerQuotaOverride: %s", err)
+	}
+	if err = d.Set("dimensions", flattenNestedServiceUsageConsumerQuotaOverrideDimensions(res["dimensions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConsumerQuotaOverride: %s", err)
+	}
+	if err = d.Set("name", flattenNestedServiceUsageConsumerQuotaOverrideName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConsumerQuotaOverride: %s", err)
+	}
+
+	return nil
 }

@@ -23,12 +23,10 @@ description: |-
 
 A chart resource used within a NativeDashboard. Its lifecycle (Create, Update, Delete) is managed via custom methods on the NativeDashboard resource.
 
-~> **Warning:** This resource is in beta, and should be used with the terraform-provider-google-beta provider.
-See [Provider Versions](../guides/provider_versions.html.markdown) for more details on beta resources.
 
 To get more information about DashboardChart, see:
 
-* [API documentation](https://cloud.google.com/chronicle/docs/reference/rest/v1beta/projects.locations.instances.dashboardCharts)
+* [API documentation](https://cloud.google.com/chronicle/docs/reference/rest/v1/projects.locations.instances.dashboardCharts)
 * How-to Guides
     * [Google SecOps Guides](https://cloud.google.com/chronicle/docs/secops/secops-overview)
 
@@ -38,7 +36,6 @@ To get more information about DashboardChart, see:
 ```hcl
 # A Native Dashboard is required to create a Dashboard Chart.
 resource "google_chronicle_native_dashboard" "my_dashboard" {
-  provider     = google-beta
   location     = "us" 
   instance     = "%{chronicle_id}"
   display_name = "tf-test-dashboard-1%{random_suffix}"
@@ -61,7 +58,6 @@ resource "google_chronicle_native_dashboard" "my_dashboard" {
 }
 
 resource "google_chronicle_dashboard_chart" "my_chart" {
-  provider         = google-beta
   location         = "us" # Example region, adjust as necessary
   instance         = "00000000-0000-0000-0000-000000000000"
   # This parameter creates an implicit dependency: Terraform will create
@@ -128,7 +124,6 @@ resource "google_chronicle_dashboard_chart" "my_chart" {
 ```hcl
 # A Native Dashboard is required to create a Dashboard Chart.
 resource "google_chronicle_native_dashboard" "my_dashboard" {
-  provider     = google-beta
   location     = "us" # Example region, adjust as necessary
   instance     = "00000000-0000-0000-0000-000000000000"
   display_name = "dashboard_1"
@@ -155,7 +150,6 @@ resource "google_chronicle_native_dashboard" "my_dashboard" {
 }
 
 resource "google_chronicle_dashboard_chart" "my_chart" {
-  provider         = google-beta
   location         = google_chronicle_native_dashboard.my_dashboard.location
   instance         = google_chronicle_native_dashboard.my_dashboard.instance
   native_dashboard = google_chronicle_native_dashboard.my_dashboard.name
@@ -256,7 +250,6 @@ resource "google_chronicle_dashboard_chart" "my_chart" {
 }
 
 resource "google_chronicle_dashboard_chart" "button_tile" {
-  provider         = google-beta
   location         = google_chronicle_native_dashboard.my_dashboard.location
   instance         = google_chronicle_native_dashboard.my_dashboard.instance
   native_dashboard = google_chronicle_native_dashboard.my_dashboard.name
@@ -288,7 +281,6 @@ resource "google_chronicle_dashboard_chart" "button_tile" {
 }
 
 resource "google_chronicle_dashboard_chart" "markdown_tile" {
-  provider         = google-beta
   location         = google_chronicle_native_dashboard.my_dashboard.location
   instance         = google_chronicle_native_dashboard.my_dashboard.instance
   native_dashboard = google_chronicle_native_dashboard.my_dashboard.name
@@ -354,6 +346,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_dashboard_chart"></a>The `dashboard_chart` block supports:

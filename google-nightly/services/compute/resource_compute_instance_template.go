@@ -80,6 +80,7 @@ func ResourceComputeInstanceTemplate() *schema.Resource {
 		},
 		SchemaVersion: 1,
 		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 			tpgresource.DefaultProviderProject,
 			resourceComputeInstanceTemplateSourceImageCustomizeDiff,
 			resourceComputeInstanceTemplateScratchDiskCustomizeDiff,
@@ -571,8 +572,8 @@ Google Cloud KMS. Only one of kms_key_self_link, rsa_encrypted_key and raw_key m
 							Type:         schema.TypeString,
 							Optional:     true,
 							ForceNew:     true,
-							ValidateFunc: validation.StringInSlice([]string{"GVNIC", "VIRTIO_NET", "MRDMA", "IRDMA"}, false),
-							Description:  `The type of vNIC to be used on this interface. Possible values:GVNIC, VIRTIO_NET, MRDMA, and IRDMA`,
+							ValidateFunc: validation.StringInSlice([]string{"GVNIC", "VIRTIO_NET", "MRDMA", "IRDMA", "IDPF"}, false),
+							Description:  `The type of vNIC to be used on this interface. Possible values:GVNIC, VIRTIO_NET, MRDMA, IRDMA and IDPF`,
 						},
 						"access_config": {
 							Type:        schema.TypeList,
@@ -625,6 +626,30 @@ Google Cloud KMS. Only one of kms_key_self_link, rsa_encrypted_key and raw_key m
 										Optional:    true,
 										ForceNew:    true,
 										Description: `The subnetwork secondary range name specifying the secondary range from which to allocate the IP CIDR range for this alias IP range. If left unspecified, the primary range of the subnetwork will be used.`,
+									},
+								},
+							},
+						},
+
+						"alias_ipv6_range": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							ForceNew:    true,
+							Description: `An array of alias IPv6 ranges for this network interface. Can only be specified for network interfaces on subnet-mode networks.`,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"ip_cidr_range": {
+										Type:             schema.TypeString,
+										Required:         true,
+										ForceNew:         true,
+										DiffSuppressFunc: IpCidrRangeDiffSuppress,
+										Description:      `The IP CIDR range represented by this alias IPv6 range. This IP CIDR range must belong to the specified subnetwork and cannot contain IP addresses reserved by system or used by other network interfaces. At the time of writing only a netmask (e.g. /96) may be supplied, with a CIDR format resulting in an API error.`,
+									},
+									"subnetwork_range_name": {
+										Type:        schema.TypeString,
+										Optional:    true,
+										ForceNew:    true,
+										Description: `The subnetwork secondary range name specifying the secondary range from which to allocate the IP CIDR range for this alias IPv6 range. If left unspecified, the primary range of the subnetwork will be used.`,
 									},
 								},
 							},
@@ -1638,7 +1663,11 @@ func resourceComputeInstanceTemplateCreate(d *schema.ResourceData, meta interfac
 	if err != nil {
 		return err
 	}
-	PartnerMetadata, err := resourceInstancePartnerMetadata(d)
+	partnerMetadataMap, err := resourceInstancePartnerMetadata(d)
+	if err != nil {
+		return err
+	}
+	PartnerMetadata, err := convertPartnerMetadataToCompute(partnerMetadataMap)
 	if err != nil {
 		return err
 	}
@@ -1712,7 +1741,7 @@ func resourceComputeInstanceTemplateCreate(d *schema.ResourceData, meta interfac
 		Name:        itName,
 	}
 
-	op, err := config.NewComputeClient(userAgent).InstanceTemplates.Insert(project, instanceTemplate).Do()
+	op, err := NewClient(config, userAgent).InstanceTemplates.Insert(project, instanceTemplate).Do()
 	if err != nil {
 		return fmt.Errorf("Error creating instance template: %s", err)
 	}
@@ -2001,7 +2030,7 @@ func resourceComputeInstanceTemplateRead(d *schema.ResourceData, meta interface{
 	}
 
 	splits := strings.Split(idStr, "/")
-	instanceTemplate, err := config.NewComputeClient(userAgent).InstanceTemplates.Get(project, splits[len(splits)-1]).View("FULL").Do()
+	instanceTemplate, err := NewClient(config, userAgent).InstanceTemplates.Get(project, splits[len(splits)-1]).View("FULL").Do()
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, fmt.Sprintf("Instance Template %q", d.Get("name").(string)))
 	}
@@ -2033,7 +2062,7 @@ func resourceComputeInstanceTemplateRead(d *schema.ResourceData, meta interface{
 	}
 
 	if instanceTemplate.Properties.PartnerMetadata != nil {
-		partnerMetadata, err := flattenPartnerMetadata(instanceTemplate.Properties.PartnerMetadata)
+		partnerMetadata, err := flattenPartnerMetadata(convertPartnerMetadataFromCompute(instanceTemplate.Properties.PartnerMetadata))
 		if err != nil {
 			return fmt.Errorf("Error parsing partner metadata: %s", err)
 		}
@@ -2211,7 +2240,7 @@ func resourceComputeInstanceTemplateDelete(d *schema.ResourceData, meta interfac
 	}
 
 	splits := strings.Split(d.Id(), "/")
-	op, err := config.NewComputeClient(userAgent).InstanceTemplates.Delete(
+	op, err := NewClient(config, userAgent).InstanceTemplates.Delete(
 		project, splits[len(splits)-1]).Do()
 	if err != nil {
 		return fmt.Errorf("Error deleting instance template: %s", err)

@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/beyondcorp"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = beyondcorp.Product
 )
 
 func TestAccBeyondcorpAppConnector_beyondcorpAppConnectorBasicExample(t *testing.T) {
@@ -174,8 +177,7 @@ func testAccCheckBeyondcorpAppConnectorDestroyProducer(t *testing.T) func(s *ter
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{BeyondcorpBasePath}}projects/{{project}}/locations/{{region}}/appConnectors/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(beyondcorp.Product, config)+"projects/{{project}}/locations/{{region}}/appConnectors/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -115,6 +115,7 @@ func ResourceNetworkSecuritySecurityProfile() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -239,7 +240,7 @@ The default value is 'global'.`,
 				Optional: true,
 				ForceNew: true,
 				Description: `The name of the parent this security profile belongs to.
-Format: organizations/{organization_id}.`,
+Format: 'organizations/{organization_id}' or 'projects/{project_id}'.`,
 			},
 			"threat_prevention_profile": {
 				Type:        schema.TypeList,
@@ -329,6 +330,19 @@ value before proceeding.`,
 				Type:        schema.TypeString,
 				Computed:    true,
 				Description: `Time the security profile was updated in UTC.`,
+			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -477,7 +491,7 @@ func resourceNetworkSecuritySecurityProfileCreate(d *schema.ResourceData, meta i
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}{{parent}}/locations/{{location}}/securityProfiles?securityProfileId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/securityProfiles?securityProfileId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -555,7 +569,7 @@ func resourceNetworkSecuritySecurityProfileRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}{{parent}}/locations/{{location}}/securityProfiles/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/securityProfiles/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -582,44 +596,23 @@ func resourceNetworkSecuritySecurityProfileRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading NetworkSecuritySecurityProfile %q: %#v", d.Id(), res)
 
-	if err := d.Set("self_link", flattenNetworkSecuritySecurityProfileSelfLink(res["selfLink"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("create_time", flattenNetworkSecuritySecurityProfileCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkSecuritySecurityProfileUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("etag", flattenNetworkSecuritySecurityProfileEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkSecuritySecurityProfileDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkSecuritySecurityProfileLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("threat_prevention_profile", flattenNetworkSecuritySecurityProfileThreatPreventionProfile(res["threatPreventionProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("url_filtering_profile", flattenNetworkSecuritySecurityProfileUrlFilteringProfile(res["urlFilteringProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("custom_mirroring_profile", flattenNetworkSecuritySecurityProfileCustomMirroringProfile(res["customMirroringProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("custom_intercept_profile", flattenNetworkSecuritySecurityProfileCustomInterceptProfile(res["customInterceptProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("type", flattenNetworkSecuritySecurityProfileType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkSecuritySecurityProfileTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkSecuritySecurityProfileEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+
+	err = ResourceNetworkSecuritySecurityProfileFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -650,6 +643,18 @@ func resourceNetworkSecuritySecurityProfileRead(d *schema.ResourceData, meta int
 }
 
 func resourceNetworkSecuritySecurityProfileUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkSecuritySecurityProfile().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkSecuritySecurityProfileRead(d, meta)
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -717,7 +722,7 @@ func resourceNetworkSecuritySecurityProfileUpdate(d *schema.ResourceData, meta i
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}{{parent}}/locations/{{location}}/securityProfiles/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/securityProfiles/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -793,6 +798,13 @@ func resourceNetworkSecuritySecurityProfileUpdate(d *schema.ResourceData, meta i
 }
 
 func resourceNetworkSecuritySecurityProfileDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkSecuritySecurityProfile without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing SecurityProfile %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -802,7 +814,7 @@ func resourceNetworkSecuritySecurityProfileDelete(d *schema.ResourceData, meta i
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}{{parent}}/locations/{{location}}/securityProfiles/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/securityProfiles/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1486,4 +1498,50 @@ func expandNetworkSecuritySecurityProfileEffectiveLabels(v interface{}, d tpgres
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkSecuritySecurityProfileFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("self_link", flattenNetworkSecuritySecurityProfileSelfLink(res["selfLink"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkSecuritySecurityProfileCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkSecuritySecurityProfileUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("etag", flattenNetworkSecuritySecurityProfileEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkSecuritySecurityProfileDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkSecuritySecurityProfileLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("threat_prevention_profile", flattenNetworkSecuritySecurityProfileThreatPreventionProfile(res["threatPreventionProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("url_filtering_profile", flattenNetworkSecuritySecurityProfileUrlFilteringProfile(res["urlFilteringProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("custom_mirroring_profile", flattenNetworkSecuritySecurityProfileCustomMirroringProfile(res["customMirroringProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("custom_intercept_profile", flattenNetworkSecuritySecurityProfileCustomInterceptProfile(res["customInterceptProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("type", flattenNetworkSecuritySecurityProfileType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkSecuritySecurityProfileTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkSecuritySecurityProfileEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityProfile: %s", err)
+	}
+
+	return nil
 }

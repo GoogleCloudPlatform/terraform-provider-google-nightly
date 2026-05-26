@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/logging"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 )
 
 // Logging exclusions don't always work when making parallel requests, so run tests serially
@@ -231,7 +232,7 @@ func testAccCheckLoggingFolderExclusionDestroyProducer(t *testing.T) func(s *ter
 
 			attributes := rs.Primary.Attributes
 
-			_, err := config.NewLoggingClient(config.UserAgent).Folders.Exclusions.Get(attributes["id"]).Do()
+			_, err := logging.NewClient(config, config.UserAgent).Folders.Exclusions.Get(attributes["id"]).Do()
 			if err == nil {
 				return fmt.Errorf("folder exclusion still exists")
 			}

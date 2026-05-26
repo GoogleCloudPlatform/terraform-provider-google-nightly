@@ -116,6 +116,7 @@ func ResourceEdgecontainerCluster() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -710,6 +711,18 @@ if the cluster does not have any worker nodes.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -796,7 +809,7 @@ func resourceEdgecontainerClusterCreate(d *schema.ResourceData, meta interface{}
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{EdgecontainerBasePath}}projects/{{project}}/locations/{{location}}/clusters?cluster_id={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clusters?cluster_id={{name}}")
 	if err != nil {
 		return err
 	}
@@ -880,7 +893,7 @@ func resourceEdgecontainerClusterRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{EdgecontainerBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -913,78 +926,26 @@ func resourceEdgecontainerClusterRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading EdgecontainerCluster %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Cluster: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenEdgecontainerClusterCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("update_time", flattenEdgecontainerClusterUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("labels", flattenEdgecontainerClusterLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("fleet", flattenEdgecontainerClusterFleet(res["fleet"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("networking", flattenEdgecontainerClusterNetworking(res["networking"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("authorization", flattenEdgecontainerClusterAuthorization(res["authorization"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("default_max_pods_per_node", flattenEdgecontainerClusterDefaultMaxPodsPerNode(res["defaultMaxPodsPerNode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("endpoint", flattenEdgecontainerClusterEndpoint(res["endpoint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("port", flattenEdgecontainerClusterPort(res["port"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("cluster_ca_certificate", flattenEdgecontainerClusterClusterCaCertificate(res["clusterCaCertificate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("maintenance_policy", flattenEdgecontainerClusterMaintenancePolicy(res["maintenancePolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("control_plane_version", flattenEdgecontainerClusterControlPlaneVersion(res["controlPlaneVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("node_version", flattenEdgecontainerClusterNodeVersion(res["nodeVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("control_plane", flattenEdgecontainerClusterControlPlane(res["controlPlane"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("system_addons_config", flattenEdgecontainerClusterSystemAddonsConfig(res["systemAddonsConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("external_load_balancer_ipv4_address_pools", flattenEdgecontainerClusterExternalLoadBalancerIpv4AddressPools(res["externalLoadBalancerIpv4AddressPools"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("control_plane_encryption", flattenEdgecontainerClusterControlPlaneEncryption(res["controlPlaneEncryption"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("status", flattenEdgecontainerClusterStatus(res["status"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("maintenance_events", flattenEdgecontainerClusterMaintenanceEvents(res["maintenanceEvents"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("target_version", flattenEdgecontainerClusterTargetVersion(res["targetVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("release_channel", flattenEdgecontainerClusterReleaseChannel(res["releaseChannel"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenEdgecontainerClusterTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenEdgecontainerClusterEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
+	err = ResourceEdgecontainerClusterFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1015,6 +976,19 @@ func resourceEdgecontainerClusterRead(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceEdgecontainerClusterUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceEdgecontainerCluster().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceEdgecontainerClusterRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1105,7 +1079,7 @@ func resourceEdgecontainerClusterUpdate(d *schema.ResourceData, meta interface{}
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{EdgecontainerBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1200,7 +1174,7 @@ func resourceEdgecontainerClusterUpdate(d *schema.ResourceData, meta interface{}
 			obj["targetVersion"] = targetVersionProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{EdgecontainerBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{name}}:upgrade")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clusters/{{name}}:upgrade")
 		if err != nil {
 			return err
 		}
@@ -1242,6 +1216,13 @@ func resourceEdgecontainerClusterUpdate(d *schema.ResourceData, meta interface{}
 }
 
 func resourceEdgecontainerClusterDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy EdgecontainerCluster without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Cluster %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1255,8 +1236,7 @@ func resourceEdgecontainerClusterDelete(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error fetching project for Cluster: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{EdgecontainerBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2524,4 +2504,80 @@ func expandEdgecontainerClusterEffectiveLabels(v interface{}, d tpgresource.Terr
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceEdgecontainerClusterFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenEdgecontainerClusterCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("update_time", flattenEdgecontainerClusterUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("labels", flattenEdgecontainerClusterLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("fleet", flattenEdgecontainerClusterFleet(res["fleet"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("networking", flattenEdgecontainerClusterNetworking(res["networking"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("authorization", flattenEdgecontainerClusterAuthorization(res["authorization"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("default_max_pods_per_node", flattenEdgecontainerClusterDefaultMaxPodsPerNode(res["defaultMaxPodsPerNode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("endpoint", flattenEdgecontainerClusterEndpoint(res["endpoint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("port", flattenEdgecontainerClusterPort(res["port"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("cluster_ca_certificate", flattenEdgecontainerClusterClusterCaCertificate(res["clusterCaCertificate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("maintenance_policy", flattenEdgecontainerClusterMaintenancePolicy(res["maintenancePolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("control_plane_version", flattenEdgecontainerClusterControlPlaneVersion(res["controlPlaneVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("node_version", flattenEdgecontainerClusterNodeVersion(res["nodeVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("control_plane", flattenEdgecontainerClusterControlPlane(res["controlPlane"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("system_addons_config", flattenEdgecontainerClusterSystemAddonsConfig(res["systemAddonsConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("external_load_balancer_ipv4_address_pools", flattenEdgecontainerClusterExternalLoadBalancerIpv4AddressPools(res["externalLoadBalancerIpv4AddressPools"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("control_plane_encryption", flattenEdgecontainerClusterControlPlaneEncryption(res["controlPlaneEncryption"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("status", flattenEdgecontainerClusterStatus(res["status"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("maintenance_events", flattenEdgecontainerClusterMaintenanceEvents(res["maintenanceEvents"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("target_version", flattenEdgecontainerClusterTargetVersion(res["targetVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("release_channel", flattenEdgecontainerClusterReleaseChannel(res["releaseChannel"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenEdgecontainerClusterTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenEdgecontainerClusterEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+
+	return nil
 }

@@ -502,6 +502,11 @@ Default to no result if unspecified. Possible values: ["SNIPPET", "EXTRACTIVE_AN
 				Description: `The unique ID to use for the WidgetConfig. Currently only accepts "default_search_widget_config".`,
 				Default:     "default_search_widget_config",
 			},
+			"config_id": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `Output only. Unique obfuscated identifier of a WidgetConfig.`,
+			},
 			"name": {
 				Type:     schema.TypeString,
 				Computed: true,
@@ -552,7 +557,7 @@ func resourceDiscoveryEngineWidgetConfigCreate(d *schema.ResourceData, meta inte
 		obj["homepageSetting"] = homepageSettingProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}/widgetConfigs/{{widget_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}/widgetConfigs/{{widget_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -659,7 +664,7 @@ func resourceDiscoveryEngineWidgetConfigRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}/widgetConfigs/{{widget_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}/widgetConfigs/{{widget_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -696,20 +701,9 @@ func resourceDiscoveryEngineWidgetConfigRead(d *schema.ResourceData, meta interf
 		return fmt.Errorf("Error reading WidgetConfig: %s", err)
 	}
 
-	if err := d.Set("name", flattenDiscoveryEngineWidgetConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WidgetConfig: %s", err)
-	}
-	if err := d.Set("access_settings", flattenDiscoveryEngineWidgetConfigAccessSettings(res["accessSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WidgetConfig: %s", err)
-	}
-	if err := d.Set("ui_settings", flattenDiscoveryEngineWidgetConfigUiSettings(res["uiSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WidgetConfig: %s", err)
-	}
-	if err := d.Set("ui_branding", flattenDiscoveryEngineWidgetConfigUiBranding(res["uiBranding"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WidgetConfig: %s", err)
-	}
-	if err := d.Set("homepage_setting", flattenDiscoveryEngineWidgetConfigHomepageSetting(res["homepageSetting"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WidgetConfig: %s", err)
+	err = ResourceDiscoveryEngineWidgetConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -752,6 +746,7 @@ func resourceDiscoveryEngineWidgetConfigRead(d *schema.ResourceData, meta interf
 }
 
 func resourceDiscoveryEngineWidgetConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -822,7 +817,7 @@ func resourceDiscoveryEngineWidgetConfigUpdate(d *schema.ResourceData, meta inte
 		obj["homepageSetting"] = homepageSettingProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}/widgetConfigs/{{widget_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/engines/{{engine_id}}/widgetConfigs/{{widget_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -912,6 +907,10 @@ func resourceDiscoveryEngineWidgetConfigImport(d *schema.ResourceData, meta inte
 }
 
 func flattenDiscoveryEngineWidgetConfigName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDiscoveryEngineWidgetConfigConfigId(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1922,4 +1921,29 @@ func expandDiscoveryEngineWidgetConfigHomepageSettingShortcutsIconUrl(v interfac
 
 func expandDiscoveryEngineWidgetConfigHomepageSettingShortcutsDestinationUri(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceDiscoveryEngineWidgetConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDiscoveryEngineWidgetConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WidgetConfig: %s", err)
+	}
+	if err = d.Set("config_id", flattenDiscoveryEngineWidgetConfigConfigId(res["configId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WidgetConfig: %s", err)
+	}
+	if err = d.Set("access_settings", flattenDiscoveryEngineWidgetConfigAccessSettings(res["accessSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WidgetConfig: %s", err)
+	}
+	if err = d.Set("ui_settings", flattenDiscoveryEngineWidgetConfigUiSettings(res["uiSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WidgetConfig: %s", err)
+	}
+	if err = d.Set("ui_branding", flattenDiscoveryEngineWidgetConfigUiBranding(res["uiBranding"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WidgetConfig: %s", err)
+	}
+	if err = d.Set("homepage_setting", flattenDiscoveryEngineWidgetConfigHomepageSetting(res["homepageSetting"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WidgetConfig: %s", err)
+	}
+
+	return nil
 }

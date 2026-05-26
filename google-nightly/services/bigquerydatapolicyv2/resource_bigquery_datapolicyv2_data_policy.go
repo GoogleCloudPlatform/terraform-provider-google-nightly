@@ -115,6 +115,7 @@ func ResourceBigqueryDatapolicyv2DataPolicy() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -248,6 +249,18 @@ V2`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -297,7 +310,7 @@ func resourceBigqueryDatapolicyv2DataPolicyCreate(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryDatapolicyv2BasePath}}projects/{{project}}/locations/{{location}}/dataPolicies")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataPolicies")
 	if err != nil {
 		return err
 	}
@@ -371,7 +384,7 @@ func resourceBigqueryDatapolicyv2DataPolicyRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryDatapolicyv2BasePath}}projects/{{project}}/locations/{{location}}/dataPolicies/{{data_policy_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataPolicies/{{data_policy_id}}")
 	if err != nil {
 		return err
 	}
@@ -404,33 +417,26 @@ func resourceBigqueryDatapolicyv2DataPolicyRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading BigqueryDatapolicyv2DataPolicy %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DataPolicy: %s", err)
 	}
 
-	if err := d.Set("data_masking_policy", flattenBigqueryDatapolicyv2DataPolicyDataMaskingPolicy(res["dataMaskingPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataPolicy: %s", err)
-	}
-	if err := d.Set("data_policy_type", flattenBigqueryDatapolicyv2DataPolicyDataPolicyType(res["dataPolicyType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataPolicy: %s", err)
-	}
-	if err := d.Set("etag", flattenBigqueryDatapolicyv2DataPolicyEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataPolicy: %s", err)
-	}
-	if err := d.Set("grantees", flattenBigqueryDatapolicyv2DataPolicyGrantees(res["grantees"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataPolicy: %s", err)
-	}
-	if err := d.Set("name", flattenBigqueryDatapolicyv2DataPolicyName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataPolicy: %s", err)
-	}
-	if err := d.Set("policy_tag", flattenBigqueryDatapolicyv2DataPolicyPolicyTag(res["policyTag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataPolicy: %s", err)
-	}
-	if err := d.Set("version", flattenBigqueryDatapolicyv2DataPolicyVersion(res["version"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataPolicy: %s", err)
-	}
-	if err := d.Set("data_policy_id", flattenBigqueryDatapolicyv2DataPolicyDataPolicyId(res["dataPolicyId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataPolicy: %s", err)
+	err = ResourceBigqueryDatapolicyv2DataPolicyFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -461,6 +467,19 @@ func resourceBigqueryDatapolicyv2DataPolicyRead(d *schema.ResourceData, meta int
 }
 
 func resourceBigqueryDatapolicyv2DataPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceBigqueryDatapolicyv2DataPolicy().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceBigqueryDatapolicyv2DataPolicyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -532,7 +551,7 @@ func resourceBigqueryDatapolicyv2DataPolicyUpdate(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryDatapolicyv2BasePath}}projects/{{project}}/locations/{{location}}/dataPolicies/{{data_policy_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataPolicies/{{data_policy_id}}")
 	if err != nil {
 		return err
 	}
@@ -597,6 +616,13 @@ func resourceBigqueryDatapolicyv2DataPolicyUpdate(d *schema.ResourceData, meta i
 }
 
 func resourceBigqueryDatapolicyv2DataPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BigqueryDatapolicyv2DataPolicy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DataPolicy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -610,8 +636,7 @@ func resourceBigqueryDatapolicyv2DataPolicyDelete(d *schema.ResourceData, meta i
 		return fmt.Errorf("Error fetching project for DataPolicy: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryDatapolicyv2BasePath}}projects/{{project}}/locations/{{location}}/dataPolicies/{{data_policy_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataPolicies/{{data_policy_id}}")
 	if err != nil {
 		return err
 	}
@@ -779,4 +804,35 @@ func resourceBigqueryDatapolicyv2DataPolicyEncoder(d *schema.ResourceData, meta 
 
 func resourceBigqueryDatapolicyv2DataPolicyUpdateEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
 	return obj, nil
+}
+
+func ResourceBigqueryDatapolicyv2DataPolicyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("data_masking_policy", flattenBigqueryDatapolicyv2DataPolicyDataMaskingPolicy(res["dataMaskingPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataPolicy: %s", err)
+	}
+	if err = d.Set("data_policy_type", flattenBigqueryDatapolicyv2DataPolicyDataPolicyType(res["dataPolicyType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataPolicy: %s", err)
+	}
+	if err = d.Set("etag", flattenBigqueryDatapolicyv2DataPolicyEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataPolicy: %s", err)
+	}
+	if err = d.Set("grantees", flattenBigqueryDatapolicyv2DataPolicyGrantees(res["grantees"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataPolicy: %s", err)
+	}
+	if err = d.Set("name", flattenBigqueryDatapolicyv2DataPolicyName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataPolicy: %s", err)
+	}
+	if err = d.Set("policy_tag", flattenBigqueryDatapolicyv2DataPolicyPolicyTag(res["policyTag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataPolicy: %s", err)
+	}
+	if err = d.Set("version", flattenBigqueryDatapolicyv2DataPolicyVersion(res["version"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataPolicy: %s", err)
+	}
+	if err = d.Set("data_policy_id", flattenBigqueryDatapolicyv2DataPolicyDataPolicyId(res["dataPolicyId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataPolicy: %s", err)
+	}
+
+	return nil
 }

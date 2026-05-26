@@ -100,6 +100,7 @@ func ResourceComputeNodeTemplate() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceComputeNodeTemplateCreate,
 		Read:   resourceComputeNodeTemplateRead,
+		Update: resourceComputeNodeTemplateUpdate,
 		Delete: resourceComputeNodeTemplateDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +114,7 @@ func ResourceComputeNodeTemplate() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -318,6 +320,18 @@ nodes will experience outages while maintenance is applied. Possible values: ["R
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -392,7 +406,7 @@ func resourceComputeNodeTemplateCreate(d *schema.ResourceData, meta interface{})
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/nodeTemplates")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/nodeTemplates")
 	if err != nil {
 		return err
 	}
@@ -476,7 +490,7 @@ func resourceComputeNodeTemplateRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/nodeTemplates/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/nodeTemplates/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -509,45 +523,26 @@ func resourceComputeNodeTemplateRead(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[DEBUG] Finished reading ComputeNodeTemplate %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading NodeTemplate: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeNodeTemplateCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("description", flattenComputeNodeTemplateDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("name", flattenComputeNodeTemplateName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("node_affinity_labels", flattenComputeNodeTemplateNodeAffinityLabels(res["nodeAffinityLabels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("node_type", flattenComputeNodeTemplateNodeType(res["nodeType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("node_type_flexibility", flattenComputeNodeTemplateNodeTypeFlexibility(res["nodeTypeFlexibility"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("server_binding", flattenComputeNodeTemplateServerBinding(res["serverBinding"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("accelerators", flattenComputeNodeTemplateAccelerators(res["accelerators"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("cpu_overcommit_type", flattenComputeNodeTemplateCpuOvercommitType(res["cpuOvercommitType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("disks", flattenComputeNodeTemplateDisks(res["disks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("region", flattenComputeNodeTemplateRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	err = ResourceComputeNodeTemplateFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -577,7 +572,19 @@ func resourceComputeNodeTemplateRead(d *schema.ResourceData, meta interface{}) e
 	return nil
 }
 
+func resourceComputeNodeTemplateUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceComputeNodeTemplateRead(d, meta)
+}
+
 func resourceComputeNodeTemplateDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeNodeTemplate without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing NodeTemplate %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -591,8 +598,7 @@ func resourceComputeNodeTemplateDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error fetching project for NodeTemplate: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/nodeTemplates/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/nodeTemplates/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1027,4 +1033,46 @@ func expandComputeNodeTemplateRegion(v interface{}, d tpgresource.TerraformResou
 		return nil, fmt.Errorf("Invalid value for region: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeNodeTemplateFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeNodeTemplateCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("description", flattenComputeNodeTemplateDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("name", flattenComputeNodeTemplateName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("node_affinity_labels", flattenComputeNodeTemplateNodeAffinityLabels(res["nodeAffinityLabels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("node_type", flattenComputeNodeTemplateNodeType(res["nodeType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("node_type_flexibility", flattenComputeNodeTemplateNodeTypeFlexibility(res["nodeTypeFlexibility"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("server_binding", flattenComputeNodeTemplateServerBinding(res["serverBinding"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("accelerators", flattenComputeNodeTemplateAccelerators(res["accelerators"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("cpu_overcommit_type", flattenComputeNodeTemplateCpuOvercommitType(res["cpuOvercommitType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("disks", flattenComputeNodeTemplateDisks(res["disks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("region", flattenComputeNodeTemplateRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading NodeTemplate: %s", err)
+	}
+	return nil
 }

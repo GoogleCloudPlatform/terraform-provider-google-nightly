@@ -30,6 +30,11 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudbuild"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudbuildv2"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +53,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = cloudbuild.Product
 )
 
 func TestAccCloudBuildTrigger_cloudbuildTriggerFilenameExample(t *testing.T) {
@@ -1229,8 +1235,7 @@ func testAccCheckCloudBuildTriggerDestroyProducer(t *testing.T) func(s *terrafor
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{CloudBuildBasePath}}projects/{{project}}/locations/{{location}}/triggers/{{trigger_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(cloudbuild.Product, config)+"projects/{{project}}/locations/{{location}}/triggers/{{trigger_id}}")
 			if err != nil {
 				return err
 			}

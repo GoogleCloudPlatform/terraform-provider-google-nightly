@@ -47,6 +47,7 @@ type ArtifactRegistryOperationWaiter struct {
 	Config    *transport_tpg.Config
 	UserAgent string
 	Project   string
+	Location  string
 	tpgresource.CommonOperationWaiter
 }
 
@@ -55,8 +56,12 @@ func (w *ArtifactRegistryOperationWaiter) QueryOp() (interface{}, error) {
 		return nil, fmt.Errorf("Cannot query operation, it's unset or nil.")
 	}
 	// Returns the proper get.
-	url := fmt.Sprintf("%s%s", w.Config.ArtifactRegistryBasePath, w.CommonOperationWaiter.Op.Name)
-
+	url := transport_tpg.BaseUrl(Product, w.Config)
+	url += fmt.Sprintf("%s", w.CommonOperationWaiter.Op.Name)
+	if strings.Contains(url, "{{location}}") && w.Location == "" {
+		return nil, fmt.Errorf("failed to find location for a resource with a regionalized endpoint %s", url)
+	}
+	url = strings.ReplaceAll(url, "{{location}}", w.Location)
 	return transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 		Config:    w.Config,
 		Method:    "GET",
@@ -66,11 +71,12 @@ func (w *ArtifactRegistryOperationWaiter) QueryOp() (interface{}, error) {
 	})
 }
 
-func createArtifactRegistryWaiter(config *transport_tpg.Config, op map[string]interface{}, project, activity, userAgent string) (*ArtifactRegistryOperationWaiter, error) {
+func createArtifactRegistryWaiter(config *transport_tpg.Config, op map[string]interface{}, project, location, activity, userAgent string) (*ArtifactRegistryOperationWaiter, error) {
 	w := &ArtifactRegistryOperationWaiter{
 		Config:    config,
 		UserAgent: userAgent,
 		Project:   project,
+		Location:  location,
 	}
 	if err := w.CommonOperationWaiter.SetOp(op); err != nil {
 		return nil, err
@@ -79,8 +85,8 @@ func createArtifactRegistryWaiter(config *transport_tpg.Config, op map[string]in
 }
 
 // nolint: deadcode,unused
-func ArtifactRegistryOperationWaitTimeWithResponse(config *transport_tpg.Config, op map[string]interface{}, response *map[string]interface{}, project, activity, userAgent string, timeout time.Duration) error {
-	w, err := createArtifactRegistryWaiter(config, op, project, activity, userAgent)
+func ArtifactRegistryOperationWaitTimeWithResponse(config *transport_tpg.Config, op map[string]interface{}, response *map[string]interface{}, project, location, activity, userAgent string, timeout time.Duration) error {
+	w, err := createArtifactRegistryWaiter(config, op, project, location, activity, userAgent)
 	if err != nil {
 		return err
 	}
@@ -94,12 +100,12 @@ func ArtifactRegistryOperationWaitTimeWithResponse(config *transport_tpg.Config,
 	return json.Unmarshal(rawResponse, response)
 }
 
-func ArtifactRegistryOperationWaitTime(config *transport_tpg.Config, op map[string]interface{}, project, activity, userAgent string, timeout time.Duration) error {
+func ArtifactRegistryOperationWaitTime(config *transport_tpg.Config, op map[string]interface{}, project, location, activity, userAgent string, timeout time.Duration) error {
 	if val, ok := op["name"]; !ok || val == "" {
 		// This was a synchronous call - there is no operation to wait for.
 		return nil
 	}
-	w, err := createArtifactRegistryWaiter(config, op, project, activity, userAgent)
+	w, err := createArtifactRegistryWaiter(config, op, project, location, activity, userAgent)
 	if err != nil {
 		// If w is nil, the op was synchronous.
 		return err

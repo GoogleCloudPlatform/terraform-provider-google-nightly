@@ -55,6 +55,12 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
+import (
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanagerv3"
+)
+
+var _ = resourcemanagerv3.NewClient
+
 var (
 	_ = bytes.Clone
 	_ = context.WithCancel
@@ -100,6 +106,7 @@ func ResourceBigqueryAnalyticsHubListingSubscription() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceBigqueryAnalyticsHubListingSubscriptionCreate,
 		Read:   resourceBigqueryAnalyticsHubListingSubscriptionRead,
+		Update: resourceBigqueryAnalyticsHubListingSubscriptionUpdate,
 		Delete: resourceBigqueryAnalyticsHubListingSubscriptionDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +120,7 @@ func ResourceBigqueryAnalyticsHubListingSubscription() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -353,6 +361,18 @@ e.g. projects/123/locations/US/dataExchanges/456/listings/789 -> projects/123/da
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -373,7 +393,7 @@ func resourceBigqueryAnalyticsHubListingSubscriptionCreate(d *schema.ResourceDat
 		obj["destinationDataset"] = destinationDatasetProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryAnalyticsHubBasePath}}projects/{{project}}/locations/{{location}}/dataExchanges/{{data_exchange_id}}/listings/{{listing_id}}:subscribe")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataExchanges/{{data_exchange_id}}/listings/{{listing_id}}:subscribe")
 	if err != nil {
 		return err
 	}
@@ -453,7 +473,7 @@ func resourceBigqueryAnalyticsHubListingSubscriptionRead(d *schema.ResourceData,
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryAnalyticsHubBasePath}}projects/{{project}}/locations/{{location}}/subscriptions/{{subscription_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/subscriptions/{{subscription_id}}")
 	if err != nil {
 		return err
 	}
@@ -525,51 +545,26 @@ func resourceBigqueryAnalyticsHubListingSubscriptionRead(d *schema.ResourceData,
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading ListingSubscription: %s", err)
 	}
 
-	if err := d.Set("destination_dataset", flattenBigqueryAnalyticsHubListingSubscriptionDestinationDataset(res["destinationDataset"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("name", flattenBigqueryAnalyticsHubListingSubscriptionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("subscription_id", flattenBigqueryAnalyticsHubListingSubscriptionSubscriptionId(res["subscriptionId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("creation_time", flattenBigqueryAnalyticsHubListingSubscriptionCreationTime(res["creationTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("last_modify_time", flattenBigqueryAnalyticsHubListingSubscriptionLastModifyTime(res["lastModifyTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("organization_id", flattenBigqueryAnalyticsHubListingSubscriptionOrganizationId(res["organizationId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("organization_display_name", flattenBigqueryAnalyticsHubListingSubscriptionOrganizationDisplayName(res["organizationDisplayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("state", flattenBigqueryAnalyticsHubListingSubscriptionState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("subscriber_contact", flattenBigqueryAnalyticsHubListingSubscriptionSubscriberContact(res["subscriberContact"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("resource_type", flattenBigqueryAnalyticsHubListingSubscriptionResourceType(res["resourceType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("linked_dataset_map", flattenBigqueryAnalyticsHubListingSubscriptionLinkedDatasetMap(res["linkedDatasetMap"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("linked_resources", flattenBigqueryAnalyticsHubListingSubscriptionLinkedResources(res["linkedResources"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("log_linked_dataset_query_user_email", flattenBigqueryAnalyticsHubListingSubscriptionLogLinkedDatasetQueryUserEmail(res["logLinkedDatasetQueryUserEmail"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
-	}
-	if err := d.Set("commercial_info", flattenBigqueryAnalyticsHubListingSubscriptionCommercialInfo(res["commercialInfo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	err = ResourceBigqueryAnalyticsHubListingSubscriptionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -599,7 +594,19 @@ func resourceBigqueryAnalyticsHubListingSubscriptionRead(d *schema.ResourceData,
 	return nil
 }
 
+func resourceBigqueryAnalyticsHubListingSubscriptionUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceBigqueryAnalyticsHubListingSubscriptionRead(d, meta)
+}
+
 func resourceBigqueryAnalyticsHubListingSubscriptionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BigqueryAnalyticsHubListingSubscription without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ListingSubscription %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -613,8 +620,7 @@ func resourceBigqueryAnalyticsHubListingSubscriptionDelete(d *schema.ResourceDat
 		return fmt.Errorf("Error fetching project for ListingSubscription: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryAnalyticsHubBasePath}}projects/{{project}}/locations/{{location}}/subscriptions/{{subscription_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/subscriptions/{{subscription_id}}")
 	if err != nil {
 		return err
 	}
@@ -685,7 +691,7 @@ func resourceBigqueryAnalyticsHubListingSubscriptionImport(d *schema.ResourceDat
 	}
 
 	projectNumber := d.Get("project").(string)
-	resourceManager := config.NewResourceManagerV3Client(userAgent)
+	resourceManager := resourcemanagerv3.NewClient(config, userAgent)
 	projectData, err := resourceManager.Projects.Get("projects/" + d.Get("project").(string)).Do()
 	if err != nil {
 		return nil, err
@@ -1047,5 +1053,54 @@ func resourceBigqueryAnalyticsHubListingSubscriptionPostCreateSetComputedFields(
 	if err := d.Set("subscription_id", flattenBigqueryAnalyticsHubListingSubscriptionSubscriptionId(res["subscriptionId"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "subscription_id": %s`, err)
 	}
+	return nil
+}
+
+func ResourceBigqueryAnalyticsHubListingSubscriptionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("destination_dataset", flattenBigqueryAnalyticsHubListingSubscriptionDestinationDataset(res["destinationDataset"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("name", flattenBigqueryAnalyticsHubListingSubscriptionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("subscription_id", flattenBigqueryAnalyticsHubListingSubscriptionSubscriptionId(res["subscriptionId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("creation_time", flattenBigqueryAnalyticsHubListingSubscriptionCreationTime(res["creationTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("last_modify_time", flattenBigqueryAnalyticsHubListingSubscriptionLastModifyTime(res["lastModifyTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("organization_id", flattenBigqueryAnalyticsHubListingSubscriptionOrganizationId(res["organizationId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("organization_display_name", flattenBigqueryAnalyticsHubListingSubscriptionOrganizationDisplayName(res["organizationDisplayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("state", flattenBigqueryAnalyticsHubListingSubscriptionState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("subscriber_contact", flattenBigqueryAnalyticsHubListingSubscriptionSubscriberContact(res["subscriberContact"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("resource_type", flattenBigqueryAnalyticsHubListingSubscriptionResourceType(res["resourceType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("linked_dataset_map", flattenBigqueryAnalyticsHubListingSubscriptionLinkedDatasetMap(res["linkedDatasetMap"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("linked_resources", flattenBigqueryAnalyticsHubListingSubscriptionLinkedResources(res["linkedResources"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("log_linked_dataset_query_user_email", flattenBigqueryAnalyticsHubListingSubscriptionLogLinkedDatasetQueryUserEmail(res["logLinkedDatasetQueryUserEmail"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+	if err = d.Set("commercial_info", flattenBigqueryAnalyticsHubListingSubscriptionCommercialInfo(res["commercialInfo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ListingSubscription: %s", err)
+	}
+
 	return nil
 }

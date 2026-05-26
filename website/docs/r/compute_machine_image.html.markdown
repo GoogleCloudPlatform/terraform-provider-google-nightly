@@ -34,6 +34,10 @@ To get more information about MachineImage, see:
 * How-to Guides
     * [Official Documentation](https://cloud.google.com/compute/docs/machine-images)
 
+~> **Warning:** All arguments including the following potentially sensitive
+values will be stored in the raw state as plain text: `machine_image_encryption_key.raw_key`.
+[Read more about sensitive data in state](https://developer.hashicorp.com/terraform/language/manage-sensitive-data).
+
 <div class = "oics-button" style="float: right; margin: 0 0 -15px">
   <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=machine_image_basic&open_in_editor=main.tf" target="_blank">
     <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
@@ -111,6 +115,58 @@ resource "google_kms_key_ring" "key_ring" {
   location = "us"
 }
 ```
+<div class = "oics-button" style="float: right; margin: 0 0 -15px">
+  <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=machine_image_resource_manager_tags&open_in_editor=main.tf" target="_blank">
+    <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
+  </a>
+</div>
+## Example Usage - Machine Image Resource Manager Tags
+
+
+```hcl
+data "google_project" "project" {
+  provider = google-beta
+}
+
+resource "google_tags_tag_key" "tag_key1" {
+  provider   = google-beta
+  parent     = "projects/${data.google_project.project.number}"
+  short_name = "tagkey"
+}
+
+resource "google_tags_tag_value" "tag_value1" {
+  provider   = google-beta
+  parent     = google_tags_tag_key.tag_key1.id
+  short_name = "tagvalue"
+}
+
+resource "google_compute_instance" "vm" {
+  provider     = google-beta
+  name         = "my-vm"
+  machine_type = "e2-medium"
+
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-11"
+    }
+  }
+
+  network_interface {
+    network = "default"
+  }
+}
+
+resource "google_compute_machine_image" "image" {
+  provider        = google-beta
+  name            = "my-image"
+  source_instance = google_compute_instance.vm.self_link
+  params {
+    resource_manager_tags = {
+      (google_tags_tag_key.tag_key1.id) = (google_tags_tag_value.tag_value1.id)
+    }
+  }
+}
+```
 
 ## Argument Reference
 
@@ -143,9 +199,20 @@ The following arguments are supported:
   instance from the image)
   Structure is [documented below](#nested_machine_image_encryption_key).
 
+* `params` -
+  (Optional)
+  Additional params passed with the request, but not persisted as part of resource payload.
+  Structure is [documented below](#nested_params).
+
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_machine_image_encryption_key"></a>The `machine_image_encryption_key` block supports:
@@ -154,6 +221,7 @@ The following arguments are supported:
   (Optional)
   Specifies a 256-bit customer-supplied encryption key, encoded in
   RFC 4648 base64 to either encrypt or decrypt this resource.
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `sha256` -
   (Output)
@@ -168,6 +236,14 @@ The following arguments are supported:
   (Optional)
   The service account used for the encryption request for the given KMS key.
   If absent, the Compute Engine Service Agent service account is used.
+
+<a name="nested_params"></a>The `params` block supports:
+
+* `resource_manager_tags` -
+  (Optional)
+  Resource manager tags to be bound to the machine image. Tag keys and values have the
+  same definition as resource manager tags. Keys must be in the format tagKeys/{tag_key_id},
+  and values are in the format tagValues/456.
 
 ## Attributes Reference
 

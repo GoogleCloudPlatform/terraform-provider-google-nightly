@@ -115,6 +115,7 @@ func ResourceSQLDatabase() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -176,15 +177,6 @@ and Postgres' [Collation Support](https://www.postgresql.org/docs/9.6/static/col
 for more details and supported values. Postgres databases only support
 a value of 'en_US.UTF8' at creation time.`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `The deletion policy for the database. Setting ABANDON allows the resource
-to be abandoned rather than deleted. This is useful for Postgres, where databases cannot be
-deleted from the API if there are users other than cloudsqlsuperuser with access. Possible
-values are: "ABANDON", "DELETE". Defaults to "DELETE".`,
-				Default: "DELETE",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
@@ -194,6 +186,18 @@ values are: "ABANDON", "DELETE". Defaults to "DELETE".`,
 			"self_link": {
 				Type:     schema.TypeString,
 				Computed: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -240,7 +244,7 @@ func resourceSQLDatabaseCreate(d *schema.ResourceData, meta interface{}) error {
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SQLBasePath}}projects/{{project}}/instances/{{instance}}/databases")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances/{{instance}}/databases")
 	if err != nil {
 		return err
 	}
@@ -324,7 +328,7 @@ func resourceSQLDatabaseRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SQLBasePath}}projects/{{project}}/instances/{{instance}}/databases/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances/{{instance}}/databases/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -344,7 +348,7 @@ func resourceSQLDatabaseRead(d *schema.ResourceData, meta interface{}) error {
 
 	headers := make(http.Header)
 	instance := d.Get("instance").(string)
-	databaseInstance, err := config.NewSqlAdminClient(userAgent).Instances.Get(project, instance).Do()
+	databaseInstance, err := NewClient(config, userAgent).Instances.Get(project, instance).Do()
 	if err != nil {
 		return err
 	}
@@ -390,28 +394,24 @@ func resourceSQLDatabaseRead(d *schema.ResourceData, meta interface{}) error {
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DELETE"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Database: %s", err)
 	}
 
-	if err := d.Set("charset", flattenSQLDatabaseCharset(res["charset"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("collation", flattenSQLDatabaseCollation(res["collation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("name", flattenSQLDatabaseName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("instance", flattenSQLDatabaseInstance(res["instance"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading Database: %s", err)
+	err = ResourceSQLDatabaseFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -442,6 +442,19 @@ func resourceSQLDatabaseRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceSQLDatabaseUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSQLDatabase().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSQLDatabaseRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -509,7 +522,7 @@ func resourceSQLDatabaseUpdate(d *schema.ResourceData, meta interface{}) error {
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SQLBasePath}}projects/{{project}}/instances/{{instance}}/databases/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances/{{instance}}/databases/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -551,6 +564,13 @@ func resourceSQLDatabaseUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SQLDatabase without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Database %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -571,8 +591,7 @@ func resourceSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) error {
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SQLBasePath}}projects/{{project}}/instances/{{instance}}/databases/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/instances/{{instance}}/databases/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -585,11 +604,6 @@ func resourceSQLDatabaseDelete(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	headers := make(http.Header)
-	if deletionPolicy := d.Get("deletion_policy"); deletionPolicy == "ABANDON" {
-		// Allows for database to be abandoned without deletion to avoid deletion failing
-		// for Postgres databases in some circumstances due to existing SQL users
-		return nil
-	}
 
 	log.Printf("[DEBUG] Deleting Database %q", d.Id())
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
@@ -636,11 +650,6 @@ func resourceSQLDatabaseImport(d *schema.ResourceData, meta interface{}) ([]*sch
 	}
 	d.SetId(id)
 
-	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "DELETE"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
-
 	return []*schema.ResourceData{d}, nil
 }
 
@@ -674,4 +683,25 @@ func expandSQLDatabaseName(v interface{}, d tpgresource.TerraformResourceData, c
 
 func expandSQLDatabaseInstance(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceSQLDatabaseFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("charset", flattenSQLDatabaseCharset(res["charset"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("collation", flattenSQLDatabaseCollation(res["collation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("name", flattenSQLDatabaseName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("instance", flattenSQLDatabaseInstance(res["instance"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading Database: %s", err)
+	}
+	return nil
 }

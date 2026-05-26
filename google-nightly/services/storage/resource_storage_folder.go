@@ -183,6 +183,18 @@ trailing '/'. For example, 'example_dir/example_dir2/', 'example@#/', 'a-b/d-f/'
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -203,7 +215,7 @@ func resourceStorageFolderCreate(d *schema.ResourceData, meta interface{}) error
 		obj["name"] = nameProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}b/{{bucket}}/folders")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"b/{{bucket}}/folders")
 	if err != nil {
 		return err
 	}
@@ -266,7 +278,7 @@ func resourceStorageFolderRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}b/{{bucket}}/folders/{{%name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"b/{{bucket}}/folders/{{%name}}")
 	if err != nil {
 		return err
 	}
@@ -299,21 +311,22 @@ func resourceStorageFolderRead(d *schema.ResourceData, meta interface{}) error {
 			return fmt.Errorf("Error setting force_destroy: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 
-	if err := d.Set("create_time", flattenStorageFolderCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Folder: %s", err)
-	}
-	if err := d.Set("update_time", flattenStorageFolderUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Folder: %s", err)
-	}
-	if err := d.Set("metageneration", flattenStorageFolderMetageneration(res["metageneration"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Folder: %s", err)
-	}
-	if err := d.Set("name", flattenStorageFolderName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Folder: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading Folder: %s", err)
+	err = ResourceStorageFolderFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -338,6 +351,19 @@ func resourceStorageFolderRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceStorageFolderUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceStorageFolder().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceStorageFolderRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	_ = config
 	// we can only get here if force_destroy was updated
@@ -370,6 +396,13 @@ func resourceStorageFolderUpdate(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceStorageFolderDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy StorageFolder without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Folder %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -381,7 +414,7 @@ func resourceStorageFolderDelete(d *schema.ResourceData, meta interface{}) error
 
 	var listError, deleteObjectError error
 	for deleteObjectError == nil {
-		res, err := config.NewStorageClient(userAgent).Objects.List(bucket).Prefix(name).Do()
+		res, err := NewClient(config, userAgent).Objects.List(bucket).Prefix(name).Do()
 		if err != nil {
 			log.Printf("Error listing contents of folder %s: %v", bucket, err)
 			listError = err
@@ -419,7 +452,7 @@ func resourceStorageFolderDelete(d *schema.ResourceData, meta interface{}) error
 
 			wp.Submit(func() {
 				log.Printf("[TRACE] Attempting to delete %s", object.Name)
-				if err := config.NewStorageClient(userAgent).Objects.Delete(bucket, object.Name).Generation(object.Generation).Do(); err != nil {
+				if err := NewClient(config, userAgent).Objects.Delete(bucket, object.Name).Generation(object.Generation).Do(); err != nil {
 					deleteObjectError = err
 					log.Printf("[ERR] Failed to delete storage object %s: %s", object.Name, err)
 				} else {
@@ -433,7 +466,7 @@ func resourceStorageFolderDelete(d *schema.ResourceData, meta interface{}) error
 	}
 
 	err = retry.Retry(1*time.Minute, func() *retry.RetryError {
-		err := config.NewStorageClient(userAgent).Folders.Delete(bucket, name).Do()
+		err := NewClient(config, userAgent).Folders.Delete(bucket, name).Do()
 		if err == nil {
 			return nil
 		}
@@ -461,7 +494,7 @@ func resourceStorageFolderDelete(d *schema.ResourceData, meta interface{}) error
 	}
 
 	// attempts to delete any sub folders within the folder
-	foldersList, err := config.NewStorageClient(userAgent).Folders.List(bucket).Prefix(name).Do()
+	foldersList, err := NewClient(config, userAgent).Folders.List(bucket).Prefix(name).Do()
 	if err != nil {
 		return err
 	}
@@ -471,7 +504,7 @@ func resourceStorageFolderDelete(d *schema.ResourceData, meta interface{}) error
 		for i := len(items) - 1; i >= 0; i-- {
 			err = transport_tpg.Retry(transport_tpg.RetryOptions{
 				RetryFunc: func() error {
-					err = config.NewStorageClient(userAgent).Folders.Delete(bucket, items[i].Name).Do()
+					err = NewClient(config, userAgent).Folders.Delete(bucket, items[i].Name).Do()
 					return err
 				},
 				Timeout:              d.Timeout(schema.TimeoutDelete),
@@ -531,4 +564,25 @@ func flattenStorageFolderName(v interface{}, d *schema.ResourceData, config *tra
 
 func expandStorageFolderName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceStorageFolderFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenStorageFolderCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Folder: %s", err)
+	}
+	if err = d.Set("update_time", flattenStorageFolderUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Folder: %s", err)
+	}
+	if err = d.Set("metageneration", flattenStorageFolderMetageneration(res["metageneration"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Folder: %s", err)
+	}
+	if err = d.Set("name", flattenStorageFolderName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Folder: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading Folder: %s", err)
+	}
+	return nil
 }
