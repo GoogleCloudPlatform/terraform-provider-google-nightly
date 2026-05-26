@@ -143,6 +143,7 @@ func ResourceComputeAddress() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -317,6 +318,11 @@ address is specified, it must be within the subnetwork's IP range.
 This field can only be used with INTERNAL type with
 GCE_ENDPOINT/DNS_RESOLVER purposes.`,
 			},
+			"address_id": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `The unique numeric identifier for the resource. This identifier is defined by the server.`,
+			},
 			"creation_timestamp": {
 				Type:        schema.TypeString,
 				Computed:    true,
@@ -358,6 +364,18 @@ internally during updates.`,
 			"self_link": {
 				Type:     schema.TypeString,
 				Computed: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -463,7 +481,7 @@ func resourceComputeAddressCreate(d *schema.ResourceData, meta interface{}) erro
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/addresses")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/addresses")
 	if err != nil {
 		return err
 	}
@@ -607,7 +625,7 @@ func resourceComputeAddressRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/addresses/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/addresses/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -640,69 +658,26 @@ func resourceComputeAddressRead(d *schema.ResourceData, meta interface{}) error 
 
 	log.Printf("[DEBUG] Finished reading ComputeAddress %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Address: %s", err)
 	}
 
-	if err := d.Set("address", flattenComputeAddressAddress(res["address"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("address_type", flattenComputeAddressAddressType(res["addressType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeAddressCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("description", flattenComputeAddressDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("name", flattenComputeAddressName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("purpose", flattenComputeAddressPurpose(res["purpose"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("network_tier", flattenComputeAddressNetworkTier(res["networkTier"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("subnetwork", flattenComputeAddressSubnetwork(res["subnetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("users", flattenComputeAddressUsers(res["users"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("labels", flattenComputeAddressLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("label_fingerprint", flattenComputeAddressLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("network", flattenComputeAddressNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("prefix_length", flattenComputeAddressPrefixLength(res["prefixLength"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("ip_version", flattenComputeAddressIpVersion(res["ipVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("ipv6_endpoint_type", flattenComputeAddressIpv6EndpointType(res["ipv6EndpointType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("ip_collection", flattenComputeAddressIpCollection(res["ipCollection"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenComputeAddressTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenComputeAddressEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("region", flattenComputeAddressRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading Address: %s", err)
+	err = ResourceComputeAddressFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -733,6 +708,19 @@ func resourceComputeAddressRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceComputeAddressUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeAddress().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeAddressRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -785,7 +773,7 @@ func resourceComputeAddressUpdate(d *schema.ResourceData, meta interface{}) erro
 			obj["labels"] = labelsProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/addresses/{{name}}/setLabels")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/addresses/{{name}}/setLabels")
 		if err != nil {
 			return err
 		}
@@ -827,6 +815,13 @@ func resourceComputeAddressUpdate(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceComputeAddressDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeAddress without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Address %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -840,8 +835,7 @@ func resourceComputeAddressDelete(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("Error fetching project for Address: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/addresses/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/addresses/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1001,6 +995,10 @@ func flattenComputeAddressIpCollection(v interface{}, d *schema.ResourceData, co
 	return v
 }
 
+func flattenComputeAddressAddressId(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenComputeAddressTerraformLabels(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return v
@@ -1104,4 +1102,73 @@ func expandComputeAddressRegion(v interface{}, d tpgresource.TerraformResourceDa
 		return nil, fmt.Errorf("Invalid value for region: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeAddressFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("address", flattenComputeAddressAddress(res["address"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("address_type", flattenComputeAddressAddressType(res["addressType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeAddressCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("description", flattenComputeAddressDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("name", flattenComputeAddressName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("purpose", flattenComputeAddressPurpose(res["purpose"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("network_tier", flattenComputeAddressNetworkTier(res["networkTier"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("subnetwork", flattenComputeAddressSubnetwork(res["subnetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("users", flattenComputeAddressUsers(res["users"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("labels", flattenComputeAddressLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("label_fingerprint", flattenComputeAddressLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("network", flattenComputeAddressNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("prefix_length", flattenComputeAddressPrefixLength(res["prefixLength"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("ip_version", flattenComputeAddressIpVersion(res["ipVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("ipv6_endpoint_type", flattenComputeAddressIpv6EndpointType(res["ipv6EndpointType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("ip_collection", flattenComputeAddressIpCollection(res["ipCollection"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("address_id", flattenComputeAddressAddressId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenComputeAddressTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenComputeAddressEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("region", flattenComputeAddressRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading Address: %s", err)
+	}
+	return nil
 }

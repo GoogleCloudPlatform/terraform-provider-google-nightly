@@ -21,6 +21,8 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/alloydb"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 )
 
 func TestAccAlloydbUser_updateRoles_BuiltIn(t *testing.T) {
@@ -34,7 +36,7 @@ func TestAccAlloydbUser_updateRoles_BuiltIn(t *testing.T) {
 		"alloydb_instance_name": "tf-test-alloydb-instance" + randomSuffix,
 		"alloydb_user_name":     "user1" + randomSuffix,
 		"alloydb_user_pass":     "tf_test_user_secret" + randomSuffix,
-		"network_name":          acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":          servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 		"random_suffix":         randomSuffix,
 	}
 
@@ -115,7 +117,7 @@ func TestAccAlloydbUser_updatePassword_BuiltIn(t *testing.T) {
 		"alloydb_instance_name": "tf-test-alloydb-instance" + randomSuffix,
 		"alloydb_user_name":     "user1" + randomSuffix,
 		"alloydb_user_pass":     "tf_test_user_secret" + randomSuffix,
-		"network_name":          acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":          servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 		"random_suffix":         randomSuffix,
 	}
 
@@ -195,7 +197,7 @@ func TestAccAlloydbUser_updateRoles_IAM(t *testing.T) {
 		"alloydb_cluster_pass":  "tf_test_cluster_secret" + randomSuffix,
 		"alloydb_instance_name": "tf-test-alloydb-instance" + randomSuffix,
 		"alloydb_user_name":     "user2@foo.com" + randomSuffix,
-		"network_name":          acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":          servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 		"random_suffix":         randomSuffix,
 	}
 
@@ -267,7 +269,7 @@ func TestAccAlloydbUser_alloydbUserBuiltinWithPasswordWo(t *testing.T) {
 	t.Parallel()
 
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -330,7 +332,7 @@ func TestAccAlloydbUser_alloydbUserBuiltinWithPasswordWo_update(t *testing.T) {
 	t.Parallel()
 
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 

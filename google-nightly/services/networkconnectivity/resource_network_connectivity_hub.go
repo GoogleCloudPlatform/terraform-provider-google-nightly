@@ -116,6 +116,7 @@ func ResourceNetworkConnectivityHub() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Schema: map[string]*schema.Schema{
@@ -217,6 +218,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -267,7 +280,7 @@ func resourceNetworkConnectivityHubCreate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/global/hubs?hubId={{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/hubs?hubId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -330,7 +343,7 @@ func resourceNetworkConnectivityHubRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/global/hubs/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/hubs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -363,54 +376,45 @@ func resourceNetworkConnectivityHubRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading NetworkConnectivityHub %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Hub: %s", err)
 	}
 
-	if err := d.Set("name", flattenNetworkConnectivityHubName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetworkConnectivityHubCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkConnectivityHubUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkConnectivityHubLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkConnectivityHubDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("unique_id", flattenNetworkConnectivityHubUniqueId(res["uniqueId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("state", flattenNetworkConnectivityHubState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("routing_vpcs", flattenNetworkConnectivityHubRoutingVpcs(res["routingVpcs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("preset_topology", flattenNetworkConnectivityHubPresetTopology(res["presetTopology"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("policy_mode", flattenNetworkConnectivityHubPolicyMode(res["policyMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("export_psc", flattenNetworkConnectivityHubExportPsc(res["exportPsc"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkConnectivityHubTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkConnectivityHubEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hub: %s", err)
+	err = ResourceNetworkConnectivityHubFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceNetworkConnectivityHubUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkConnectivityHub().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkConnectivityHubRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -445,7 +449,7 @@ func resourceNetworkConnectivityHubUpdate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/global/hubs/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/hubs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -509,6 +513,13 @@ func resourceNetworkConnectivityHubUpdate(d *schema.ResourceData, meta interface
 }
 
 func resourceNetworkConnectivityHubDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkConnectivityHub without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Hub %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -522,8 +533,7 @@ func resourceNetworkConnectivityHubDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for Hub: %s", err)
 	}
 	billingProject = strings.TrimPrefix(project, "projects/")
-
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/global/hubs/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/hubs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -585,7 +595,10 @@ func resourceNetworkConnectivityHubImport(d *schema.ResourceData, meta interface
 }
 
 func flattenNetworkConnectivityHubName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
+	if v == nil {
+		return v
+	}
+	return tpgresource.GetResourceNameFromSelfLink(v.(string))
 }
 
 func flattenNetworkConnectivityHubCreateTime(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -677,7 +690,7 @@ func flattenNetworkConnectivityHubEffectiveLabels(v interface{}, d *schema.Resou
 }
 
 func expandNetworkConnectivityHubName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
-	return v, nil
+	return tpgresource.GetResourceNameFromSelfLink(v.(string)), nil
 }
 
 func expandNetworkConnectivityHubDescription(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
@@ -705,4 +718,50 @@ func expandNetworkConnectivityHubEffectiveLabels(v interface{}, d tpgresource.Te
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkConnectivityHubFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenNetworkConnectivityHubName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkConnectivityHubCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkConnectivityHubUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkConnectivityHubLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkConnectivityHubDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("unique_id", flattenNetworkConnectivityHubUniqueId(res["uniqueId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("state", flattenNetworkConnectivityHubState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("routing_vpcs", flattenNetworkConnectivityHubRoutingVpcs(res["routingVpcs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("preset_topology", flattenNetworkConnectivityHubPresetTopology(res["presetTopology"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("policy_mode", flattenNetworkConnectivityHubPolicyMode(res["policyMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("export_psc", flattenNetworkConnectivityHubExportPsc(res["exportPsc"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkConnectivityHubTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkConnectivityHubEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hub: %s", err)
+	}
+
+	return nil
 }

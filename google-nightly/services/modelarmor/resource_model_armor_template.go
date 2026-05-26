@@ -116,6 +116,7 @@ func ResourceModelArmorTemplate() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -322,6 +323,7 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 			},
 			"template_metadata": {
 				Type:        schema.TypeList,
+				Computed:    true,
 				Optional:    true,
 				Description: `Message describing TemplateMetadata`,
 				MaxItems:    1,
@@ -425,6 +427,18 @@ INSPECT_AND_BLOCK`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -457,7 +471,7 @@ func resourceModelArmorTemplateCreate(d *schema.ResourceData, meta interface{}) 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ModelArmorBasePath}}projects/{{project}}/locations/{{location}}/templates?templateId={{template_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/templates?templateId={{template_id}}")
 	if err != nil {
 		return err
 	}
@@ -531,7 +545,7 @@ func resourceModelArmorTemplateRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ModelArmorBasePath}}projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
 	if err != nil {
 		return err
 	}
@@ -564,33 +578,26 @@ func resourceModelArmorTemplateRead(d *schema.ResourceData, meta interface{}) er
 
 	log.Printf("[DEBUG] Finished reading ModelArmorTemplate %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Template: %s", err)
 	}
 
-	if err := d.Set("name", flattenModelArmorTemplateName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Template: %s", err)
-	}
-	if err := d.Set("create_time", flattenModelArmorTemplateCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Template: %s", err)
-	}
-	if err := d.Set("update_time", flattenModelArmorTemplateUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Template: %s", err)
-	}
-	if err := d.Set("labels", flattenModelArmorTemplateLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Template: %s", err)
-	}
-	if err := d.Set("filter_config", flattenModelArmorTemplateFilterConfig(res["filterConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Template: %s", err)
-	}
-	if err := d.Set("template_metadata", flattenModelArmorTemplateTemplateMetadata(res["templateMetadata"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Template: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenModelArmorTemplateTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Template: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenModelArmorTemplateEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Template: %s", err)
+	err = ResourceModelArmorTemplateFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -621,6 +628,19 @@ func resourceModelArmorTemplateRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceModelArmorTemplateUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceModelArmorTemplate().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceModelArmorTemplateRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -675,7 +695,7 @@ func resourceModelArmorTemplateUpdate(d *schema.ResourceData, meta interface{}) 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ModelArmorBasePath}}projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
 	if err != nil {
 		return err
 	}
@@ -700,6 +720,17 @@ func resourceModelArmorTemplateUpdate(d *schema.ResourceData, meta interface{}) 
 	url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": strings.Join(updateMask, ",")})
 	if err != nil {
 		return err
+	}
+	// Ensure templateMetadata is in the request body when it's in the update mask.
+	// When template_metadata is not in the user's config, the expand function
+	// returns nil so templateMetadata is absent from obj. But if the API previously
+	// returned default values that were stored in state, HasChange detects drift
+	// and adds templateMetadata to the update mask. The API rejects a PATCH with
+	// templateMetadata in the mask but missing from the body (REQUEST_FIELD_MISSING).
+	if d.HasChange("template_metadata") {
+		if _, ok := obj["templateMetadata"]; !ok {
+			obj["templateMetadata"] = make(map[string]interface{})
+		}
 	}
 
 	// err == nil indicates that the billing_project value was found
@@ -732,6 +763,13 @@ func resourceModelArmorTemplateUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceModelArmorTemplateDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ModelArmorTemplate without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Template %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -745,8 +783,7 @@ func resourceModelArmorTemplateDelete(d *schema.ResourceData, meta interface{}) 
 		return fmt.Errorf("Error fetching project for Template: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ModelArmorBasePath}}projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
 	if err != nil {
 		return err
 	}
@@ -983,102 +1020,34 @@ func flattenModelArmorTemplateTemplateMetadata(v interface{}, d *schema.Resource
 	}
 	original := v.(map[string]interface{})
 	transformed := make(map[string]interface{})
-	transformed["log_template_operations"] =
-		flattenModelArmorTemplateTemplateMetadataLogTemplateOperations(original["logTemplateOperations"], d, config)
-	transformed["log_sanitize_operations"] =
-		flattenModelArmorTemplateTemplateMetadataLogSanitizeOperations(original["logSanitizeOperations"], d, config)
+	transformed["log_template_operations"] = original["logTemplateOperations"]
+	transformed["log_sanitize_operations"] = original["logSanitizeOperations"]
 	transformed["multi_language_detection"] =
 		flattenModelArmorTemplateTemplateMetadataMultiLanguageDetection(original["multiLanguageDetection"], d, config)
-	transformed["ignore_partial_invocation_failures"] =
-		flattenModelArmorTemplateTemplateMetadataIgnorePartialInvocationFailures(original["ignorePartialInvocationFailures"], d, config)
-	transformed["custom_prompt_safety_error_code"] =
-		flattenModelArmorTemplateTemplateMetadataCustomPromptSafetyErrorCode(original["customPromptSafetyErrorCode"], d, config)
-	transformed["custom_prompt_safety_error_message"] =
-		flattenModelArmorTemplateTemplateMetadataCustomPromptSafetyErrorMessage(original["customPromptSafetyErrorMessage"], d, config)
-	transformed["custom_llm_response_safety_error_code"] =
-		flattenModelArmorTemplateTemplateMetadataCustomLlmResponseSafetyErrorCode(original["customLlmResponseSafetyErrorCode"], d, config)
-	transformed["custom_llm_response_safety_error_message"] =
-		flattenModelArmorTemplateTemplateMetadataCustomLlmResponseSafetyErrorMessage(original["customLlmResponseSafetyErrorMessage"], d, config)
-	transformed["enforcement_type"] =
-		flattenModelArmorTemplateTemplateMetadataEnforcementType(original["enforcementType"], d, config)
+	transformed["ignore_partial_invocation_failures"] = original["ignorePartialInvocationFailures"]
+	transformed["custom_prompt_safety_error_code"] = original["customPromptSafetyErrorCode"]
+	transformed["custom_prompt_safety_error_message"] = original["customPromptSafetyErrorMessage"]
+	transformed["custom_llm_response_safety_error_code"] = original["customLlmResponseSafetyErrorCode"]
+	transformed["custom_llm_response_safety_error_message"] = original["customLlmResponseSafetyErrorMessage"]
+	transformed["enforcement_type"] = original["enforcementType"]
 	return []interface{}{transformed}
-}
-func flattenModelArmorTemplateTemplateMetadataLogTemplateOperations(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
-}
-
-func flattenModelArmorTemplateTemplateMetadataLogSanitizeOperations(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
 }
 
 func flattenModelArmorTemplateTemplateMetadataMultiLanguageDetection(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
-		return nil // The whole multi_language_detection block is absent
+		return nil
 	}
 	original, ok := v.(map[string]interface{})
 	if !ok {
-		return nil // Should not happen if API is consistent
+		return nil
 	}
-	// Populating the field even if the returned block is empty.
 	transformed := make(map[string]interface{})
-
 	if val, ok := original["enableMultiLanguageDetection"]; ok {
 		transformed["enable_multi_language_detection"] = val
 	} else {
-		// Since the field is REQUIRED in the schema and the block exists, default to false if the key is missing from the API response.
 		transformed["enable_multi_language_detection"] = false
 	}
 	return []interface{}{transformed}
-}
-
-func flattenModelArmorTemplateTemplateMetadataIgnorePartialInvocationFailures(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
-}
-
-func flattenModelArmorTemplateTemplateMetadataCustomPromptSafetyErrorCode(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	// Handles the string fixed64 format
-	if strVal, ok := v.(string); ok {
-		if intVal, err := tpgresource.StringToFixed64(strVal); err == nil {
-			return intVal
-		}
-	}
-
-	// number values are represented as float64
-	if floatVal, ok := v.(float64); ok {
-		intVal := int(floatVal)
-		return intVal
-	}
-
-	return v // let terraform core handle it otherwise
-}
-
-func flattenModelArmorTemplateTemplateMetadataCustomPromptSafetyErrorMessage(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
-}
-
-func flattenModelArmorTemplateTemplateMetadataCustomLlmResponseSafetyErrorCode(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	// Handles the string fixed64 format
-	if strVal, ok := v.(string); ok {
-		if intVal, err := tpgresource.StringToFixed64(strVal); err == nil {
-			return intVal
-		}
-	}
-
-	// number values are represented as float64
-	if floatVal, ok := v.(float64); ok {
-		intVal := int(floatVal)
-		return intVal
-	}
-
-	return v // let terraform core handle it otherwise
-}
-
-func flattenModelArmorTemplateTemplateMetadataCustomLlmResponseSafetyErrorMessage(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
-}
-
-func flattenModelArmorTemplateTemplateMetadataEnforcementType(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
 }
 
 func flattenModelArmorTemplateTerraformLabels(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -1515,4 +1484,35 @@ func expandModelArmorTemplateEffectiveLabels(v interface{}, d tpgresource.Terraf
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceModelArmorTemplateFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenModelArmorTemplateName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Template: %s", err)
+	}
+	if err = d.Set("create_time", flattenModelArmorTemplateCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Template: %s", err)
+	}
+	if err = d.Set("update_time", flattenModelArmorTemplateUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Template: %s", err)
+	}
+	if err = d.Set("labels", flattenModelArmorTemplateLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Template: %s", err)
+	}
+	if err = d.Set("filter_config", flattenModelArmorTemplateFilterConfig(res["filterConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Template: %s", err)
+	}
+	if err = d.Set("template_metadata", flattenModelArmorTemplateTemplateMetadata(res["templateMetadata"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Template: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenModelArmorTemplateTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Template: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenModelArmorTemplateEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Template: %s", err)
+	}
+
+	return nil
 }

@@ -148,6 +148,7 @@ func ResourceIAMBetaWorkloadIdentityPool() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -321,6 +322,16 @@ certificate(either root or intermediate cert).`,
 											},
 										},
 									},
+									"trust_default_shared_ca": {
+										Type:     schema.TypeBool,
+										Optional: true,
+										Description: `If set to True, the trust bundle will include the private ca managed identity regional root
+public certificates.
+
+
+~> **Note** 'trust_default_shared_ca' is only supported for managed identity trust domain
+resource.`,
+									},
 								},
 							},
 						},
@@ -383,6 +394,18 @@ can be created within 'SYSTEM_TRUST_DOMAIN' mode pools. All identities within a
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -453,7 +476,7 @@ func resourceIAMBetaWorkloadIdentityPoolCreate(d *schema.ResourceData, meta inte
 		obj["attestationRules"] = attestationRulesProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAMBetaBasePath}}projects/{{project}}/locations/global/workloadIdentityPools?workloadIdentityPoolId={{workload_identity_pool_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/workloadIdentityPools?workloadIdentityPoolId={{workload_identity_pool_id}}")
 	if err != nil {
 		return err
 	}
@@ -572,7 +595,7 @@ func resourceIAMBetaWorkloadIdentityPoolRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAMBetaBasePath}}projects/{{project}}/locations/global/workloadIdentityPools/{{workload_identity_pool_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/workloadIdentityPools/{{workload_identity_pool_id}}")
 	if err != nil {
 		return err
 	}
@@ -635,36 +658,26 @@ func resourceIAMBetaWorkloadIdentityPoolRead(d *schema.ResourceData, meta interf
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
 	}
 
-	if err := d.Set("state", flattenIAMBetaWorkloadIdentityPoolState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
-	}
-	if err := d.Set("display_name", flattenIAMBetaWorkloadIdentityPoolDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
-	}
-	if err := d.Set("description", flattenIAMBetaWorkloadIdentityPoolDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
-	}
-	if err := d.Set("name", flattenIAMBetaWorkloadIdentityPoolName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
-	}
-	if err := d.Set("disabled", flattenIAMBetaWorkloadIdentityPoolDisabled(res["disabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
-	}
-	if err := d.Set("mode", flattenIAMBetaWorkloadIdentityPoolMode(res["mode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
-	}
-	if err := d.Set("inline_certificate_issuance_config", flattenIAMBetaWorkloadIdentityPoolInlineCertificateIssuanceConfig(res["inlineCertificateIssuanceConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
-	}
-	if err := d.Set("inline_trust_config", flattenIAMBetaWorkloadIdentityPoolInlineTrustConfig(res["inlineTrustConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
-	}
-	if err := d.Set("attestation_rules", flattenIAMBetaWorkloadIdentityPoolAttestationRules(res["attestationRules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	err = ResourceIAMBetaWorkloadIdentityPoolFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -689,6 +702,19 @@ func resourceIAMBetaWorkloadIdentityPoolRead(d *schema.ResourceData, meta interf
 }
 
 func resourceIAMBetaWorkloadIdentityPoolUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceIAMBetaWorkloadIdentityPool().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceIAMBetaWorkloadIdentityPoolRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -756,7 +782,7 @@ func resourceIAMBetaWorkloadIdentityPoolUpdate(d *schema.ResourceData, meta inte
 		obj["inlineTrustConfig"] = inlineTrustConfigProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAMBetaBasePath}}projects/{{project}}/locations/global/workloadIdentityPools/{{workload_identity_pool_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/workloadIdentityPools/{{workload_identity_pool_id}}")
 	if err != nil {
 		return err
 	}
@@ -839,7 +865,7 @@ func resourceIAMBetaWorkloadIdentityPoolUpdate(d *schema.ResourceData, meta inte
 			obj["attestationRules"] = attestationRulesProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{IAMBetaBasePath}}projects/{{project}}/locations/global/workloadIdentityPools/{{workload_identity_pool_id}}:setAttestationRules")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/workloadIdentityPools/{{workload_identity_pool_id}}:setAttestationRules")
 		if err != nil {
 			return err
 		}
@@ -881,6 +907,13 @@ func resourceIAMBetaWorkloadIdentityPoolUpdate(d *schema.ResourceData, meta inte
 }
 
 func resourceIAMBetaWorkloadIdentityPoolDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy IAMBetaWorkloadIdentityPool without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing WorkloadIdentityPool %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -894,8 +927,7 @@ func resourceIAMBetaWorkloadIdentityPoolDelete(d *schema.ResourceData, meta inte
 		return fmt.Errorf("Error fetching project for WorkloadIdentityPool: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAMBetaBasePath}}projects/{{project}}/locations/global/workloadIdentityPools/{{workload_identity_pool_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/workloadIdentityPools/{{workload_identity_pool_id}}")
 	if err != nil {
 		return err
 	}
@@ -1056,8 +1088,9 @@ func flattenIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundles(v
 	for k, raw := range l {
 		original := raw.(map[string]interface{})
 		transformed = append(transformed, map[string]interface{}{
-			"trust_domain":  k,
-			"trust_anchors": flattenIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTrustAnchors(original["trustAnchors"], d, config),
+			"trust_domain":            k,
+			"trust_anchors":           flattenIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTrustAnchors(original["trustAnchors"], d, config),
+			"trust_default_shared_ca": flattenIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTrustDefaultSharedCa(original["trustDefaultSharedCa"], d, config),
 		})
 	}
 	return transformed
@@ -1081,6 +1114,10 @@ func flattenIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTr
 	return transformed
 }
 func flattenIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTrustAnchorsPemCertificate(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTrustDefaultSharedCa(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1237,6 +1274,13 @@ func expandIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundles(v 
 			transformed["trustAnchors"] = transformedTrustAnchors
 		}
 
+		transformedTrustDefaultSharedCa, err := expandIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTrustDefaultSharedCa(original["trust_default_shared_ca"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedTrustDefaultSharedCa); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["trustDefaultSharedCa"] = transformedTrustDefaultSharedCa
+		}
+
 		transformedTrustDomain, err := tpgresource.ExpandString(original["trust_domain"], d, config)
 		if err != nil {
 			return nil, err
@@ -1272,6 +1316,10 @@ func expandIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTru
 }
 
 func expandIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTrustAnchorsPemCertificate(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandIAMBetaWorkloadIdentityPoolInlineTrustConfigAdditionalTrustBundlesTrustDefaultSharedCa(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -1311,4 +1359,38 @@ func resourceIAMBetaWorkloadIdentityPoolDecoder(d *schema.ResourceData, meta int
 	}
 
 	return res, nil
+}
+
+func ResourceIAMBetaWorkloadIdentityPoolFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("state", flattenIAMBetaWorkloadIdentityPoolState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	}
+	if err = d.Set("display_name", flattenIAMBetaWorkloadIdentityPoolDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	}
+	if err = d.Set("description", flattenIAMBetaWorkloadIdentityPoolDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	}
+	if err = d.Set("name", flattenIAMBetaWorkloadIdentityPoolName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	}
+	if err = d.Set("disabled", flattenIAMBetaWorkloadIdentityPoolDisabled(res["disabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	}
+	if err = d.Set("mode", flattenIAMBetaWorkloadIdentityPoolMode(res["mode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	}
+	if err = d.Set("inline_certificate_issuance_config", flattenIAMBetaWorkloadIdentityPoolInlineCertificateIssuanceConfig(res["inlineCertificateIssuanceConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	}
+	if err = d.Set("inline_trust_config", flattenIAMBetaWorkloadIdentityPoolInlineTrustConfig(res["inlineTrustConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	}
+	if err = d.Set("attestation_rules", flattenIAMBetaWorkloadIdentityPoolAttestationRules(res["attestationRules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkloadIdentityPool: %s", err)
+	}
+
+	return nil
 }

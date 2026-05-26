@@ -23,6 +23,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/certificatemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networksecurity"
 )
 
 func TestAccNetworkSecurityBackendAuthenticationConfig_networkSecurityBackendAuthenticationConfigFullExample_update(t *testing.T) {

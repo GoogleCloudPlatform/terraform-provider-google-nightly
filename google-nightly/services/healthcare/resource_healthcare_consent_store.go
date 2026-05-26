@@ -115,6 +115,7 @@ func ResourceHealthcareConsentStore() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -198,6 +199,19 @@ Please refer to the field 'effective_labels' for all of the labels present on th
  and default labels configured on the provider.`,
 				Elem: &schema.Schema{Type: schema.TypeString},
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -230,7 +244,7 @@ func resourceHealthcareConsentStoreCreate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/consentStores?consentStoreId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/consentStores?consentStoreId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -293,7 +307,7 @@ func resourceHealthcareConsentStoreRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/consentStores/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/consentStores/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -320,20 +334,23 @@ func resourceHealthcareConsentStoreRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading HealthcareConsentStore %q: %#v", d.Id(), res)
 
-	if err := d.Set("default_consent_ttl", flattenHealthcareConsentStoreDefaultConsentTtl(res["defaultConsentTtl"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConsentStore: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("enable_consent_create_on_update", flattenHealthcareConsentStoreEnableConsentCreateOnUpdate(res["enableConsentCreateOnUpdate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConsentStore: %s", err)
-	}
-	if err := d.Set("labels", flattenHealthcareConsentStoreLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConsentStore: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenHealthcareConsentStoreTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConsentStore: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenHealthcareConsentStoreEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConsentStore: %s", err)
+
+	err = ResourceHealthcareConsentStoreFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -358,6 +375,19 @@ func resourceHealthcareConsentStoreRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceHealthcareConsentStoreUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceHealthcareConsentStore().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceHealthcareConsentStoreRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -401,7 +431,7 @@ func resourceHealthcareConsentStoreUpdate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/consentStores/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/consentStores/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -458,6 +488,13 @@ func resourceHealthcareConsentStoreUpdate(d *schema.ResourceData, meta interface
 }
 
 func resourceHealthcareConsentStoreDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy HealthcareConsentStore without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ConsentStore %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -466,7 +503,7 @@ func resourceHealthcareConsentStoreDelete(d *schema.ResourceData, meta interface
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/consentStores/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/consentStores/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -576,4 +613,26 @@ func expandHealthcareConsentStoreEffectiveLabels(v interface{}, d tpgresource.Te
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceHealthcareConsentStoreFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("default_consent_ttl", flattenHealthcareConsentStoreDefaultConsentTtl(res["defaultConsentTtl"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConsentStore: %s", err)
+	}
+	if err = d.Set("enable_consent_create_on_update", flattenHealthcareConsentStoreEnableConsentCreateOnUpdate(res["enableConsentCreateOnUpdate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConsentStore: %s", err)
+	}
+	if err = d.Set("labels", flattenHealthcareConsentStoreLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConsentStore: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenHealthcareConsentStoreTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConsentStore: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenHealthcareConsentStoreEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConsentStore: %s", err)
+	}
+
+	return nil
 }

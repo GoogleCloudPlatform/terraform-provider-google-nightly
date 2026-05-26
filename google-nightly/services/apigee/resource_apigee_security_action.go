@@ -100,6 +100,7 @@ func ResourceApigeeSecurityAction() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceApigeeSecurityActionCreate,
 		Read:   resourceApigeeSecurityActionRead,
+		Update: resourceApigeeSecurityActionUpdate,
 		Delete: resourceApigeeSecurityActionDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -391,6 +392,19 @@ Offsets other than "Z" are also accepted. Examples: "2014-10-02T15:01:23Z", "201
 Uses RFC 3339, where generated output will always be Z-normalized and uses 0, 3, 6 or 9 fractional digits.
 Offsets other than "Z" are also accepted. Examples: "2014-10-02T15:01:23Z", "2014-10-02T15:01:23.045123456Z" or "2014-10-02T15:01:23+05:30".`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -459,7 +473,7 @@ func resourceApigeeSecurityActionCreate(d *schema.ResourceData, meta interface{}
 		obj["ttl"] = ttlProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{env_id}}/securityActions?securityActionId={{security_action_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{env_id}}/securityActions?securityActionId={{security_action_id}}")
 	if err != nil {
 		return err
 	}
@@ -527,7 +541,7 @@ func resourceApigeeSecurityActionRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{env_id}}/securityActions/{{security_action_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{env_id}}/securityActions/{{security_action_id}}")
 	if err != nil {
 		return err
 	}
@@ -554,38 +568,23 @@ func resourceApigeeSecurityActionRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading ApigeeSecurityAction %q: %#v", d.Id(), res)
 
-	if err := d.Set("description", flattenApigeeSecurityActionDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("state", flattenApigeeSecurityActionState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
-	}
-	if err := d.Set("create_time", flattenApigeeSecurityActionCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
-	}
-	if err := d.Set("update_time", flattenApigeeSecurityActionUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
-	}
-	if err := d.Set("api_proxies", flattenApigeeSecurityActionApiProxies(res["apiProxies"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
-	}
-	if err := d.Set("condition_config", flattenApigeeSecurityActionConditionConfig(res["conditionConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
-	}
-	if err := d.Set("allow", flattenApigeeSecurityActionAllow(res["allow"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
-	}
-	if err := d.Set("deny", flattenApigeeSecurityActionDeny(res["deny"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
-	}
-	if err := d.Set("flag", flattenApigeeSecurityActionFlag(res["flag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
-	}
-	if err := d.Set("expire_time", flattenApigeeSecurityActionExpireTime(res["expireTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
-	}
-	if err := d.Set("ttl", flattenApigeeSecurityActionTtl(res["ttl"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecurityAction: %s", err)
+
+	err = ResourceApigeeSecurityActionFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -615,7 +614,19 @@ func resourceApigeeSecurityActionRead(d *schema.ResourceData, meta interface{}) 
 	return nil
 }
 
+func resourceApigeeSecurityActionUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceApigeeSecurityActionRead(d, meta)
+}
+
 func resourceApigeeSecurityActionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ApigeeSecurityAction without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing SecurityAction %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -624,7 +635,7 @@ func resourceApigeeSecurityActionDelete(d *schema.ResourceData, meta interface{}
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{env_id}}/securityActions/{{security_action_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{env_id}}/securityActions/{{security_action_id}}")
 	if err != nil {
 		return err
 	}
@@ -1119,4 +1130,44 @@ func expandApigeeSecurityActionExpireTime(v interface{}, d tpgresource.Terraform
 
 func expandApigeeSecurityActionTtl(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceApigeeSecurityActionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("description", flattenApigeeSecurityActionDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("state", flattenApigeeSecurityActionState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("create_time", flattenApigeeSecurityActionCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("update_time", flattenApigeeSecurityActionUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("api_proxies", flattenApigeeSecurityActionApiProxies(res["apiProxies"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("condition_config", flattenApigeeSecurityActionConditionConfig(res["conditionConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("allow", flattenApigeeSecurityActionAllow(res["allow"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("deny", flattenApigeeSecurityActionDeny(res["deny"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("flag", flattenApigeeSecurityActionFlag(res["flag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("expire_time", flattenApigeeSecurityActionExpireTime(res["expireTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+	if err = d.Set("ttl", flattenApigeeSecurityActionTtl(res["ttl"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecurityAction: %s", err)
+	}
+
+	return nil
 }

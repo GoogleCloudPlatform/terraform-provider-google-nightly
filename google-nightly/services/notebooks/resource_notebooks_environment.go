@@ -115,6 +115,7 @@ func ResourceNotebooksEnvironment() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		DeprecationMessage: "`google_notebooks_environment` is deprecated and will be removed in a future major release. Use `google_workbench_instance` instead.",
@@ -232,6 +233,18 @@ Format: projects/{project_id}`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -276,7 +289,7 @@ func resourceNotebooksEnvironmentCreate(d *schema.ResourceData, meta interface{}
 		obj["containerImage"] = containerImageProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NotebooksBasePath}}projects/{{project}}/locations/{{location}}/environments?environmentId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/environments?environmentId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -360,7 +373,7 @@ func resourceNotebooksEnvironmentRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NotebooksBasePath}}projects/{{project}}/locations/{{location}}/environments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/environments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -393,27 +406,26 @@ func resourceNotebooksEnvironmentRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading NotebooksEnvironment %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Environment: %s", err)
 	}
 
-	if err := d.Set("display_name", flattenNotebooksEnvironmentDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("description", flattenNotebooksEnvironmentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("post_startup_script", flattenNotebooksEnvironmentPostStartupScript(res["postStartupScript"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("create_time", flattenNotebooksEnvironmentCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("vm_image", flattenNotebooksEnvironmentVmImage(res["vmImage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("container_image", flattenNotebooksEnvironmentContainerImage(res["containerImage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
+	err = ResourceNotebooksEnvironmentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -444,6 +456,19 @@ func resourceNotebooksEnvironmentRead(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceNotebooksEnvironmentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNotebooksEnvironment().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNotebooksEnvironmentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -510,7 +535,7 @@ func resourceNotebooksEnvironmentUpdate(d *schema.ResourceData, meta interface{}
 		obj["containerImage"] = containerImageProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NotebooksBasePath}}projects/{{project}}/locations/{{location}}/environments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/environments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -552,6 +577,13 @@ func resourceNotebooksEnvironmentUpdate(d *schema.ResourceData, meta interface{}
 }
 
 func resourceNotebooksEnvironmentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NotebooksEnvironment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Environment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -565,8 +597,7 @@ func resourceNotebooksEnvironmentDelete(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error fetching project for Environment: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NotebooksBasePath}}projects/{{project}}/locations/{{location}}/environments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/environments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -790,4 +821,29 @@ func expandNotebooksEnvironmentContainerImageRepository(v interface{}, d tpgreso
 
 func expandNotebooksEnvironmentContainerImageTag(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceNotebooksEnvironmentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("display_name", flattenNotebooksEnvironmentDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("description", flattenNotebooksEnvironmentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("post_startup_script", flattenNotebooksEnvironmentPostStartupScript(res["postStartupScript"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("create_time", flattenNotebooksEnvironmentCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("vm_image", flattenNotebooksEnvironmentVmImage(res["vmImage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("container_image", flattenNotebooksEnvironmentContainerImage(res["containerImage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+
+	return nil
 }

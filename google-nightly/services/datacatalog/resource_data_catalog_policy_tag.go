@@ -156,6 +156,19 @@ If not set, defaults to an empty string.`,
 				Description: `Resource name of this policy tag, whose format is:
 "projects/{project}/locations/{region}/taxonomies/{taxonomy}/policyTags/{policytag}"`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -188,7 +201,7 @@ func resourceDataCatalogPolicyTagCreate(d *schema.ResourceData, meta interface{}
 		obj["parentPolicyTag"] = parentPolicyTagProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataCatalogBasePath}}{{taxonomy}}/policyTags")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{taxonomy}}/policyTags")
 	if err != nil {
 		return err
 	}
@@ -241,7 +254,7 @@ func resourceDataCatalogPolicyTagRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataCatalogBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -268,26 +281,42 @@ func resourceDataCatalogPolicyTagRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading DataCatalogPolicyTag %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenDataCatalogPolicyTagName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyTag: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("display_name", flattenDataCatalogPolicyTagDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyTag: %s", err)
-	}
-	if err := d.Set("description", flattenDataCatalogPolicyTagDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyTag: %s", err)
-	}
-	if err := d.Set("parent_policy_tag", flattenDataCatalogPolicyTagParentPolicyTag(res["parentPolicyTag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyTag: %s", err)
-	}
-	if err := d.Set("child_policy_tags", flattenDataCatalogPolicyTagChildPolicyTags(res["childPolicyTags"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyTag: %s", err)
+
+	err = ResourceDataCatalogPolicyTagFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceDataCatalogPolicyTagUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDataCatalogPolicyTag().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDataCatalogPolicyTagRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -316,7 +345,7 @@ func resourceDataCatalogPolicyTagUpdate(d *schema.ResourceData, meta interface{}
 		obj["parentPolicyTag"] = parentPolicyTagProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataCatalogBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -373,6 +402,13 @@ func resourceDataCatalogPolicyTagUpdate(d *schema.ResourceData, meta interface{}
 }
 
 func resourceDataCatalogPolicyTagDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DataCatalogPolicyTag without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PolicyTag %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -381,7 +417,7 @@ func resourceDataCatalogPolicyTagDelete(d *schema.ResourceData, meta interface{}
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataCatalogBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -470,5 +506,27 @@ func resourceDataCatalogPolicyTagPostCreateSetComputedFields(d *schema.ResourceD
 	if err := d.Set("name", flattenDataCatalogPolicyTagName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceDataCatalogPolicyTagFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDataCatalogPolicyTagName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyTag: %s", err)
+	}
+	if err = d.Set("display_name", flattenDataCatalogPolicyTagDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyTag: %s", err)
+	}
+	if err = d.Set("description", flattenDataCatalogPolicyTagDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyTag: %s", err)
+	}
+	if err = d.Set("parent_policy_tag", flattenDataCatalogPolicyTagParentPolicyTag(res["parentPolicyTag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyTag: %s", err)
+	}
+	if err = d.Set("child_policy_tags", flattenDataCatalogPolicyTagChildPolicyTags(res["childPolicyTags"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyTag: %s", err)
+	}
+
 	return nil
 }

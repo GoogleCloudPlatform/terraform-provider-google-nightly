@@ -100,6 +100,7 @@ func ResourceComputeDiskResourcePolicyAttachment() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceComputeDiskResourcePolicyAttachmentCreate,
 		Read:   resourceComputeDiskResourcePolicyAttachmentRead,
+		Update: resourceComputeDiskResourcePolicyAttachmentUpdate,
 		Delete: resourceComputeDiskResourcePolicyAttachmentDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -114,6 +115,7 @@ func ResourceComputeDiskResourcePolicyAttachment() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
 			tpgresource.DefaultProviderZone,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -172,6 +174,18 @@ creation. Do not specify the self link.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -197,7 +211,7 @@ func resourceComputeDiskResourcePolicyAttachmentCreate(d *schema.ResourceData, m
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/disks/{{disk}}/addResourcePolicies")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/disks/{{disk}}/addResourcePolicies")
 	if err != nil {
 		return err
 	}
@@ -286,7 +300,7 @@ func resourceComputeDiskResourcePolicyAttachmentRead(d *schema.ResourceData, met
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/disks/{{disk}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/disks/{{disk}}")
 	if err != nil {
 		return err
 	}
@@ -343,6 +357,19 @@ func resourceComputeDiskResourcePolicyAttachmentRead(d *schema.ResourceData, met
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DiskResourcePolicyAttachment: %s", err)
 	}
@@ -354,9 +381,9 @@ func resourceComputeDiskResourcePolicyAttachmentRead(d *schema.ResourceData, met
 	if err := d.Set("zone", zone); err != nil {
 		return fmt.Errorf("Error reading DiskResourcePolicyAttachment: %s", err)
 	}
-
-	if err := d.Set("name", flattenNestedComputeDiskResourcePolicyAttachmentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DiskResourcePolicyAttachment: %s", err)
+	err = ResourceComputeDiskResourcePolicyAttachmentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -392,7 +419,19 @@ func resourceComputeDiskResourcePolicyAttachmentRead(d *schema.ResourceData, met
 	return nil
 }
 
+func resourceComputeDiskResourcePolicyAttachmentUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceComputeDiskResourcePolicyAttachmentRead(d, meta)
+}
+
 func resourceComputeDiskResourcePolicyAttachmentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeDiskResourcePolicyAttachment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DiskResourcePolicyAttachment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -406,8 +445,7 @@ func resourceComputeDiskResourcePolicyAttachmentDelete(d *schema.ResourceData, m
 		return fmt.Errorf("Error fetching project for DiskResourcePolicyAttachment: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/disks/{{disk}}/removeResourcePolicies")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/disks/{{disk}}/removeResourcePolicies")
 	if err != nil {
 		return err
 	}
@@ -594,4 +632,14 @@ func resourceComputeDiskResourcePolicyAttachmentFindNestedObjectInList(d *schema
 func resourceComputeDiskResourcePolicyAttachmentDecoder(d *schema.ResourceData, meta interface{}, res map[string]interface{}) (map[string]interface{}, error) {
 	res["name"] = tpgresource.GetResourceNameFromSelfLink(res["name"].(string))
 	return res, nil
+}
+
+func ResourceComputeDiskResourcePolicyAttachmentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenNestedComputeDiskResourcePolicyAttachmentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DiskResourcePolicyAttachment: %s", err)
+	}
+
+	return nil
 }

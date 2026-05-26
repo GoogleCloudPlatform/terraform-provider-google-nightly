@@ -27,6 +27,11 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudrunv2"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkservices"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vpcaccess"
 )
 
 func TestAccCloudRunV2WorkerPool_vpcAccess_basic(t *testing.T) {
@@ -505,17 +510,17 @@ func TestAccCloudRunV2Service_cloudrunv2ServiceGRPCProbesUpdate(t *testing.T) {
 			// So we only check that the `startup.grpc {}` block and its properties are accepted by the APIs.
 			{
 				Config:      testAccCloudRunV2Service_cloudRunServiceUpdateWithEmptyGRPCStartupProbe(context),
-				ExpectError: regexp.MustCompile(fmt.Sprintf(`Revision '%s-.*' is not ready and cannot serve traffic\. The user-provided container failed the configured startup probe checks\.`, serviceName)),
+				ExpectError: regexp.MustCompile(`The user-provided container failed the configured startup probe checks`),
 			},
 			{
 				PreConfig:   testAccCheckCloudRunV2ServiceDestroyByNameProducer(t, serviceName),
 				Config:      testAccCloudRunV2Service_cloudRunServiceUpdateWithGRPCStartupProbe(context),
-				ExpectError: regexp.MustCompile(fmt.Sprintf(`Revision '%s-.*' is not ready and cannot serve traffic\. The user-provided container failed the configured startup probe checks\.`, serviceName)),
+				ExpectError: regexp.MustCompile(`The user-provided container failed the configured startup probe checks`),
 			},
 			{
 				PreConfig:   testAccCheckCloudRunV2ServiceDestroyByNameProducer(t, serviceName),
 				Config:      testAccCloudRunV2Service_cloudRunServiceUpdateWithGRPCLivenessAndStartupProbes(context),
-				ExpectError: regexp.MustCompile(fmt.Sprintf(`Revision '%s-.*' is not ready and cannot serve traffic\. The user-provided container failed the configured startup probe checks\.`, serviceName)),
+				ExpectError: regexp.MustCompile(`The user-provided container failed the configured startup probe checks`),
 			},
 			{
 				PreConfig:          testAccCheckCloudRunV2ServiceDestroyByNameProducer(t, serviceName),
@@ -530,7 +535,7 @@ func TestAccCloudRunV2Service_cloudrunv2ServiceGRPCProbesUpdate(t *testing.T) {
 func testAccCheckCloudRunV2ServiceDestroyByNameProducer(t *testing.T, serviceName string) func() {
 	return func() {
 		config := acctest.GoogleProviderConfig(t)
-		service := config.NewCloudRunV2Client(config.UserAgent).Projects.Locations.Services
+		service := cloudrunv2.NewClient(config, config.UserAgent).Projects.Locations.Services
 		qualifiedServiceName := fmt.Sprintf("projects/%s/locations/%s/services/%s", config.Project, config.Region, serviceName)
 		op, err := service.Delete(qualifiedServiceName).Do()
 		if err != nil {

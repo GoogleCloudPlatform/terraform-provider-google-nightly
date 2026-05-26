@@ -209,22 +209,18 @@ func ResourceSecretManagerRegionalRegionalSecretVersion() *schema.Resource {
 				Computed:    true,
 				Description: `The version of the Regional Secret.`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `The deletion policy for the regional secret version. Setting 'ABANDON' allows the resource
-to be abandoned rather than deleted. Setting 'DISABLE' allows the resource to be
-disabled rather than deleted. Default is 'DELETE'. Possible values are:
-  * DELETE
-  * DISABLE
-  * ABANDON`,
-				Default: "DELETE",
-			},
 			"is_secret_data_base64": {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				ForceNew:    true,
 				Description: `If set to 'true', the secret data is expected to be base64-encoded string and would be sent as is.`,
+			},
+
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/secret_manager_regional_regional_secret_version.html.markdown for specifics`,
 			},
 		},
 		UseJSONNumber: true,
@@ -252,7 +248,7 @@ func resourceSecretManagerRegionalRegionalSecretVersionCreate(d *schema.Resource
 		obj["payload"] = payloadProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerRegionalBasePath}}{{secret}}:addVersion")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{secret}}:addVersion")
 	if err != nil {
 		return err
 	}
@@ -337,7 +333,7 @@ func resourceSecretManagerRegionalRegionalSecretVersionRead(d *schema.ResourceDa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerRegionalBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -402,49 +398,40 @@ func resourceSecretManagerRegionalRegionalSecretVersionRead(d *schema.ResourceDa
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DELETE"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 
-	if err := d.Set("name", flattenSecretManagerRegionalRegionalSecretVersionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecretManagerRegionalRegionalSecretVersionCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
-	}
-	if err := d.Set("destroy_time", flattenSecretManagerRegionalRegionalSecretVersionDestroyTime(res["destroyTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
-	}
-	if err := d.Set("customer_managed_encryption", flattenSecretManagerRegionalRegionalSecretVersionCustomerManagedEncryption(res["customerManagedEncryption"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
-	}
-	if err := d.Set("version", flattenSecretManagerRegionalRegionalSecretVersionVersion(res["version"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
-	}
-	if err := d.Set("enabled", flattenSecretManagerRegionalRegionalSecretVersionEnabled(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
-	}
-	// Terraform must set the top level schema field, but since this object contains collapsed properties
-	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
-	if flattenedProp := flattenSecretManagerRegionalRegionalSecretVersionPayload(res["payload"], d, config); flattenedProp != nil {
-		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
-			return fmt.Errorf("Error reading RegionalSecretVersion: %s", gerr)
-		}
-		casted := flattenedProp.([]interface{})[0]
-		if casted != nil {
-			for k, v := range casted.(map[string]interface{}) {
-				if err := d.Set(k, v); err != nil {
-					return fmt.Errorf("Error setting %s: %s", k, err)
-				}
-			}
-		}
+	err = ResourceSecretManagerRegionalRegionalSecretVersionFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceSecretManagerRegionalRegionalSecretVersionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecretManagerRegionalRegionalSecretVersion().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecretManagerRegionalRegionalSecretVersionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	err := setEnabled(d.Get("enabled"), d, config)
 	if err != nil {
@@ -455,6 +442,13 @@ func resourceSecretManagerRegionalRegionalSecretVersionUpdate(d *schema.Resource
 }
 
 func resourceSecretManagerRegionalRegionalSecretVersionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecretManagerRegionalRegionalSecretVersion without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RegionalSecretVersion %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -463,7 +457,7 @@ func resourceSecretManagerRegionalRegionalSecretVersionDelete(d *schema.Resource
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerRegionalBasePath}}{{name}}:destroy")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}:destroy")
 	if err != nil {
 		return err
 	}
@@ -478,9 +472,7 @@ func resourceSecretManagerRegionalRegionalSecretVersionDelete(d *schema.Resource
 	headers := make(http.Header)
 	deletionPolicy := d.Get("deletion_policy")
 
-	if deletionPolicy == "ABANDON" {
-		return nil
-	} else if deletionPolicy == "DISABLE" {
+	if deletionPolicy == "DISABLE" {
 		url, err = tpgresource.ReplaceVars(d, config, "{{SecretManagerRegionalBasePath}}{{name}}:disable")
 		if err != nil {
 			return err
@@ -684,5 +676,45 @@ func resourceSecretManagerRegionalRegionalSecretVersionPostCreateSetComputedFiel
 	if err := d.Set("name", flattenSecretManagerRegionalRegionalSecretVersionName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceSecretManagerRegionalRegionalSecretVersionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecretManagerRegionalRegionalSecretVersionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecretManagerRegionalRegionalSecretVersionCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
+	}
+	if err = d.Set("destroy_time", flattenSecretManagerRegionalRegionalSecretVersionDestroyTime(res["destroyTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
+	}
+	if err = d.Set("customer_managed_encryption", flattenSecretManagerRegionalRegionalSecretVersionCustomerManagedEncryption(res["customerManagedEncryption"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
+	}
+	if err = d.Set("version", flattenSecretManagerRegionalRegionalSecretVersionVersion(res["version"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
+	}
+	if err = d.Set("enabled", flattenSecretManagerRegionalRegionalSecretVersionEnabled(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalSecretVersion: %s", err)
+	}
+	// Terraform must set the top level schema field, but since this object contains collapsed properties
+	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
+	if flattenedProp := flattenSecretManagerRegionalRegionalSecretVersionPayload(res["payload"], d, config); flattenedProp != nil {
+		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
+			return fmt.Errorf("Error reading RegionalSecretVersion: %s", gerr)
+		}
+		casted := flattenedProp.([]interface{})[0]
+		if casted != nil {
+			for k, v := range casted.(map[string]interface{}) {
+				if err := d.Set(k, v); err != nil {
+					return fmt.Errorf("Error setting %s: %s", k, err)
+				}
+			}
+		}
+	}
+
 	return nil
 }

@@ -115,6 +115,7 @@ func ResourceCloudIdsEndpoint() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -206,6 +207,18 @@ func ResourceCloudIdsEndpoint() *schema.Resource {
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -250,7 +263,7 @@ func resourceCloudIdsEndpointCreate(d *schema.ResourceData, meta interface{}) er
 		obj["threatExceptions"] = threatExceptionsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudIdsBasePath}}projects/{{project}}/locations/{{location}}/endpoints?endpointId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/endpoints?endpointId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -334,7 +347,7 @@ func resourceCloudIdsEndpointRead(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudIdsBasePath}}projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -367,36 +380,26 @@ func resourceCloudIdsEndpointRead(d *schema.ResourceData, meta interface{}) erro
 
 	log.Printf("[DEBUG] Finished reading CloudIdsEndpoint %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Endpoint: %s", err)
 	}
 
-	if err := d.Set("name", flattenCloudIdsEndpointName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("create_time", flattenCloudIdsEndpointCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("update_time", flattenCloudIdsEndpointUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("network", flattenCloudIdsEndpointNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("description", flattenCloudIdsEndpointDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("endpoint_forwarding_rule", flattenCloudIdsEndpointEndpointForwardingRule(res["endpointForwardingRule"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("endpoint_ip", flattenCloudIdsEndpointEndpointIp(res["endpointIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("severity", flattenCloudIdsEndpointSeverity(res["severity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("threat_exceptions", flattenCloudIdsEndpointThreatExceptions(res["threatExceptions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
+	err = ResourceCloudIdsEndpointFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -427,6 +430,19 @@ func resourceCloudIdsEndpointRead(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceCloudIdsEndpointUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCloudIdsEndpoint().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCloudIdsEndpointRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -469,7 +485,7 @@ func resourceCloudIdsEndpointUpdate(d *schema.ResourceData, meta interface{}) er
 		obj["threatExceptions"] = threatExceptionsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudIdsBasePath}}projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -525,6 +541,13 @@ func resourceCloudIdsEndpointUpdate(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceCloudIdsEndpointDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CloudIdsEndpoint without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Endpoint %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -538,8 +561,7 @@ func resourceCloudIdsEndpointDelete(d *schema.ResourceData, meta interface{}) er
 		return fmt.Errorf("Error fetching project for Endpoint: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudIdsBasePath}}projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -655,4 +677,38 @@ func expandCloudIdsEndpointSeverity(v interface{}, d tpgresource.TerraformResour
 
 func expandCloudIdsEndpointThreatExceptions(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceCloudIdsEndpointFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenCloudIdsEndpointName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("create_time", flattenCloudIdsEndpointCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("update_time", flattenCloudIdsEndpointUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("network", flattenCloudIdsEndpointNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("description", flattenCloudIdsEndpointDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("endpoint_forwarding_rule", flattenCloudIdsEndpointEndpointForwardingRule(res["endpointForwardingRule"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("endpoint_ip", flattenCloudIdsEndpointEndpointIp(res["endpointIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("severity", flattenCloudIdsEndpointSeverity(res["severity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("threat_exceptions", flattenCloudIdsEndpointThreatExceptions(res["threatExceptions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+
+	return nil
 }

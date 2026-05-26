@@ -130,10 +130,36 @@ The following arguments are supported:
   there will be a new snapshot taken to initiate the backup creation.
   Format: `projects/{{projectId}}/locations/{{location}}/volumes/{{volumename}}/snapshots/{{snapshotname}}``
 
+* `ontap_source` -
+  (Optional, [Beta](../guides/provider_versions.html.markdown))
+  Details of the ONTAP source volume and snapshot.
+  Structure is [documented below](#nested_ontap_source).
+
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
+
+<a name="nested_ontap_source"></a>The `ontap_source` block supports:
+
+* `storage_pool` -
+  (Required)
+  Name of the storage pool. This must be specified for creating backups for ONTAP mode volumes.
+  Format: `projects/{{project}}/locations/{{location}}/storagePools/{{storage_pool_id}}`
+
+* `volume_uuid` -
+  (Required)
+  The UUID of the ONTAP source volume.
+
+* `snapshot_uuid` -
+  (Optional)
+  The UUID of the ONTAP source snapshot.
 
 ## Attributes Reference
 

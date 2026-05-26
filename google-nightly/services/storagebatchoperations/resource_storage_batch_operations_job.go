@@ -115,6 +115,7 @@ func ResourceStorageBatchOperationsJob() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -223,6 +224,11 @@ func ResourceStorageBatchOperationsJob() *schema.Resource {
 					},
 				},
 				ExactlyOneOf: []string{"delete_object", "put_metadata", "put_object_hold", "rewrite_object"},
+			},
+			"description": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Description: `A description provided by the user for the job. Its max length is 1024 bytes when Unicode-encoded.`,
 			},
 			"job_id": {
 				Type:         schema.TypeString,
@@ -374,6 +380,18 @@ func ResourceStorageBatchOperationsJob() *schema.Resource {
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -417,8 +435,14 @@ func resourceStorageBatchOperationsJobCreate(d *schema.ResourceData, meta interf
 	} else if v, ok := d.GetOkExists("put_object_hold"); !tpgresource.IsEmptyValue(reflect.ValueOf(putObjectHoldProp)) && (ok || !reflect.DeepEqual(v, putObjectHoldProp)) {
 		obj["putObjectHold"] = putObjectHoldProp
 	}
+	descriptionProp, err := expandStorageBatchOperationsJobDescription(d.Get("description"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("description"); !tpgresource.IsEmptyValue(reflect.ValueOf(descriptionProp)) && (ok || !reflect.DeepEqual(v, descriptionProp)) {
+		obj["description"] = descriptionProp
+	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBatchOperationsBasePath}}projects/{{project}}/locations/global/jobs?jobId={{job_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/jobs?jobId={{job_id}}")
 	if err != nil {
 		return err
 	}
@@ -497,7 +521,7 @@ func resourceStorageBatchOperationsJobRead(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBatchOperationsBasePath}}projects/{{project}}/locations/global/jobs/{{job_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/jobs/{{job_id}}")
 	if err != nil {
 		return err
 	}
@@ -536,39 +560,25 @@ func resourceStorageBatchOperationsJobRead(d *schema.ResourceData, meta interfac
 			return fmt.Errorf("Error setting delete_protection: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Job: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenStorageBatchOperationsJobCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("update_time", flattenStorageBatchOperationsJobUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("schedule_time", flattenStorageBatchOperationsJobScheduleTime(res["scheduleTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("complete_time", flattenStorageBatchOperationsJobCompleteTime(res["completeTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("state", flattenStorageBatchOperationsJobState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("bucket_list", flattenStorageBatchOperationsJobBucketList(res["bucketList"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("delete_object", flattenStorageBatchOperationsJobDeleteObject(res["deleteObject"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("put_metadata", flattenStorageBatchOperationsJobPutMetadata(res["putMetadata"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("rewrite_object", flattenStorageBatchOperationsJobRewriteObject(res["rewriteObject"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("put_object_hold", flattenStorageBatchOperationsJobPutObjectHold(res["putObjectHold"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
+	err = ResourceStorageBatchOperationsJobFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -593,6 +603,19 @@ func resourceStorageBatchOperationsJobRead(d *schema.ResourceData, meta interfac
 }
 
 func resourceStorageBatchOperationsJobUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceStorageBatchOperationsJob().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceStorageBatchOperationsJobRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	_ = config
 	// we can only get here if delete_protection was updated
@@ -607,6 +630,13 @@ func resourceStorageBatchOperationsJobUpdate(d *schema.ResourceData, meta interf
 }
 
 func resourceStorageBatchOperationsJobDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy StorageBatchOperationsJob without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Job %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -620,8 +650,7 @@ func resourceStorageBatchOperationsJobDelete(d *schema.ResourceData, meta interf
 		return fmt.Errorf("Error fetching project for Job: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBatchOperationsBasePath}}projects/{{project}}/locations/global/jobs/{{job_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/jobs/{{job_id}}")
 	if err != nil {
 		return err
 	}
@@ -881,6 +910,10 @@ func flattenStorageBatchOperationsJobPutObjectHoldEventBasedHold(v interface{}, 
 }
 
 func flattenStorageBatchOperationsJobPutObjectHoldTemporaryHold(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenStorageBatchOperationsJobDescription(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1187,4 +1220,48 @@ func expandStorageBatchOperationsJobPutObjectHoldEventBasedHold(v interface{}, d
 
 func expandStorageBatchOperationsJobPutObjectHoldTemporaryHold(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func expandStorageBatchOperationsJobDescription(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func ResourceStorageBatchOperationsJobFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenStorageBatchOperationsJobCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("update_time", flattenStorageBatchOperationsJobUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("schedule_time", flattenStorageBatchOperationsJobScheduleTime(res["scheduleTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("complete_time", flattenStorageBatchOperationsJobCompleteTime(res["completeTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("state", flattenStorageBatchOperationsJobState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("bucket_list", flattenStorageBatchOperationsJobBucketList(res["bucketList"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("delete_object", flattenStorageBatchOperationsJobDeleteObject(res["deleteObject"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("put_metadata", flattenStorageBatchOperationsJobPutMetadata(res["putMetadata"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("rewrite_object", flattenStorageBatchOperationsJobRewriteObject(res["rewriteObject"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("put_object_hold", flattenStorageBatchOperationsJobPutObjectHold(res["putObjectHold"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("description", flattenStorageBatchOperationsJobDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+
+	return nil
 }

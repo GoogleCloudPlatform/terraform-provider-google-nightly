@@ -116,6 +116,7 @@ func ResourceDatabaseMigrationServiceMigrationJob() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -231,6 +232,93 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				ForceNew:    true,
 				Description: `The location where the migration job should reside.`,
 			},
+			"objects_config": {
+				Type:     schema.TypeList,
+				Computed: true,
+				Optional: true,
+				ForceNew: true,
+				Description: `The objects that need to be migrated. If unset, the default is to migrate
+all objects available on the source.`,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"source_objects_config": {
+							Type:        schema.TypeList,
+							Computed:    true,
+							Optional:    true,
+							ForceNew:    true,
+							Description: `Configuration for the source objects to be migrated.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"object_configs": {
+										Type:     schema.TypeList,
+										Optional: true,
+										ForceNew: true,
+										Description: `The list of objects to migrate. Should only be set when
+'objectsSelectionType' is 'SPECIFIED_OBJECTS'.`,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"object_identifier": {
+													Type:        schema.TypeList,
+													Optional:    true,
+													ForceNew:    true,
+													Description: `The identifier of the migration job object.`,
+													MaxItems:    1,
+													Elem: &schema.Resource{
+														Schema: map[string]*schema.Schema{
+															"type": {
+																Type:         schema.TypeString,
+																Required:     true,
+																ForceNew:     true,
+																ValidateFunc: verify.ValidateEnum([]string{"DATABASE", "SCHEMA", "TABLE"}),
+																Description: `The category of the migration job object: 'DATABASE',
+'SCHEMA', or 'TABLE'. Possible values: ["DATABASE", "SCHEMA", "TABLE"]`,
+															},
+															"database": {
+																Type:     schema.TypeString,
+																Optional: true,
+																ForceNew: true,
+																Description: `The database name. Required only if the object uses
+a database name as part of its unique identifier.`,
+															},
+															"schema": {
+																Type:     schema.TypeString,
+																Optional: true,
+																ForceNew: true,
+																Description: `The schema name. Required only if the object uses
+a schema name as part of its unique identifier.`,
+															},
+															"table": {
+																Type:     schema.TypeString,
+																Optional: true,
+																ForceNew: true,
+																Description: `The table name. Required only if the object is a level
+below database or schema.`,
+															},
+														},
+													},
+												},
+											},
+										},
+									},
+									"objects_selection_type": {
+										Type:         schema.TypeString,
+										Computed:     true,
+										Optional:     true,
+										ForceNew:     true,
+										ValidateFunc: verify.ValidateEnum([]string{"ALL_OBJECTS", "SPECIFIED_OBJECTS", ""}),
+										Description: `The objects selection type of the migration job. When set to
+'SPECIFIED_OBJECTS', only the objects listed in 'objectConfigs' are
+migrated. When set to 'ALL_OBJECTS', all objects available on the
+source are migrated. Possible values: ["ALL_OBJECTS", "SPECIFIED_OBJECTS"]`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 			"performance_config": {
 				Type:        schema.TypeList,
 				Optional:    true,
@@ -243,6 +331,26 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 							Optional:     true,
 							ValidateFunc: verify.ValidateEnum([]string{"MIN", "OPTIMAL", "MAX", ""}),
 							Description:  `Initial dump parallelism level. Possible values: ["MIN", "OPTIMAL", "MAX"]`,
+						},
+					},
+				},
+			},
+			"postgres_homogeneous_config": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: `PostgreSQL to PostgreSQL configuration.`,
+				MaxItems:    1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"is_native_logical": {
+							Type:        schema.TypeBool,
+							Required:    true,
+							Description: `Whether the migration uses native logical replication.`,
+						},
+						"max_additional_subscriptions": {
+							Type:        schema.TypeInt,
+							Optional:    true,
+							Description: `Maximum number of additional subscriptions to use for the migration job.`,
 						},
 					},
 				},
@@ -279,7 +387,7 @@ bastion server for the SSH tunnel.`,
 						},
 					},
 				},
-				ExactlyOneOf: []string{"static_ip_connectivity", "vpc_peering_connectivity"},
+				ConflictsWith: []string{"static_ip_connectivity", "vpc_peering_connectivity"},
 			},
 			"static_ip_connectivity": {
 				Type:     schema.TypeList,
@@ -292,7 +400,7 @@ Cloud SQL console or using Cloud SQL APIs.`,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{},
 				},
-				ExactlyOneOf: []string{"reverse_ssh_connectivity", "vpc_peering_connectivity"},
+				ConflictsWith: []string{"reverse_ssh_connectivity", "vpc_peering_connectivity"},
 			},
 			"vpc_peering_connectivity": {
 				Type:        schema.TypeList,
@@ -308,7 +416,7 @@ Cloud SQL console or using Cloud SQL APIs.`,
 						},
 					},
 				},
-				ExactlyOneOf: []string{"reverse_ssh_connectivity", "static_ip_connectivity"},
+				ConflictsWith: []string{"reverse_ssh_connectivity", "static_ip_connectivity"},
 			},
 			"create_time": {
 				Type:        schema.TypeString,
@@ -376,6 +484,18 @@ Cloud SQL console or using Cloud SQL APIs.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -425,6 +545,12 @@ func resourceDatabaseMigrationServiceMigrationJobCreate(d *schema.ResourceData, 
 	} else if v, ok := d.GetOkExists("performance_config"); !tpgresource.IsEmptyValue(reflect.ValueOf(performanceConfigProp)) && (ok || !reflect.DeepEqual(v, performanceConfigProp)) {
 		obj["performanceConfig"] = performanceConfigProp
 	}
+	postgresHomogeneousConfigProp, err := expandDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfig(d.Get("postgres_homogeneous_config"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("postgres_homogeneous_config"); !tpgresource.IsEmptyValue(reflect.ValueOf(postgresHomogeneousConfigProp)) && (ok || !reflect.DeepEqual(v, postgresHomogeneousConfigProp)) {
+		obj["postgresHomogeneousConfig"] = postgresHomogeneousConfigProp
+	}
 	dumpPathProp, err := expandDatabaseMigrationServiceMigrationJobDumpPath(d.Get("dump_path"), d, config)
 	if err != nil {
 		return err
@@ -455,6 +581,12 @@ func resourceDatabaseMigrationServiceMigrationJobCreate(d *schema.ResourceData, 
 	} else if v, ok := d.GetOkExists("vpc_peering_connectivity"); !tpgresource.IsEmptyValue(reflect.ValueOf(vpcPeeringConnectivityProp)) && (ok || !reflect.DeepEqual(v, vpcPeeringConnectivityProp)) {
 		obj["vpcPeeringConnectivity"] = vpcPeeringConnectivityProp
 	}
+	objectsConfigProp, err := expandDatabaseMigrationServiceMigrationJobObjectsConfig(d.Get("objects_config"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("objects_config"); !tpgresource.IsEmptyValue(reflect.ValueOf(objectsConfigProp)) && (ok || !reflect.DeepEqual(v, objectsConfigProp)) {
+		obj["objectsConfig"] = objectsConfigProp
+	}
 	effectiveLabelsProp, err := expandDatabaseMigrationServiceMigrationJobEffectiveLabels(d.Get("effective_labels"), d, config)
 	if err != nil {
 		return err
@@ -462,7 +594,7 @@ func resourceDatabaseMigrationServiceMigrationJobCreate(d *schema.ResourceData, 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatabaseMigrationServiceBasePath}}projects/{{project}}/locations/{{location}}/migrationJobs?migrationJobId={{migration_job_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/migrationJobs?migrationJobId={{migration_job_id}}")
 	if err != nil {
 		return err
 	}
@@ -546,7 +678,7 @@ func resourceDatabaseMigrationServiceMigrationJobRead(d *schema.ResourceData, me
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatabaseMigrationServiceBasePath}}projects/{{project}}/locations/{{location}}/migrationJobs/{{migration_job_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/migrationJobs/{{migration_job_id}}")
 	if err != nil {
 		return err
 	}
@@ -579,66 +711,26 @@ func resourceDatabaseMigrationServiceMigrationJobRead(d *schema.ResourceData, me
 
 	log.Printf("[DEBUG] Finished reading DatabaseMigrationServiceMigrationJob %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading MigrationJob: %s", err)
 	}
 
-	if err := d.Set("name", flattenDatabaseMigrationServiceMigrationJobName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("display_name", flattenDatabaseMigrationServiceMigrationJobDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("create_time", flattenDatabaseMigrationServiceMigrationJobCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("labels", flattenDatabaseMigrationServiceMigrationJobLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("state", flattenDatabaseMigrationServiceMigrationJobState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("phase", flattenDatabaseMigrationServiceMigrationJobPhase(res["phase"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("error", flattenDatabaseMigrationServiceMigrationJobError(res["error"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("type", flattenDatabaseMigrationServiceMigrationJobType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("source", flattenDatabaseMigrationServiceMigrationJobSource(res["source"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("destination", flattenDatabaseMigrationServiceMigrationJobDestination(res["destination"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("dump_flags", flattenDatabaseMigrationServiceMigrationJobDumpFlags(res["dumpFlags"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("performance_config", flattenDatabaseMigrationServiceMigrationJobPerformanceConfig(res["performanceConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("dump_path", flattenDatabaseMigrationServiceMigrationJobDumpPath(res["dumpPath"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("dump_type", flattenDatabaseMigrationServiceMigrationJobDumpType(res["dumpType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("static_ip_connectivity", flattenDatabaseMigrationServiceMigrationJobStaticIpConnectivity(res["staticIpConnectivity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("reverse_ssh_connectivity", flattenDatabaseMigrationServiceMigrationJobReverseSshConnectivity(res["reverseSshConnectivity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("vpc_peering_connectivity", flattenDatabaseMigrationServiceMigrationJobVpcPeeringConnectivity(res["vpcPeeringConnectivity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDatabaseMigrationServiceMigrationJobTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDatabaseMigrationServiceMigrationJobEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	err = ResourceDatabaseMigrationServiceMigrationJobFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -669,6 +761,19 @@ func resourceDatabaseMigrationServiceMigrationJobRead(d *schema.ResourceData, me
 }
 
 func resourceDatabaseMigrationServiceMigrationJobUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDatabaseMigrationServiceMigrationJob().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDatabaseMigrationServiceMigrationJobRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -722,6 +827,12 @@ func resourceDatabaseMigrationServiceMigrationJobUpdate(d *schema.ResourceData, 
 	} else if v, ok := d.GetOkExists("performance_config"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, performanceConfigProp)) {
 		obj["performanceConfig"] = performanceConfigProp
 	}
+	postgresHomogeneousConfigProp, err := expandDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfig(d.Get("postgres_homogeneous_config"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("postgres_homogeneous_config"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, postgresHomogeneousConfigProp)) {
+		obj["postgresHomogeneousConfig"] = postgresHomogeneousConfigProp
+	}
 	dumpPathProp, err := expandDatabaseMigrationServiceMigrationJobDumpPath(d.Get("dump_path"), d, config)
 	if err != nil {
 		return err
@@ -759,7 +870,7 @@ func resourceDatabaseMigrationServiceMigrationJobUpdate(d *schema.ResourceData, 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatabaseMigrationServiceBasePath}}projects/{{project}}/locations/{{location}}/migrationJobs/{{migration_job_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/migrationJobs/{{migration_job_id}}")
 	if err != nil {
 		return err
 	}
@@ -778,6 +889,10 @@ func resourceDatabaseMigrationServiceMigrationJobUpdate(d *schema.ResourceData, 
 
 	if d.HasChange("performance_config") {
 		updateMask = append(updateMask, "performanceConfig")
+	}
+
+	if d.HasChange("postgres_homogeneous_config") {
+		updateMask = append(updateMask, "postgresHomogeneousConfig")
 	}
 
 	if d.HasChange("dump_path") {
@@ -847,6 +962,13 @@ func resourceDatabaseMigrationServiceMigrationJobUpdate(d *schema.ResourceData, 
 }
 
 func resourceDatabaseMigrationServiceMigrationJobDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DatabaseMigrationServiceMigrationJob without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing MigrationJob %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -860,8 +982,7 @@ func resourceDatabaseMigrationServiceMigrationJobDelete(d *schema.ResourceData, 
 		return fmt.Errorf("Error fetching project for MigrationJob: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatabaseMigrationServiceBasePath}}projects/{{project}}/locations/{{location}}/migrationJobs/{{migration_job_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/migrationJobs/{{migration_job_id}}")
 	if err != nil {
 		return err
 	}
@@ -1089,6 +1210,42 @@ func flattenDatabaseMigrationServiceMigrationJobPerformanceConfigDumpParallelLev
 	return v
 }
 
+func flattenDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfig(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["is_native_logical"] =
+		flattenDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfigIsNativeLogical(original["isNativeLogical"], d, config)
+	transformed["max_additional_subscriptions"] =
+		flattenDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfigMaxAdditionalSubscriptions(original["maxAdditionalSubscriptions"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfigIsNativeLogical(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfigMaxAdditionalSubscriptions(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	// Handles the string fixed64 format
+	if strVal, ok := v.(string); ok {
+		if intVal, err := tpgresource.StringToFixed64(strVal); err == nil {
+			return intVal
+		}
+	}
+
+	// number values are represented as float64
+	if floatVal, ok := v.(float64); ok {
+		intVal := int(floatVal)
+		return intVal
+	}
+
+	return v // let terraform core handle it otherwise
+}
+
 func flattenDatabaseMigrationServiceMigrationJobDumpPath(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
@@ -1167,6 +1324,91 @@ func flattenDatabaseMigrationServiceMigrationJobVpcPeeringConnectivity(v interfa
 	return []interface{}{transformed}
 }
 func flattenDatabaseMigrationServiceMigrationJobVpcPeeringConnectivityVpc(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDatabaseMigrationServiceMigrationJobObjectsConfig(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["source_objects_config"] =
+		flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfig(original["sourceObjectsConfig"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfig(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["objects_selection_type"] =
+		flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectsSelectionType(original["objectsSelectionType"], d, config)
+	transformed["object_configs"] =
+		flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigs(original["objectConfigs"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectsSelectionType(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigs(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return v
+	}
+	l := v.([]interface{})
+	transformed := make([]interface{}, 0, len(l))
+	for _, raw := range l {
+		original := raw.(map[string]interface{})
+		if len(original) < 1 {
+			// Do not include empty json objects coming back from the api
+			continue
+		}
+		transformed = append(transformed, map[string]interface{}{
+			"object_identifier": flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifier(original["objectIdentifier"], d, config),
+		})
+	}
+	return transformed
+}
+func flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifier(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["type"] =
+		flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierType(original["type"], d, config)
+	transformed["database"] =
+		flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierDatabase(original["database"], d, config)
+	transformed["schema"] =
+		flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierSchema(original["schema"], d, config)
+	transformed["table"] =
+		flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierTable(original["table"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierType(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierDatabase(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierSchema(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierTable(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1293,6 +1535,43 @@ func expandDatabaseMigrationServiceMigrationJobPerformanceConfigDumpParallelLeve
 	return v, nil
 }
 
+func expandDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfig(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedIsNativeLogical, err := expandDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfigIsNativeLogical(original["is_native_logical"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedIsNativeLogical); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["isNativeLogical"] = transformedIsNativeLogical
+	}
+
+	transformedMaxAdditionalSubscriptions, err := expandDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfigMaxAdditionalSubscriptions(original["max_additional_subscriptions"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedMaxAdditionalSubscriptions); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["maxAdditionalSubscriptions"] = transformedMaxAdditionalSubscriptions
+	}
+
+	return transformed, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfigIsNativeLogical(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfigMaxAdditionalSubscriptions(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandDatabaseMigrationServiceMigrationJobDumpPath(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
@@ -1404,6 +1683,145 @@ func expandDatabaseMigrationServiceMigrationJobVpcPeeringConnectivityVpc(v inter
 	return v, nil
 }
 
+func expandDatabaseMigrationServiceMigrationJobObjectsConfig(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedSourceObjectsConfig, err := expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfig(original["source_objects_config"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedSourceObjectsConfig); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["sourceObjectsConfig"] = transformedSourceObjectsConfig
+	}
+
+	return transformed, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfig(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedObjectsSelectionType, err := expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectsSelectionType(original["objects_selection_type"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedObjectsSelectionType); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["objectsSelectionType"] = transformedObjectsSelectionType
+	}
+
+	transformedObjectConfigs, err := expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigs(original["object_configs"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedObjectConfigs); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["objectConfigs"] = transformedObjectConfigs
+	}
+
+	return transformed, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectsSelectionType(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigs(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	req := make([]interface{}, 0, len(l))
+	for _, raw := range l {
+		if raw == nil {
+			continue
+		}
+		original := raw.(map[string]interface{})
+		transformed := make(map[string]interface{})
+
+		transformedObjectIdentifier, err := expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifier(original["object_identifier"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedObjectIdentifier); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["objectIdentifier"] = transformedObjectIdentifier
+		}
+
+		req = append(req, transformed)
+	}
+	return req, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifier(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedType, err := expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierType(original["type"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedType); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["type"] = transformedType
+	}
+
+	transformedDatabase, err := expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierDatabase(original["database"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedDatabase); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["database"] = transformedDatabase
+	}
+
+	transformedSchema, err := expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierSchema(original["schema"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedSchema); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["schema"] = transformedSchema
+	}
+
+	transformedTable, err := expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierTable(original["table"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedTable); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["table"] = transformedTable
+	}
+
+	return transformed, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierType(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierDatabase(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierSchema(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDatabaseMigrationServiceMigrationJobObjectsConfigSourceObjectsConfigObjectConfigsObjectIdentifierTable(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandDatabaseMigrationServiceMigrationJobEffectiveLabels(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
 	if v == nil {
 		return map[string]string{}, nil
@@ -1413,4 +1831,74 @@ func expandDatabaseMigrationServiceMigrationJobEffectiveLabels(v interface{}, d 
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceDatabaseMigrationServiceMigrationJobFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDatabaseMigrationServiceMigrationJobName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("display_name", flattenDatabaseMigrationServiceMigrationJobDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("create_time", flattenDatabaseMigrationServiceMigrationJobCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("labels", flattenDatabaseMigrationServiceMigrationJobLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("state", flattenDatabaseMigrationServiceMigrationJobState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("phase", flattenDatabaseMigrationServiceMigrationJobPhase(res["phase"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("error", flattenDatabaseMigrationServiceMigrationJobError(res["error"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("type", flattenDatabaseMigrationServiceMigrationJobType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("source", flattenDatabaseMigrationServiceMigrationJobSource(res["source"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("destination", flattenDatabaseMigrationServiceMigrationJobDestination(res["destination"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("dump_flags", flattenDatabaseMigrationServiceMigrationJobDumpFlags(res["dumpFlags"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("performance_config", flattenDatabaseMigrationServiceMigrationJobPerformanceConfig(res["performanceConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("postgres_homogeneous_config", flattenDatabaseMigrationServiceMigrationJobPostgresHomogeneousConfig(res["postgresHomogeneousConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("dump_path", flattenDatabaseMigrationServiceMigrationJobDumpPath(res["dumpPath"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("dump_type", flattenDatabaseMigrationServiceMigrationJobDumpType(res["dumpType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("static_ip_connectivity", flattenDatabaseMigrationServiceMigrationJobStaticIpConnectivity(res["staticIpConnectivity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("reverse_ssh_connectivity", flattenDatabaseMigrationServiceMigrationJobReverseSshConnectivity(res["reverseSshConnectivity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("vpc_peering_connectivity", flattenDatabaseMigrationServiceMigrationJobVpcPeeringConnectivity(res["vpcPeeringConnectivity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("objects_config", flattenDatabaseMigrationServiceMigrationJobObjectsConfig(res["objectsConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDatabaseMigrationServiceMigrationJobTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDatabaseMigrationServiceMigrationJobEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MigrationJob: %s", err)
+	}
+
+	return nil
 }

@@ -115,6 +115,7 @@ func ResourceSecureSourceManagerHook() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -233,6 +234,18 @@ See https://pkg.go.dev/github.com/gobwas/glob documentation.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -277,7 +290,7 @@ func resourceSecureSourceManagerHookCreate(d *schema.ResourceData, meta interfac
 		obj["pushOption"] = pushOptionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/hooks?hook_id={{hook_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/hooks?hook_id={{hook_id}}")
 	if err != nil {
 		return err
 	}
@@ -366,7 +379,7 @@ func resourceSecureSourceManagerHookRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/hooks/{{hook_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/hooks/{{hook_id}}")
 	if err != nil {
 		return err
 	}
@@ -399,33 +412,26 @@ func resourceSecureSourceManagerHookRead(d *schema.ResourceData, meta interface{
 
 	log.Printf("[DEBUG] Finished reading SecureSourceManagerHook %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Hook: %s", err)
 	}
 
-	if err := d.Set("name", flattenSecureSourceManagerHookName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hook: %s", err)
-	}
-	if err := d.Set("target_uri", flattenSecureSourceManagerHookTargetUri(res["targetUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hook: %s", err)
-	}
-	if err := d.Set("disabled", flattenSecureSourceManagerHookDisabled(res["disabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hook: %s", err)
-	}
-	if err := d.Set("events", flattenSecureSourceManagerHookEvents(res["events"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hook: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecureSourceManagerHookCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hook: %s", err)
-	}
-	if err := d.Set("update_time", flattenSecureSourceManagerHookUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hook: %s", err)
-	}
-	if err := d.Set("uid", flattenSecureSourceManagerHookUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hook: %s", err)
-	}
-	if err := d.Set("push_option", flattenSecureSourceManagerHookPushOption(res["pushOption"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Hook: %s", err)
+	err = ResourceSecureSourceManagerHookFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -462,6 +468,19 @@ func resourceSecureSourceManagerHookRead(d *schema.ResourceData, meta interface{
 }
 
 func resourceSecureSourceManagerHookUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecureSourceManagerHook().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecureSourceManagerHookRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -533,7 +552,7 @@ func resourceSecureSourceManagerHookUpdate(d *schema.ResourceData, meta interfac
 		obj["pushOption"] = pushOptionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/hooks/{{hook_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/hooks/{{hook_id}}")
 	if err != nil {
 		return err
 	}
@@ -598,6 +617,13 @@ func resourceSecureSourceManagerHookUpdate(d *schema.ResourceData, meta interfac
 }
 
 func resourceSecureSourceManagerHookDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecureSourceManagerHook without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Hook %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -611,8 +637,7 @@ func resourceSecureSourceManagerHookDelete(d *schema.ResourceData, meta interfac
 		return fmt.Errorf("Error fetching project for Hook: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecureSourceManagerBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/hooks/{{hook_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}/hooks/{{hook_id}}")
 	if err != nil {
 		return err
 	}
@@ -761,4 +786,35 @@ func expandSecureSourceManagerHookPushOption(v interface{}, d tpgresource.Terraf
 
 func expandSecureSourceManagerHookPushOptionBranchFilter(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceSecureSourceManagerHookFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecureSourceManagerHookName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hook: %s", err)
+	}
+	if err = d.Set("target_uri", flattenSecureSourceManagerHookTargetUri(res["targetUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hook: %s", err)
+	}
+	if err = d.Set("disabled", flattenSecureSourceManagerHookDisabled(res["disabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hook: %s", err)
+	}
+	if err = d.Set("events", flattenSecureSourceManagerHookEvents(res["events"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hook: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecureSourceManagerHookCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hook: %s", err)
+	}
+	if err = d.Set("update_time", flattenSecureSourceManagerHookUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hook: %s", err)
+	}
+	if err = d.Set("uid", flattenSecureSourceManagerHookUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hook: %s", err)
+	}
+	if err = d.Set("push_option", flattenSecureSourceManagerHookPushOption(res["pushOption"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Hook: %s", err)
+	}
+
+	return nil
 }

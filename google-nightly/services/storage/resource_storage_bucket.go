@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
+	compute_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/verify"
@@ -79,7 +80,24 @@ func ResourceStorageBucket() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			customdiff.ForceNewIfChange("retention_policy.0.is_locked", isPolicyLocked),
 			tpgresource.SetLabelsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
+
+		Identity: &schema.ResourceIdentity{
+			Version: 1,
+			SchemaFunc: func() map[string]*schema.Schema {
+				return map[string]*schema.Schema{
+					"project": {
+						Type:              schema.TypeString,
+						OptionalForImport: true,
+					},
+					"name": {
+						Type:              schema.TypeString,
+						RequiredForImport: true,
+					},
+				}
+			},
+		},
 
 		Timeouts: &schema.ResourceTimeout{
 			Create: schema.DefaultTimeout(10 * time.Minute),
@@ -710,6 +728,9 @@ func ResourceStorageBucket() *schema.Resource {
 					return false
 				},
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -736,7 +757,7 @@ func labelKeyValidator(val interface{}, key string) (warns []string, errs []erro
 
 func getAnywhereCacheListResult(d *schema.ResourceData, config *transport_tpg.Config) ([]interface{}, error) {
 	// Define the cache list URL
-	cacheListUrl, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}b/{{name}}/anywhereCaches/")
+	cacheListUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"b/{{name}}/anywhereCaches/")
 	if err != nil {
 		return nil, err
 	}
@@ -801,7 +822,7 @@ func deleteAnywhereCacheIfAny(d *schema.ResourceData, config *transport_tpg.Conf
 			if !ok {
 				return fmt.Errorf("missing or invalid anywhereCacheId: %v", obj)
 			}
-			anywhereCacheUrl, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}b/{{name}}/anywhereCaches/")
+			anywhereCacheUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"b/{{name}}/anywhereCaches/")
 			if err != nil {
 				return err
 			}
@@ -965,7 +986,7 @@ func resourceStorageBucketCreate(d *schema.ResourceData, meta interface{}) error
 
 	err = transport_tpg.Retry(transport_tpg.RetryOptions{
 		RetryFunc: func() error {
-			insertCall := config.NewStorageClient(userAgent).Buckets.Insert(project, sb)
+			insertCall := NewClient(config, userAgent).Buckets.Insert(project, sb)
 			if d.Get("enable_object_retention").(bool) {
 				insertCall.EnableObjectRetention(true)
 			}
@@ -988,7 +1009,7 @@ func resourceStorageBucketCreate(d *schema.ResourceData, meta interface{}) error
 	// to make sure it exists before moving on
 	err = transport_tpg.Retry(transport_tpg.RetryOptions{
 		RetryFunc: func() (operr error) {
-			_, retryErr := config.NewStorageClient(userAgent).Buckets.Get(res.Name).Do()
+			_, retryErr := NewClient(config, userAgent).Buckets.Get(res.Name).Do()
 			return retryErr
 		},
 		Timeout:              d.Timeout(schema.TimeoutCreate),
@@ -1009,7 +1030,7 @@ func resourceStorageBucketCreate(d *schema.ResourceData, meta interface{}) error
 		retentionPolicy := retention_policies[0].(map[string]interface{})
 
 		if locked, ok := retentionPolicy["is_locked"]; ok && locked.(bool) {
-			err = lockRetentionPolicy(config.NewStorageClient(userAgent).Buckets, bucket, res.Metageneration)
+			err = lockRetentionPolicy(NewClient(config, userAgent).Buckets, bucket, res.Metageneration)
 			if err != nil {
 				return err
 			}
@@ -1022,6 +1043,11 @@ func resourceStorageBucketCreate(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceStorageBucketUpdate(d *schema.ResourceData, meta interface{}) error {
+
+	if tpgresource.DeletionPolicyPreUpdate(d, ResourceStorageBucket) {
+		return ResourceStorageBucket().Read(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1151,7 +1177,7 @@ func resourceStorageBucketUpdate(d *schema.ResourceData, meta interface{}) error
 		}
 	}
 
-	res, err := config.NewStorageClient(userAgent).Buckets.Patch(d.Get("name").(string), sb).Do()
+	res, err := NewClient(config, userAgent).Buckets.Patch(d.Get("name").(string), sb).Do()
 	if err != nil {
 		return err
 	}
@@ -1165,7 +1191,7 @@ func resourceStorageBucketUpdate(d *schema.ResourceData, meta interface{}) error
 	// to make sure it exists before moving on
 	err = transport_tpg.Retry(transport_tpg.RetryOptions{
 		RetryFunc: func() (operr error) {
-			_, retryErr := config.NewStorageClient(userAgent).Buckets.Get(res.Name).Do()
+			_, retryErr := NewClient(config, userAgent).Buckets.Get(res.Name).Do()
 			return retryErr
 		},
 		Timeout:              d.Timeout(schema.TimeoutUpdate),
@@ -1185,7 +1211,7 @@ func resourceStorageBucketUpdate(d *schema.ResourceData, meta interface{}) error
 			retentionPolicy := retention_policies[0].(map[string]interface{})
 
 			if locked, ok := retentionPolicy["is_locked"]; ok && locked.(bool) && d.HasChange("retention_policy.0.is_locked") {
-				err = lockRetentionPolicy(config.NewStorageClient(userAgent).Buckets, d.Get("name").(string), res.Metageneration)
+				err = lockRetentionPolicy(NewClient(config, userAgent).Buckets, d.Get("name").(string), res.Metageneration)
 				if err != nil {
 					return err
 				}
@@ -1212,7 +1238,7 @@ func resourceStorageBucketRead(d *schema.ResourceData, meta interface{}) error {
 
 	// There seems to be some eventual consistency errors in some cases, so we want to check a few times
 	// to make sure it exists before moving on
-	res, err := config.NewStorageClient(userAgent).Buckets.Get(bucket).Do()
+	res, err := NewClient(config, userAgent).Buckets.Get(bucket).Do()
 
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, fmt.Sprintf("Storage Bucket %q", d.Get("name").(string)))
@@ -1223,6 +1249,13 @@ func resourceStorageBucketRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceStorageBucketDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1274,7 +1307,7 @@ func resourceStorageBucketDelete(d *schema.ResourceData, meta interface{}) error
 	for token != "" || first {
 		first = false
 
-		listCall := config.NewStorageClient(userAgent).Objects.List(bucket).Versions(true)
+		listCall := NewClient(config, userAgent).Objects.List(bucket).Versions(true)
 		if token != "" {
 			listCall.PageToken(token)
 		}
@@ -1318,7 +1351,7 @@ func resourceStorageBucketDelete(d *schema.ResourceData, meta interface{}) error
 		for _, object := range listResponse.Items {
 			object := object // ensure that local variable is maintained over loop iterations.
 			wp.Submit(func() {
-				err := config.NewStorageClient(userAgent).Objects.Delete(bucket, object.Name).Generation(object.Generation).Do()
+				err := NewClient(config, userAgent).Objects.Delete(bucket, object.Name).Generation(object.Generation).Do()
 				if err != nil {
 					errMu.Lock()
 					defer errMu.Unlock()
@@ -1336,7 +1369,7 @@ func resourceStorageBucketDelete(d *schema.ResourceData, meta interface{}) error
 
 	// destroy bucket
 	err = retry.Retry(1*time.Minute, func() *retry.RetryError {
-		err := config.NewStorageClient(userAgent).Buckets.Delete(bucket).Do()
+		err := NewClient(config, userAgent).Buckets.Delete(bucket).Do()
 		if err == nil {
 			return nil
 		}
@@ -1364,6 +1397,35 @@ func resourceStorageBucketDelete(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceStorageBucketStateImporter(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	if d.Id() == "" {
+		identity, err := d.Identity()
+		if err != nil {
+			return nil, fmt.Errorf("Error reading import identity: %s", err)
+		}
+		if identity == nil {
+			return nil, fmt.Errorf("import requires bucket name")
+		}
+
+		nameValue, ok := identity.GetOk("name")
+		if !ok || nameValue.(string) == "" {
+			return nil, fmt.Errorf("import requires bucket name")
+		}
+
+		name := nameValue.(string)
+		if err := d.Set("name", name); err != nil {
+			return nil, fmt.Errorf("Error setting name: %s", err)
+		}
+
+		if projectValue, ok := identity.GetOk("project"); ok && projectValue.(string) != "" {
+			if err := d.Set("project", projectValue.(string)); err != nil {
+				return nil, fmt.Errorf("Error setting project: %s", err)
+			}
+			d.SetId(fmt.Sprintf("%s/%s", projectValue.(string), name))
+		} else {
+			d.SetId(name)
+		}
+	}
+
 	// We need to support project/bucket_name and bucket_name formats. This will allow
 	// importing a bucket that is in a different project than the provider default.
 	// ParseImportID can't be used because having no project will cause an error but it
@@ -2401,7 +2463,7 @@ func setStorageBucket(d *schema.ResourceData, config *transport_tpg.Config, res 
 	// from the projectNumber which is included in the bucket API response
 	if d.Get("project") == "" {
 		projectName, _ := tpgresource.GetProject(d, config)
-		proj, err := config.NewComputeClient(userAgent).Projects.Get(strconv.FormatUint(res.ProjectNumber, 10)).Do()
+		proj, err := compute_tpg.NewClient(config, userAgent).Projects.Get(strconv.FormatUint(res.ProjectNumber, 10)).Do()
 		if err != nil {
 			log.Printf("[ERROR] Missing Compute API permissions, fallback to provider/resource default")
 		}
@@ -2458,11 +2520,11 @@ func setStorageBucket(d *schema.ResourceData, config *transport_tpg.Config, res 
 	if err := tpgresource.SetLabels(res.Labels, d, "labels"); err != nil {
 		return fmt.Errorf("Error setting labels: %s", err)
 	}
-	if err := tpgresource.SetLabels(res.Labels, d, "terraform_labels"); err != nil {
-		return fmt.Errorf("Error setting terraform_labels: %s", err)
-	}
 	if err := d.Set("effective_labels", res.Labels); err != nil {
 		return fmt.Errorf("Error setting labels: %s", err)
+	}
+	if err := tpgresource.SetLabels(res.Labels, d, "terraform_labels"); err != nil {
+		return fmt.Errorf("Error setting terraform_labels: %s", err)
 	}
 	if err := d.Set("website", flattenBucketWebsite(res.Website)); err != nil {
 		return fmt.Errorf("Error setting website: %s", err)
@@ -2522,8 +2584,16 @@ func setStorageBucket(d *schema.ResourceData, config *transport_tpg.Config, res 
 		return fmt.Errorf("Error setting ip_filter: %s", err)
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	d.SetId(res.Id)
-	return nil
+
+	return tpgresource.SetResourceIdentityAttributes(d, map[string]interface{}{
+		"name":    res.Name,
+		"project": d.Get("project").(string),
+	})
 }
 
 func hierachicalNamespaceDiffSuppress(k, old, new string, r *schema.ResourceData) bool {

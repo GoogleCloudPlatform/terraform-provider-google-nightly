@@ -23,6 +23,7 @@ fields:
     - api_field: backupRules.standardSchedule.weekDayOfMonth.weekOfMonth
     - api_field: backupVault
     - api_field: backupVaultServiceAccount
+    - api_field: computeInstanceBackupPlanProperties.guestFlush
     - api_field: createTime
     - api_field: description
     - api_field: diskBackupPlanProperties.guestFlush
@@ -34,3 +35,5 @@ fields:
     - api_field: resourceType
     - api_field: supportedResourceTypes
     - api_field: updateTime
+    - field: deletion_policy
+      provider_only: true

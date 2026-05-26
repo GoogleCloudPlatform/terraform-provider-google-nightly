@@ -100,6 +100,7 @@ func ResourceDocumentAIWarehouseDocumentSchema() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceDocumentAIWarehouseDocumentSchemaCreate,
 		Read:   resourceDocumentAIWarehouseDocumentSchemaRead,
+		Update: resourceDocumentAIWarehouseDocumentSchemaUpdate,
 		Delete: resourceDocumentAIWarehouseDocumentSchemaDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -509,6 +510,19 @@ func ResourceDocumentAIWarehouseDocumentSchema() *schema.Resource {
 				Computed:    true,
 				Description: `The resource name of the document schema.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -541,7 +555,7 @@ func resourceDocumentAIWarehouseDocumentSchemaCreate(d *schema.ResourceData, met
 		obj["propertyDefinitions"] = propertyDefinitionsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DocumentAIWarehouseBasePath}}projects/{{project_number}}/locations/{{location}}/documentSchemas")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project_number}}/locations/{{location}}/documentSchemas")
 	if err != nil {
 		return err
 	}
@@ -615,7 +629,7 @@ func resourceDocumentAIWarehouseDocumentSchemaRead(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DocumentAIWarehouseBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -642,17 +656,23 @@ func resourceDocumentAIWarehouseDocumentSchemaRead(d *schema.ResourceData, meta 
 
 	log.Printf("[DEBUG] Finished reading DocumentAIWarehouseDocumentSchema %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenDocumentAIWarehouseDocumentSchemaName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DocumentSchema: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("display_name", flattenDocumentAIWarehouseDocumentSchemaDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DocumentSchema: %s", err)
-	}
-	if err := d.Set("document_is_folder", flattenDocumentAIWarehouseDocumentSchemaDocumentIsFolder(res["documentIsFolder"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DocumentSchema: %s", err)
-	}
-	if err := d.Set("property_definitions", flattenDocumentAIWarehouseDocumentSchemaPropertyDefinitions(res["propertyDefinitions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DocumentSchema: %s", err)
+
+	err = ResourceDocumentAIWarehouseDocumentSchemaFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -682,7 +702,19 @@ func resourceDocumentAIWarehouseDocumentSchemaRead(d *schema.ResourceData, meta 
 	return nil
 }
 
+func resourceDocumentAIWarehouseDocumentSchemaUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceDocumentAIWarehouseDocumentSchemaRead(d, meta)
+}
+
 func resourceDocumentAIWarehouseDocumentSchemaDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DocumentAIWarehouseDocumentSchema without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DocumentSchema %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -691,7 +723,7 @@ func resourceDocumentAIWarehouseDocumentSchemaDelete(d *schema.ResourceData, met
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DocumentAIWarehouseBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1832,5 +1864,24 @@ func resourceDocumentAIWarehouseDocumentSchemaPostCreateSetComputedFields(d *sch
 	if err := d.Set("name", flattenDocumentAIWarehouseDocumentSchemaName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceDocumentAIWarehouseDocumentSchemaFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDocumentAIWarehouseDocumentSchemaName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DocumentSchema: %s", err)
+	}
+	if err = d.Set("display_name", flattenDocumentAIWarehouseDocumentSchemaDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DocumentSchema: %s", err)
+	}
+	if err = d.Set("document_is_folder", flattenDocumentAIWarehouseDocumentSchemaDocumentIsFolder(res["documentIsFolder"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DocumentSchema: %s", err)
+	}
+	if err = d.Set("property_definitions", flattenDocumentAIWarehouseDocumentSchemaPropertyDefinitions(res["propertyDefinitions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DocumentSchema: %s", err)
+	}
+
 	return nil
 }

@@ -271,6 +271,7 @@ func ResourceComputeRouterNat() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			resourceComputeRouterNatDrainNatIpsCustomDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -544,6 +545,18 @@ If 'PRIVATE' NAT used for private IP translation. Default value: "PUBLIC" Possib
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -855,7 +868,7 @@ func resourceComputeRouterNatCreate(d *schema.ResourceData, meta interface{}) er
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/routers/{{router}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/routers/{{router}}")
 	if err != nil {
 		return err
 	}
@@ -975,7 +988,7 @@ func resourceComputeRouterNatRead(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/routers/{{router}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/routers/{{router}}")
 	if err != nil {
 		return err
 	}
@@ -1020,72 +1033,26 @@ func resourceComputeRouterNatRead(d *schema.ResourceData, meta interface{}) erro
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading RouterNat: %s", err)
 	}
 
-	if err := d.Set("name", flattenNestedComputeRouterNatName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("nat_ip_allocate_option", flattenNestedComputeRouterNatNatIpAllocateOption(res["natIpAllocateOption"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("nat_ips", flattenNestedComputeRouterNatNatIps(res["natIps"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("drain_nat_ips", flattenNestedComputeRouterNatDrainNatIps(res["drainNatIps"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("source_subnetwork_ip_ranges_to_nat", flattenNestedComputeRouterNatSourceSubnetworkIpRangesToNat(res["sourceSubnetworkIpRangesToNat"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("subnetwork", flattenNestedComputeRouterNatSubnetwork(res["subnetworks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("source_subnetwork_ip_ranges_to_nat64", flattenNestedComputeRouterNatSourceSubnetworkIpRangesToNat64(res["sourceSubnetworkIpRangesToNat64"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("nat64_subnetwork", flattenNestedComputeRouterNatNat64Subnetwork(res["nat64Subnetworks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("min_ports_per_vm", flattenNestedComputeRouterNatMinPortsPerVm(res["minPortsPerVm"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("max_ports_per_vm", flattenNestedComputeRouterNatMaxPortsPerVm(res["maxPortsPerVm"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("enable_dynamic_port_allocation", flattenNestedComputeRouterNatEnableDynamicPortAllocation(res["enableDynamicPortAllocation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("udp_idle_timeout_sec", flattenNestedComputeRouterNatUdpIdleTimeoutSec(res["udpIdleTimeoutSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("icmp_idle_timeout_sec", flattenNestedComputeRouterNatIcmpIdleTimeoutSec(res["icmpIdleTimeoutSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("tcp_established_idle_timeout_sec", flattenNestedComputeRouterNatTcpEstablishedIdleTimeoutSec(res["tcpEstablishedIdleTimeoutSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("tcp_transitory_idle_timeout_sec", flattenNestedComputeRouterNatTcpTransitoryIdleTimeoutSec(res["tcpTransitoryIdleTimeoutSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("tcp_time_wait_timeout_sec", flattenNestedComputeRouterNatTcpTimeWaitTimeoutSec(res["tcpTimeWaitTimeoutSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("log_config", flattenNestedComputeRouterNatLogConfig(res["logConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("endpoint_types", flattenNestedComputeRouterNatEndpointTypes(res["endpointTypes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("rules", flattenNestedComputeRouterNatRules(res["rules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("enable_endpoint_independent_mapping", flattenNestedComputeRouterNatEnableEndpointIndependentMapping(res["enableEndpointIndependentMapping"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
-	}
-	if err := d.Set("type", flattenNestedComputeRouterNatType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RouterNat: %s", err)
+	err = ResourceComputeRouterNatFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1122,6 +1089,19 @@ func resourceComputeRouterNatRead(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceComputeRouterNatUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeRouterNat().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeRouterNatRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1289,7 +1269,7 @@ func resourceComputeRouterNatUpdate(d *schema.ResourceData, meta interface{}) er
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/routers/{{router}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/routers/{{router}}")
 	if err != nil {
 		return err
 	}
@@ -1362,6 +1342,13 @@ func resourceComputeRouterNatUpdate(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceComputeRouterNatDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeRouterNat without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RouterNat %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1382,8 +1369,7 @@ func resourceComputeRouterNatDelete(d *schema.ResourceData, meta interface{}) er
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/routers/{{router}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/routers/{{router}}")
 	if err != nil {
 		return err
 	}
@@ -2420,4 +2406,74 @@ func resourceComputeRouterNatListForPatch(d *schema.ResourceData, meta interface
 		return ls, nil
 	}
 	return nil, nil
+}
+
+func ResourceComputeRouterNatFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenNestedComputeRouterNatName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("nat_ip_allocate_option", flattenNestedComputeRouterNatNatIpAllocateOption(res["natIpAllocateOption"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("nat_ips", flattenNestedComputeRouterNatNatIps(res["natIps"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("drain_nat_ips", flattenNestedComputeRouterNatDrainNatIps(res["drainNatIps"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("source_subnetwork_ip_ranges_to_nat", flattenNestedComputeRouterNatSourceSubnetworkIpRangesToNat(res["sourceSubnetworkIpRangesToNat"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("subnetwork", flattenNestedComputeRouterNatSubnetwork(res["subnetworks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("source_subnetwork_ip_ranges_to_nat64", flattenNestedComputeRouterNatSourceSubnetworkIpRangesToNat64(res["sourceSubnetworkIpRangesToNat64"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("nat64_subnetwork", flattenNestedComputeRouterNatNat64Subnetwork(res["nat64Subnetworks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("min_ports_per_vm", flattenNestedComputeRouterNatMinPortsPerVm(res["minPortsPerVm"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("max_ports_per_vm", flattenNestedComputeRouterNatMaxPortsPerVm(res["maxPortsPerVm"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("enable_dynamic_port_allocation", flattenNestedComputeRouterNatEnableDynamicPortAllocation(res["enableDynamicPortAllocation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("udp_idle_timeout_sec", flattenNestedComputeRouterNatUdpIdleTimeoutSec(res["udpIdleTimeoutSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("icmp_idle_timeout_sec", flattenNestedComputeRouterNatIcmpIdleTimeoutSec(res["icmpIdleTimeoutSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("tcp_established_idle_timeout_sec", flattenNestedComputeRouterNatTcpEstablishedIdleTimeoutSec(res["tcpEstablishedIdleTimeoutSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("tcp_transitory_idle_timeout_sec", flattenNestedComputeRouterNatTcpTransitoryIdleTimeoutSec(res["tcpTransitoryIdleTimeoutSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("tcp_time_wait_timeout_sec", flattenNestedComputeRouterNatTcpTimeWaitTimeoutSec(res["tcpTimeWaitTimeoutSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("log_config", flattenNestedComputeRouterNatLogConfig(res["logConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("endpoint_types", flattenNestedComputeRouterNatEndpointTypes(res["endpointTypes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("rules", flattenNestedComputeRouterNatRules(res["rules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("enable_endpoint_independent_mapping", flattenNestedComputeRouterNatEnableEndpointIndependentMapping(res["enableEndpointIndependentMapping"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+	if err = d.Set("type", flattenNestedComputeRouterNatType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RouterNat: %s", err)
+	}
+
+	return nil
 }

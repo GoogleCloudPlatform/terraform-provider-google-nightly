@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
+	rmClient "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager/client"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -36,6 +37,7 @@ func ResourceGoogleServiceNetworkingPeeredDNSDomain() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceGoogleServiceNetworkingPeeredDNSDomainCreate,
 		Read:   resourceGoogleServiceNetworkingPeeredDNSDomainRead,
+		Update: resourceGoogleServiceNetworkingPeeredDNSDomainUpdate,
 		Delete: resourceGoogleServiceNetworkingPeeredDNSDomainDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -50,6 +52,7 @@ func ResourceGoogleServiceNetworkingPeeredDNSDomain() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Schema: map[string]*schema.Schema{
@@ -89,6 +92,9 @@ func ResourceGoogleServiceNetworkingPeeredDNSDomain() *schema.Resource {
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -141,7 +147,7 @@ func resourceGoogleServiceNetworkingPeeredDNSDomainCreate(d *schema.ResourceData
 		Name:      name,
 	}
 
-	apiService := config.NewServiceNetworkingClient(userAgent)
+	apiService := NewClient(config, userAgent)
 	peeredDnsDomainsService := servicenetworking.NewServicesProjectsGlobalNetworksPeeredDnsDomainsService(apiService)
 	createCall := peeredDnsDomainsService.Create(parent, r)
 	if config.UserProjectOverride {
@@ -184,7 +190,7 @@ func resourceGoogleServiceNetworkingPeeredDNSDomainRead(d *schema.ResourceData, 
 	network := d.Get("network").(string)
 	parent := fmt.Sprintf("services/%s/projects/%s/global/networks/%s", service, projectNumber, network)
 
-	apiService := config.NewServiceNetworkingClient(userAgent)
+	apiService := NewClient(config, userAgent)
 	peeredDnsDomainsService := servicenetworking.NewServicesProjectsGlobalNetworksPeeredDnsDomainsService(apiService)
 	readCall := peeredDnsDomainsService.List(parent)
 	if config.UserProjectOverride {
@@ -229,10 +235,29 @@ func resourceGoogleServiceNetworkingPeeredDNSDomainRead(d *schema.ResourceData, 
 		return fmt.Errorf("Error setting parent: %s", err)
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
+// UDP update start
+func resourceGoogleServiceNetworkingPeeredDNSDomainUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceGoogleServiceNetworkingPeeredDNSDomainRead(d, meta)
+}
+
+//UDP update end
+
 func resourceGoogleServiceNetworkingPeeredDNSDomainDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -240,7 +265,7 @@ func resourceGoogleServiceNetworkingPeeredDNSDomainDelete(d *schema.ResourceData
 	}
 
 	name := d.Get("name").(string)
-	apiService := config.NewServiceNetworkingClient(userAgent)
+	apiService := NewClient(config, userAgent)
 	peeredDnsDomainsService := servicenetworking.NewServicesProjectsGlobalNetworksPeeredDnsDomainsService(apiService)
 
 	if err := transport_tpg.Retry(transport_tpg.RetryOptions{
@@ -268,7 +293,7 @@ func getProjectNumber(d *schema.ResourceData, config *transport_tpg.Config, proj
 		billingProject = bp
 	}
 
-	getProjectCall := config.NewResourceManagerClient(userAgent).Projects.Get(project)
+	getProjectCall := rmClient.NewClient(config, userAgent).Projects.Get(project)
 	if config.UserProjectOverride {
 		getProjectCall.Header().Add("X-Goog-User-Project", billingProject)
 	}

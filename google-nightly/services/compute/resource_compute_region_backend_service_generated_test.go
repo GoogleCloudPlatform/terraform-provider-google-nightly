@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networksecurity"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = compute.Product
 )
 
 func TestAccComputeRegionBackendService_regionBackendServiceBasicExample(t *testing.T) {
@@ -152,77 +155,6 @@ resource "google_compute_region_backend_service" "default" {
     enabled              = true
     oauth2_client_id     = "abc"
     oauth2_client_secret = "xyz"
-  }
-}
-`, context)
-}
-
-func TestAccComputeRegionBackendService_regionBackendServiceCacheExample(t *testing.T) {
-	t.Parallel()
-
-	randomSuffix := acctest.RandString(t, 10)
-
-	context := map[string]interface{}{
-		"health_check_name":           "tf-test-rbs-health-check" + randomSuffix,
-		"region_backend_service_name": "tf-test-region-service" + randomSuffix,
-		"random_suffix":               randomSuffix,
-	}
-
-	acctest.VcrTest(t, resource.TestCase{
-		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
-		CheckDestroy:             testAccCheckComputeRegionBackendServiceDestroyProducer(t),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccComputeRegionBackendService_regionBackendServiceCacheExample(context),
-			},
-			{
-				ResourceName:            "google_compute_region_backend_service.default",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"iap.0.oauth2_client_secret", "network", "params", "region"},
-			},
-			{
-				ResourceName:       "google_compute_region_backend_service.default",
-				RefreshState:       true,
-				ExpectNonEmptyPlan: true,
-				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
-			},
-		},
-	})
-}
-
-func testAccComputeRegionBackendService_regionBackendServiceCacheExample(context map[string]interface{}) string {
-	return acctest.Nprintf(`
-resource "google_compute_region_backend_service" "default" {
-  provider = google-beta
-
-  name                            = "%{region_backend_service_name}"
-  region                          = "us-central1"
-  health_checks                   = [google_compute_region_health_check.default.id]
-  enable_cdn  = true
-  cdn_policy {
-    cache_mode = "CACHE_ALL_STATIC"
-    default_ttl = 3600
-    client_ttl  = 7200
-    max_ttl     = 10800
-    negative_caching = true
-    signed_url_cache_max_age_sec = 7200
-  }
-
-  load_balancing_scheme = "EXTERNAL"
-  protocol              = "HTTP"
-
-}
-
-resource "google_compute_region_health_check" "default" {
-  provider = google-beta
-
-  name               = "%{health_check_name}"
-  region             = "us-central1"
-
-  http_health_check {
-    port = 80
   }
 }
 `, context)
@@ -662,7 +594,7 @@ func TestAccComputeRegionBackendService_regionBackendServiceConnectionTrackingEx
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckComputeRegionBackendServiceDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -687,7 +619,6 @@ func TestAccComputeRegionBackendService_regionBackendServiceConnectionTrackingEx
 func testAccComputeRegionBackendService_regionBackendServiceConnectionTrackingExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_compute_region_backend_service" "default" {
-  provider                        = google-beta
   name                            = "%{region_backend_service_name}"
   region                          = "us-central1"
   health_checks                   = [google_compute_region_health_check.health_check.id]
@@ -699,12 +630,11 @@ resource "google_compute_region_backend_service" "default" {
     tracking_mode                                = "PER_SESSION"
     connection_persistence_on_unhealthy_backends = "NEVER_PERSIST"
     idle_timeout_sec                             = 60
-    enable_strong_affinity                       = true
+    enable_strong_affinity                       = false
   }
 }
 
 resource "google_compute_region_health_check" "health_check" {
-  provider           = google-beta
   name               = "%{health_check_name}"
   region             = "us-central1"
 
@@ -1268,8 +1198,7 @@ func testAccCheckComputeRegionBackendServiceDestroyProducer(t *testing.T) func(s
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/backendServices/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(compute.Product, config)+"projects/{{project}}/regions/{{region}}/backendServices/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -29,6 +29,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iap"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 )
 
@@ -103,7 +104,6 @@ func TestAccIapTunnelDestGroupIamMemberGenerated(t *testing.T) {
 		},
 	})
 }
-
 func TestAccIapTunnelDestGroupIamPolicyGenerated(t *testing.T) {
 	t.Parallel()
 

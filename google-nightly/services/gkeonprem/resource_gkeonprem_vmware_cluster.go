@@ -116,6 +116,7 @@ func ResourceGkeonpremVmwareCluster() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -1004,6 +1005,18 @@ indicate real problems requiring user intervention.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1126,7 +1139,7 @@ func resourceGkeonpremVmwareClusterCreate(d *schema.ResourceData, meta interface
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GkeonpremBasePath}}projects/{{project}}/locations/{{location}}/vmwareClusters?vmware_cluster_id={{name}}&skipValidations={{skip_validations}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vmwareClusters?vmware_cluster_id={{name}}&skipValidations={{skip_validations}}")
 	if err != nil {
 		return err
 	}
@@ -1209,7 +1222,7 @@ func resourceGkeonpremVmwareClusterRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GkeonpremBasePath}}projects/{{project}}/locations/{{location}}/vmwareClusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vmwareClusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1242,102 +1255,26 @@ func resourceGkeonpremVmwareClusterRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading GkeonpremVmwareCluster %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading VmwareCluster: %s", err)
 	}
 
-	if err := d.Set("admin_cluster_membership", flattenGkeonpremVmwareClusterAdminClusterMembership(res["adminClusterMembership"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("description", flattenGkeonpremVmwareClusterDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("on_prem_version", flattenGkeonpremVmwareClusterOnPremVersion(res["onPremVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("annotations", flattenGkeonpremVmwareClusterAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("control_plane_node", flattenGkeonpremVmwareClusterControlPlaneNode(res["controlPlaneNode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("anti_affinity_groups", flattenGkeonpremVmwareClusterAntiAffinityGroups(res["antiAffinityGroups"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("storage", flattenGkeonpremVmwareClusterStorage(res["storage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("network_config", flattenGkeonpremVmwareClusterNetworkConfig(res["networkConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("load_balancer", flattenGkeonpremVmwareClusterLoadBalancer(res["loadBalancer"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("dataplane_v2", flattenGkeonpremVmwareClusterDataplaneV2(res["dataplaneV2"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("vm_tracking_enabled", flattenGkeonpremVmwareClusterVmTrackingEnabled(res["vmTrackingEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("auto_repair_config", flattenGkeonpremVmwareClusterAutoRepairConfig(res["autoRepairConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("authorization", flattenGkeonpremVmwareClusterAuthorization(res["authorization"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("validation_check", flattenGkeonpremVmwareClusterValidationCheck(res["validationCheck"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("enable_control_plane_v2", flattenGkeonpremVmwareClusterEnableControlPlaneV2(res["enableControlPlaneV2"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("enable_advanced_cluster", flattenGkeonpremVmwareClusterEnableAdvancedCluster(res["enableAdvancedCluster"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("disable_bundled_ingress", flattenGkeonpremVmwareClusterDisableBundledIngress(res["disableBundledIngress"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("upgrade_policy", flattenGkeonpremVmwareClusterUpgradePolicy(res["upgradePolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("uid", flattenGkeonpremVmwareClusterUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("state", flattenGkeonpremVmwareClusterState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("endpoint", flattenGkeonpremVmwareClusterEndpoint(res["endpoint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("reconciling", flattenGkeonpremVmwareClusterReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("create_time", flattenGkeonpremVmwareClusterCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("update_time", flattenGkeonpremVmwareClusterUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("delete_time", flattenGkeonpremVmwareClusterDeleteTime(res["deleteTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("local_name", flattenGkeonpremVmwareClusterLocalName(res["localName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("etag", flattenGkeonpremVmwareClusterEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("fleet", flattenGkeonpremVmwareClusterFleet(res["fleet"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("vcenter", flattenGkeonpremVmwareClusterVcenter(res["vcenter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("status", flattenGkeonpremVmwareClusterStatus(res["status"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenGkeonpremVmwareClusterEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	err = ResourceGkeonpremVmwareClusterFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1368,6 +1305,19 @@ func resourceGkeonpremVmwareClusterRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceGkeonpremVmwareClusterUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceGkeonpremVmwareCluster().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceGkeonpremVmwareClusterRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1506,7 +1456,7 @@ func resourceGkeonpremVmwareClusterUpdate(d *schema.ResourceData, meta interface
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GkeonpremBasePath}}projects/{{project}}/locations/{{location}}/vmwareClusters/{{name}}?skipValidations={{skip_validations}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vmwareClusters/{{name}}?skipValidations={{skip_validations}}")
 	if err != nil {
 		return err
 	}
@@ -1626,6 +1576,13 @@ func resourceGkeonpremVmwareClusterUpdate(d *schema.ResourceData, meta interface
 }
 
 func resourceGkeonpremVmwareClusterDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy GkeonpremVmwareCluster without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing VmwareCluster %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1639,8 +1596,7 @@ func resourceGkeonpremVmwareClusterDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for VmwareCluster: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{GkeonpremBasePath}}projects/{{project}}/locations/{{location}}/vmwareClusters/{{name}}?force=true")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vmwareClusters/{{name}}?force=true")
 	if err != nil {
 		return err
 	}
@@ -3773,4 +3729,104 @@ func expandGkeonpremVmwareClusterEffectiveAnnotations(v interface{}, d tpgresour
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceGkeonpremVmwareClusterFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("admin_cluster_membership", flattenGkeonpremVmwareClusterAdminClusterMembership(res["adminClusterMembership"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("description", flattenGkeonpremVmwareClusterDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("on_prem_version", flattenGkeonpremVmwareClusterOnPremVersion(res["onPremVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("annotations", flattenGkeonpremVmwareClusterAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("control_plane_node", flattenGkeonpremVmwareClusterControlPlaneNode(res["controlPlaneNode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("anti_affinity_groups", flattenGkeonpremVmwareClusterAntiAffinityGroups(res["antiAffinityGroups"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("storage", flattenGkeonpremVmwareClusterStorage(res["storage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("network_config", flattenGkeonpremVmwareClusterNetworkConfig(res["networkConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("load_balancer", flattenGkeonpremVmwareClusterLoadBalancer(res["loadBalancer"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("dataplane_v2", flattenGkeonpremVmwareClusterDataplaneV2(res["dataplaneV2"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("vm_tracking_enabled", flattenGkeonpremVmwareClusterVmTrackingEnabled(res["vmTrackingEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("auto_repair_config", flattenGkeonpremVmwareClusterAutoRepairConfig(res["autoRepairConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("authorization", flattenGkeonpremVmwareClusterAuthorization(res["authorization"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("validation_check", flattenGkeonpremVmwareClusterValidationCheck(res["validationCheck"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("enable_control_plane_v2", flattenGkeonpremVmwareClusterEnableControlPlaneV2(res["enableControlPlaneV2"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("enable_advanced_cluster", flattenGkeonpremVmwareClusterEnableAdvancedCluster(res["enableAdvancedCluster"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("disable_bundled_ingress", flattenGkeonpremVmwareClusterDisableBundledIngress(res["disableBundledIngress"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("upgrade_policy", flattenGkeonpremVmwareClusterUpgradePolicy(res["upgradePolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("uid", flattenGkeonpremVmwareClusterUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("state", flattenGkeonpremVmwareClusterState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("endpoint", flattenGkeonpremVmwareClusterEndpoint(res["endpoint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("reconciling", flattenGkeonpremVmwareClusterReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("create_time", flattenGkeonpremVmwareClusterCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("update_time", flattenGkeonpremVmwareClusterUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("delete_time", flattenGkeonpremVmwareClusterDeleteTime(res["deleteTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("local_name", flattenGkeonpremVmwareClusterLocalName(res["localName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("etag", flattenGkeonpremVmwareClusterEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("fleet", flattenGkeonpremVmwareClusterFleet(res["fleet"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("vcenter", flattenGkeonpremVmwareClusterVcenter(res["vcenter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("status", flattenGkeonpremVmwareClusterStatus(res["status"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenGkeonpremVmwareClusterEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VmwareCluster: %s", err)
+	}
+
+	return nil
 }

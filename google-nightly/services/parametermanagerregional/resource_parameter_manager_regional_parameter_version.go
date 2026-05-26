@@ -167,6 +167,19 @@ func ResourceParameterManagerRegionalRegionalParameterVersion() *schema.Resource
 				Computed:    true,
 				Description: `The time at which the Regional Parameter Version was updated.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -193,7 +206,7 @@ func resourceParameterManagerRegionalRegionalParameterVersionCreate(d *schema.Re
 		obj["payload"] = payloadProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ParameterManagerRegionalBasePath}}{{parameter}}/versions?parameter_version_id={{parameter_version_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parameter}}/versions?parameter_version_id={{parameter_version_id}}")
 	if err != nil {
 		return err
 	}
@@ -257,7 +270,7 @@ func resourceParameterManagerRegionalRegionalParameterVersionRead(d *schema.Reso
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ParameterManagerRegionalBasePath}}{{parameter}}/versions/{{parameter_version_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parameter}}/versions/{{parameter_version_id}}")
 	if err != nil {
 		return err
 	}
@@ -284,41 +297,42 @@ func resourceParameterManagerRegionalRegionalParameterVersionRead(d *schema.Reso
 
 	log.Printf("[DEBUG] Finished reading ParameterManagerRegionalRegionalParameterVersion %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenParameterManagerRegionalRegionalParameterVersionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
-	}
-	if err := d.Set("create_time", flattenParameterManagerRegionalRegionalParameterVersionCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
-	}
-	if err := d.Set("update_time", flattenParameterManagerRegionalRegionalParameterVersionUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
-	}
-	if err := d.Set("disabled", flattenParameterManagerRegionalRegionalParameterVersionDisabled(res["disabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
-	}
-	// Terraform must set the top level schema field, but since this object contains collapsed properties
-	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
-	if flattenedProp := flattenParameterManagerRegionalRegionalParameterVersionPayload(res["payload"], d, config); flattenedProp != nil {
-		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
-			return fmt.Errorf("Error reading RegionalParameterVersion: %s", gerr)
-		}
-		casted := flattenedProp.([]interface{})[0]
-		if casted != nil {
-			for k, v := range casted.(map[string]interface{}) {
-				if err := d.Set(k, v); err != nil {
-					return fmt.Errorf("Error setting %s: %s", k, err)
-				}
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
 			}
 		}
 	}
-	if err := d.Set("kms_key_version", flattenParameterManagerRegionalRegionalParameterVersionKmsKeyVersion(res["kmsKeyVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
+
+	err = ResourceParameterManagerRegionalRegionalParameterVersionFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceParameterManagerRegionalRegionalParameterVersionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceParameterManagerRegionalRegionalParameterVersion().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceParameterManagerRegionalRegionalParameterVersionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -335,7 +349,7 @@ func resourceParameterManagerRegionalRegionalParameterVersionUpdate(d *schema.Re
 		obj["disabled"] = disabledProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ParameterManagerRegionalBasePath}}{{parameter}}/versions/{{parameter_version_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parameter}}/versions/{{parameter_version_id}}")
 	if err != nil {
 		return err
 	}
@@ -384,6 +398,13 @@ func resourceParameterManagerRegionalRegionalParameterVersionUpdate(d *schema.Re
 }
 
 func resourceParameterManagerRegionalRegionalParameterVersionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ParameterManagerRegionalRegionalParameterVersion without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RegionalParameterVersion %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -392,7 +413,7 @@ func resourceParameterManagerRegionalRegionalParameterVersionDelete(d *schema.Re
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ParameterManagerRegionalBasePath}}{{parameter}}/versions/{{parameter_version_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parameter}}/versions/{{parameter_version_id}}")
 	if err != nil {
 		return err
 	}
@@ -517,4 +538,41 @@ func expandParameterManagerRegionalRegionalParameterVersionPayloadParameterData(
 	}
 
 	return base64.StdEncoding.EncodeToString([]byte(v.(string))), nil
+}
+
+func ResourceParameterManagerRegionalRegionalParameterVersionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenParameterManagerRegionalRegionalParameterVersionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
+	}
+	if err = d.Set("create_time", flattenParameterManagerRegionalRegionalParameterVersionCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
+	}
+	if err = d.Set("update_time", flattenParameterManagerRegionalRegionalParameterVersionUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
+	}
+	if err = d.Set("disabled", flattenParameterManagerRegionalRegionalParameterVersionDisabled(res["disabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
+	}
+	// Terraform must set the top level schema field, but since this object contains collapsed properties
+	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
+	if flattenedProp := flattenParameterManagerRegionalRegionalParameterVersionPayload(res["payload"], d, config); flattenedProp != nil {
+		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
+			return fmt.Errorf("Error reading RegionalParameterVersion: %s", gerr)
+		}
+		casted := flattenedProp.([]interface{})[0]
+		if casted != nil {
+			for k, v := range casted.(map[string]interface{}) {
+				if err := d.Set(k, v); err != nil {
+					return fmt.Errorf("Error setting %s: %s", k, err)
+				}
+			}
+		}
+	}
+	if err = d.Set("kms_key_version", flattenParameterManagerRegionalRegionalParameterVersionKmsKeyVersion(res["kmsKeyVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionalParameterVersion: %s", err)
+	}
+
+	return nil
 }

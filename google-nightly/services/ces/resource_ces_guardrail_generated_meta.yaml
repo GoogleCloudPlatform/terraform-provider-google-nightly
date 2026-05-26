@@ -4,7 +4,7 @@ resource: google_ces_guardrail
 generation_type: mmv1
 source_file: products/ces/Guardrail.yaml
 api_service_name: ces.googleapis.com
-api_version: v1
+api_version: v1beta
 api_resource_type_kind: Guardrail
 autogen_status: true
 fields:
@@ -53,9 +53,12 @@ fields:
     - api_field: llmPromptSecurity.customPolicy.policyScope
     - api_field: llmPromptSecurity.customPolicy.prompt
     - api_field: llmPromptSecurity.defaultSettings.defaultPromptTemplate
+    - api_field: llmPromptSecurity.failOpen
     - field: location
       provider_only: true
     - api_field: modelSafety.safetySettings.category
     - api_field: modelSafety.safetySettings.threshold
     - api_field: name
     - api_field: updateTime
+    - field: deletion_policy
+      provider_only: true

@@ -37,6 +37,7 @@ func ResourceComputeAttachedDisk() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceAttachedDiskCreate,
 		Read:   resourceAttachedDiskRead,
+		Update: resourceAttachedDiskUpdate,
 		Delete: resourceAttachedDiskDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -49,6 +50,7 @@ func ResourceComputeAttachedDisk() *schema.Resource {
 		},
 
 		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 			tpgresource.DefaultProviderProject,
 			computeAttachedDiskDefaultProviderZone,
 		),
@@ -104,6 +106,9 @@ func ResourceComputeAttachedDisk() *schema.Resource {
 				Description:  `The disk interface used for attaching this disk. One of SCSI or NVME. (This field is only used for specific cases, please don't specify this field without advice from Google.)`,
 				ValidateFunc: validation.StringInSlice([]string{"SCSI", "NVME"}, false),
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -145,7 +150,7 @@ func resourceAttachedDiskCreate(d *schema.ResourceData, meta interface{}) error 
 		obj["interface"] = v
 	}
 
-	url := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s/attachDisk", config.ComputeBasePath, zv.Project, zv.Zone, zv.Name)
+	url := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s/attachDisk", transport_tpg.BaseUrl(Product, config), zv.Project, zv.Zone, zv.Name)
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 		Config:    config,
 		Method:    "POST",
@@ -191,7 +196,7 @@ func resourceAttachedDiskRead(d *schema.ResourceData, meta interface{}) error {
 
 	diskName := tpgresource.GetResourceNameFromSelfLink(d.Get("disk").(string))
 
-	url := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s", config.ComputeBasePath, zv.Project, zv.Zone, zv.Name)
+	url := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s", transport_tpg.BaseUrl(Product, config), zv.Project, zv.Zone, zv.Name)
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 		Config:    config,
 		Method:    "GET",
@@ -235,10 +240,29 @@ func resourceAttachedDiskRead(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Error setting disk: %s", err)
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
+// UDP update start
+func resourceAttachedDiskUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceAttachedDiskRead(d, meta)
+}
+
+//UDP update end
+
 func resourceAttachedDiskDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -252,7 +276,7 @@ func resourceAttachedDiskDelete(d *schema.ResourceData, meta interface{}) error 
 
 	diskName := tpgresource.GetResourceNameFromSelfLink(d.Get("disk").(string))
 
-	getUrl := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s", config.ComputeBasePath, zv.Project, zv.Zone, zv.Name)
+	getUrl := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s", transport_tpg.BaseUrl(Product, config), zv.Project, zv.Zone, zv.Name)
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 		Config:    config,
 		Method:    "GET",
@@ -272,7 +296,7 @@ func resourceAttachedDiskDelete(d *schema.ResourceData, meta interface{}) error 
 	}
 
 	deviceName := ad["deviceName"].(string)
-	detachUrl := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s/detachDisk", config.ComputeBasePath, zv.Project, zv.Zone, zv.Name)
+	detachUrl := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s/detachDisk", transport_tpg.BaseUrl(Product, config), zv.Project, zv.Zone, zv.Name)
 	detachUrl, err = transport_tpg.AddQueryParams(detachUrl, map[string]string{"deviceName": deviceName})
 	if err != nil {
 		return err

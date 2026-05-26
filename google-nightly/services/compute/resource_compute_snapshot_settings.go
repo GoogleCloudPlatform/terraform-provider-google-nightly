@@ -202,7 +202,7 @@ func resourceComputeSnapshotSettingsCreate(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/snapshotSettings/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/snapshotSettings/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -276,7 +276,7 @@ func resourceComputeSnapshotSettingsRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/snapshotSettings/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/snapshotSettings/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -313,8 +313,9 @@ func resourceComputeSnapshotSettingsRead(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error reading SnapshotSettings: %s", err)
 	}
 
-	if err := d.Set("storage_location", flattenComputeSnapshotSettingsStorageLocation(res["storageLocation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SnapshotSettings: %s", err)
+	err = ResourceComputeSnapshotSettingsFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -333,6 +334,7 @@ func resourceComputeSnapshotSettingsRead(d *schema.ResourceData, meta interface{
 }
 
 func resourceComputeSnapshotSettingsUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -370,7 +372,7 @@ func resourceComputeSnapshotSettingsUpdate(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/snapshotSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/snapshotSettings")
 	if err != nil {
 		return err
 	}
@@ -547,4 +549,14 @@ func resourceComputeSnapshotSettingsEncoder(d *schema.ResourceData, meta interfa
 	}
 
 	return obj, nil
+}
+
+func ResourceComputeSnapshotSettingsFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("storage_location", flattenComputeSnapshotSettingsStorageLocation(res["storageLocation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SnapshotSettings: %s", err)
+	}
+
+	return nil
 }

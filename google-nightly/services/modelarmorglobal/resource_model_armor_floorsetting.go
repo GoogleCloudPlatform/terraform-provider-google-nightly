@@ -469,7 +469,7 @@ func resourceModelArmorGlobalFloorsettingCreate(d *schema.ResourceData, meta int
 		obj["floorSettingMetadata"] = floorSettingMetadataProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ModelArmorGlobalBasePath}}{{parent}}/locations/{{location}}/floorSetting")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/floorSetting")
 	if err != nil {
 		return err
 	}
@@ -537,7 +537,7 @@ func resourceModelArmorGlobalFloorsettingRead(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ModelArmorGlobalBasePath}}{{parent}}/locations/{{location}}/floorSetting")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/floorSetting")
 	if err != nil {
 		return err
 	}
@@ -564,32 +564,9 @@ func resourceModelArmorGlobalFloorsettingRead(d *schema.ResourceData, meta inter
 
 	log.Printf("[DEBUG] Finished reading ModelArmorGlobalFloorsetting %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenModelArmorGlobalFloorsettingName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Floorsetting: %s", err)
-	}
-	if err := d.Set("create_time", flattenModelArmorGlobalFloorsettingCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Floorsetting: %s", err)
-	}
-	if err := d.Set("update_time", flattenModelArmorGlobalFloorsettingUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Floorsetting: %s", err)
-	}
-	if err := d.Set("filter_config", flattenModelArmorGlobalFloorsettingFilterConfig(res["filterConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Floorsetting: %s", err)
-	}
-	if err := d.Set("enable_floor_setting_enforcement", flattenModelArmorGlobalFloorsettingEnableFloorSettingEnforcement(res["enableFloorSettingEnforcement"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Floorsetting: %s", err)
-	}
-	if err := d.Set("integrated_services", flattenModelArmorGlobalFloorsettingIntegratedServices(res["integratedServices"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Floorsetting: %s", err)
-	}
-	if err := d.Set("ai_platform_floor_setting", flattenModelArmorGlobalFloorsettingAiPlatformFloorSetting(res["aiPlatformFloorSetting"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Floorsetting: %s", err)
-	}
-	if err := d.Set("google_mcp_server_floor_setting", flattenModelArmorGlobalFloorsettingGoogleMcpServerFloorSetting(res["googleMcpServerFloorSetting"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Floorsetting: %s", err)
-	}
-	if err := d.Set("floor_setting_metadata", flattenModelArmorGlobalFloorsettingFloorSettingMetadata(res["floorSettingMetadata"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	err = ResourceModelArmorGlobalFloorsettingFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -614,6 +591,7 @@ func resourceModelArmorGlobalFloorsettingRead(d *schema.ResourceData, meta inter
 }
 
 func resourceModelArmorGlobalFloorsettingUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -675,7 +653,7 @@ func resourceModelArmorGlobalFloorsettingUpdate(d *schema.ResourceData, meta int
 		obj["floorSettingMetadata"] = floorSettingMetadataProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ModelArmorGlobalBasePath}}{{parent}}/locations/{{location}}/floorSetting")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/floorSetting")
 	if err != nil {
 		return err
 	}
@@ -1455,4 +1433,38 @@ func expandModelArmorGlobalFloorsettingFloorSettingMetadataMultiLanguageDetectio
 
 func expandModelArmorGlobalFloorsettingFloorSettingMetadataMultiLanguageDetectionEnableMultiLanguageDetection(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceModelArmorGlobalFloorsettingFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenModelArmorGlobalFloorsettingName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	}
+	if err = d.Set("create_time", flattenModelArmorGlobalFloorsettingCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	}
+	if err = d.Set("update_time", flattenModelArmorGlobalFloorsettingUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	}
+	if err = d.Set("filter_config", flattenModelArmorGlobalFloorsettingFilterConfig(res["filterConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	}
+	if err = d.Set("enable_floor_setting_enforcement", flattenModelArmorGlobalFloorsettingEnableFloorSettingEnforcement(res["enableFloorSettingEnforcement"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	}
+	if err = d.Set("integrated_services", flattenModelArmorGlobalFloorsettingIntegratedServices(res["integratedServices"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	}
+	if err = d.Set("ai_platform_floor_setting", flattenModelArmorGlobalFloorsettingAiPlatformFloorSetting(res["aiPlatformFloorSetting"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	}
+	if err = d.Set("google_mcp_server_floor_setting", flattenModelArmorGlobalFloorsettingGoogleMcpServerFloorSetting(res["googleMcpServerFloorSetting"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	}
+	if err = d.Set("floor_setting_metadata", flattenModelArmorGlobalFloorsettingFloorSettingMetadata(res["floorSettingMetadata"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Floorsetting: %s", err)
+	}
+
+	return nil
 }

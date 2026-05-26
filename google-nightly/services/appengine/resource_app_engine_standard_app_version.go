@@ -115,6 +115,7 @@ func ResourceAppEngineStandardAppVersion() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -562,6 +563,18 @@ Substitute '<language>' with 'python', 'java', 'php', 'ruby', 'go' or 'nodejs'.`
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -685,7 +698,7 @@ func resourceAppEngineStandardAppVersionCreate(d *schema.ResourceData, meta inte
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AppEngineBasePath}}apps/{{project}}/services/{{service}}/versions")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"apps/{{project}}/services/{{service}}/versions")
 	if err != nil {
 		return err
 	}
@@ -770,7 +783,7 @@ func resourceAppEngineStandardAppVersionRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AppEngineBasePath}}apps/{{project}}/services/{{service}}/versions/{{version_id}}?view=FULL")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"apps/{{project}}/services/{{service}}/versions/{{version_id}}?view=FULL")
 	if err != nil {
 		return err
 	}
@@ -815,51 +828,25 @@ func resourceAppEngineStandardAppVersionRead(d *schema.ResourceData, meta interf
 			return fmt.Errorf("Error setting delete_service_on_destroy: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
 	}
 
-	if err := d.Set("name", flattenAppEngineStandardAppVersionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("version_id", flattenAppEngineStandardAppVersionVersionId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("runtime", flattenAppEngineStandardAppVersionRuntime(res["runtime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("service_account", flattenAppEngineStandardAppVersionServiceAccount(res["serviceAccount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("app_engine_apis", flattenAppEngineStandardAppVersionAppEngineApis(res["appEngineApis"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("runtime_api_version", flattenAppEngineStandardAppVersionRuntimeApiVersion(res["runtimeApiVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("handlers", flattenAppEngineStandardAppVersionHandlers(res["handlers"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("libraries", flattenAppEngineStandardAppVersionLibraries(res["libraries"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("vpc_access_connector", flattenAppEngineStandardAppVersionVpcAccessConnector(res["vpcAccessConnector"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("inbound_services", flattenAppEngineStandardAppVersionInboundServices(res["inboundServices"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("instance_class", flattenAppEngineStandardAppVersionInstanceClass(res["instanceClass"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("automatic_scaling", flattenAppEngineStandardAppVersionAutomaticScaling(res["automaticScaling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("basic_scaling", flattenAppEngineStandardAppVersionBasicScaling(res["basicScaling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
-	}
-	if err := d.Set("manual_scaling", flattenAppEngineStandardAppVersionManualScaling(res["manualScaling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	err = ResourceAppEngineStandardAppVersionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -890,6 +877,19 @@ func resourceAppEngineStandardAppVersionRead(d *schema.ResourceData, meta interf
 }
 
 func resourceAppEngineStandardAppVersionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceAppEngineStandardAppVersion().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceAppEngineStandardAppVersionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1035,7 +1035,7 @@ func resourceAppEngineStandardAppVersionUpdate(d *schema.ResourceData, meta inte
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AppEngineBasePath}}apps/{{project}}/services/{{service}}/versions")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"apps/{{project}}/services/{{service}}/versions")
 	if err != nil {
 		return err
 	}
@@ -1078,6 +1078,13 @@ func resourceAppEngineStandardAppVersionUpdate(d *schema.ResourceData, meta inte
 }
 
 func resourceAppEngineStandardAppVersionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy AppEngineStandardAppVersion without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing StandardAppVersion %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -2290,4 +2297,53 @@ func expandAppEngineStandardAppVersionManualScaling(v interface{}, d tpgresource
 
 func expandAppEngineStandardAppVersionManualScalingInstances(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceAppEngineStandardAppVersionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenAppEngineStandardAppVersionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("version_id", flattenAppEngineStandardAppVersionVersionId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("runtime", flattenAppEngineStandardAppVersionRuntime(res["runtime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("service_account", flattenAppEngineStandardAppVersionServiceAccount(res["serviceAccount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("app_engine_apis", flattenAppEngineStandardAppVersionAppEngineApis(res["appEngineApis"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("runtime_api_version", flattenAppEngineStandardAppVersionRuntimeApiVersion(res["runtimeApiVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("handlers", flattenAppEngineStandardAppVersionHandlers(res["handlers"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("libraries", flattenAppEngineStandardAppVersionLibraries(res["libraries"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("vpc_access_connector", flattenAppEngineStandardAppVersionVpcAccessConnector(res["vpcAccessConnector"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("inbound_services", flattenAppEngineStandardAppVersionInboundServices(res["inboundServices"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("instance_class", flattenAppEngineStandardAppVersionInstanceClass(res["instanceClass"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("automatic_scaling", flattenAppEngineStandardAppVersionAutomaticScaling(res["automaticScaling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("basic_scaling", flattenAppEngineStandardAppVersionBasicScaling(res["basicScaling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+	if err = d.Set("manual_scaling", flattenAppEngineStandardAppVersionManualScaling(res["manualScaling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StandardAppVersion: %s", err)
+	}
+
+	return nil
 }

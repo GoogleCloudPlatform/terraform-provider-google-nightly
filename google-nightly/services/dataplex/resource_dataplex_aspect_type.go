@@ -116,6 +116,7 @@ func ResourceDataplexAspectType() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -237,6 +238,18 @@ for Aspect Type created from Dataplex API.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -281,7 +294,7 @@ func resourceDataplexAspectTypeCreate(d *schema.ResourceData, meta interface{}) 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/aspectTypes?aspectTypeId={{aspect_type_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/aspectTypes?aspectTypeId={{aspect_type_id}}")
 	if err != nil {
 		return err
 	}
@@ -365,7 +378,7 @@ func resourceDataplexAspectTypeRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/aspectTypes/{{aspect_type_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/aspectTypes/{{aspect_type_id}}")
 	if err != nil {
 		return err
 	}
@@ -398,45 +411,26 @@ func resourceDataplexAspectTypeRead(d *schema.ResourceData, meta interface{}) er
 
 	log.Printf("[DEBUG] Finished reading DataplexAspectType %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading AspectType: %s", err)
 	}
 
-	if err := d.Set("name", flattenDataplexAspectTypeName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("uid", flattenDataplexAspectTypeUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("create_time", flattenDataplexAspectTypeCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("update_time", flattenDataplexAspectTypeUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("description", flattenDataplexAspectTypeDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("display_name", flattenDataplexAspectTypeDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("labels", flattenDataplexAspectTypeLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("metadata_template", flattenDataplexAspectTypeMetadataTemplate(res["metadataTemplate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("transfer_status", flattenDataplexAspectTypeTransferStatus(res["transferStatus"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("data_classification", flattenDataplexAspectTypeDataClassification(res["dataClassification"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDataplexAspectTypeTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDataplexAspectTypeEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AspectType: %s", err)
+	err = ResourceDataplexAspectTypeFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -467,6 +461,19 @@ func resourceDataplexAspectTypeRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceDataplexAspectTypeUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDataplexAspectType().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDataplexAspectTypeRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -527,7 +534,7 @@ func resourceDataplexAspectTypeUpdate(d *schema.ResourceData, meta interface{}) 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/aspectTypes/{{aspect_type_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/aspectTypes/{{aspect_type_id}}")
 	if err != nil {
 		return err
 	}
@@ -595,6 +602,13 @@ func resourceDataplexAspectTypeUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceDataplexAspectTypeDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DataplexAspectType without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing AspectType %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -608,8 +622,7 @@ func resourceDataplexAspectTypeDelete(d *schema.ResourceData, meta interface{}) 
 		return fmt.Errorf("Error fetching project for AspectType: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/aspectTypes/{{aspect_type_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/aspectTypes/{{aspect_type_id}}")
 	if err != nil {
 		return err
 	}
@@ -781,4 +794,47 @@ func expandDataplexAspectTypeEffectiveLabels(v interface{}, d tpgresource.Terraf
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceDataplexAspectTypeFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDataplexAspectTypeName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("uid", flattenDataplexAspectTypeUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("create_time", flattenDataplexAspectTypeCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("update_time", flattenDataplexAspectTypeUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("description", flattenDataplexAspectTypeDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("display_name", flattenDataplexAspectTypeDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("labels", flattenDataplexAspectTypeLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("metadata_template", flattenDataplexAspectTypeMetadataTemplate(res["metadataTemplate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("transfer_status", flattenDataplexAspectTypeTransferStatus(res["transferStatus"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("data_classification", flattenDataplexAspectTypeDataClassification(res["dataClassification"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDataplexAspectTypeTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDataplexAspectTypeEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AspectType: %s", err)
+	}
+
+	return nil
 }

@@ -153,6 +153,11 @@ func ResourceStorageAnywhereCache() *schema.Resource {
 				Description:  `The cache admission policy dictates whether a block should be inserted upon a cache miss. Default value: "admit-on-first-miss" Possible values: ["admit-on-first-miss", "admit-on-second-miss"]`,
 				Default:      "admit-on-first-miss",
 			},
+			"ingest_on_write": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Description: `Whether or not the cache ingests data as the data is written to the bucket.`,
+			},
 			"ttl": {
 				Type:        schema.TypeString,
 				Optional:    true,
@@ -183,6 +188,19 @@ func ResourceStorageAnywhereCache() *schema.Resource {
 				Type:        schema.TypeString,
 				Computed:    true,
 				Description: `The modification time of the cache instance metadata in RFC 3339 format.`,
+			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -216,7 +234,15 @@ func resourceStorageAnywhereCacheCreate(d *schema.ResourceData, meta interface{}
 		obj["ttl"] = ttlProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}b/{{bucket}}/anywhereCaches/")
+	if v, ok := d.GetOkExists("ingest_on_write"); ok {
+		ingestOnWriteProp, err := expandStorageAnywhereCacheIngestOnWrite(v, d, config)
+		if err != nil {
+			return err
+		}
+		obj["ingestOnWrite"] = ingestOnWriteProp
+	}
+
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"b/{{bucket}}/anywhereCaches/")
 	if err != nil {
 		return err
 	}
@@ -316,7 +342,7 @@ func resourceStorageAnywhereCacheRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}b/{{bucket}}/anywhereCaches/{{anywhere_cache_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"b/{{bucket}}/anywhereCaches/{{anywhere_cache_id}}")
 	if err != nil {
 		return err
 	}
@@ -343,29 +369,23 @@ func resourceStorageAnywhereCacheRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading StorageAnywhereCache %q: %#v", d.Id(), res)
 
-	if err := d.Set("zone", flattenStorageAnywhereCacheZone(res["zone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("admission_policy", flattenStorageAnywhereCacheAdmissionPolicy(res["admissionPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AnywhereCache: %s", err)
-	}
-	if err := d.Set("ttl", flattenStorageAnywhereCacheTtl(res["ttl"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AnywhereCache: %s", err)
-	}
-	if err := d.Set("anywhere_cache_id", flattenStorageAnywhereCacheAnywhereCacheId(res["anywhereCacheId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AnywhereCache: %s", err)
-	}
-	if err := d.Set("create_time", flattenStorageAnywhereCacheCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AnywhereCache: %s", err)
-	}
-	if err := d.Set("update_time", flattenStorageAnywhereCacheUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AnywhereCache: %s", err)
-	}
-	if err := d.Set("pending_update", flattenStorageAnywhereCachePendingUpdate(res["pendingUpdate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AnywhereCache: %s", err)
-	}
-	if err := d.Set("state", flattenStorageAnywhereCacheState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+
+	err = ResourceStorageAnywhereCacheFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -390,6 +410,19 @@ func resourceStorageAnywhereCacheRead(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceStorageAnywhereCacheUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceStorageAnywhereCache().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceStorageAnywhereCacheRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -411,8 +444,16 @@ func resourceStorageAnywhereCacheUpdate(d *schema.ResourceData, meta interface{}
 	} else if v, ok := d.GetOkExists("ttl"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, ttlProp)) {
 		obj["ttl"] = ttlProp
 	}
+	if d.HasChange("ingest_on_write") { // use haschange
+		v := d.Get("ingest_on_write")
+		ingestOnWriteProp, err := expandStorageAnywhereCacheIngestOnWrite(v, d, config)
+		if err != nil {
+			return err
+		}
+		obj["ingestOnWrite"] = ingestOnWriteProp
+	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}b/{{bucket}}/anywhereCaches/{{anywhere_cache_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"b/{{bucket}}/anywhereCaches/{{anywhere_cache_id}}")
 	if err != nil {
 		return err
 	}
@@ -470,6 +511,13 @@ func resourceStorageAnywhereCacheUpdate(d *schema.ResourceData, meta interface{}
 }
 
 func resourceStorageAnywhereCacheDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy StorageAnywhereCache without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing AnywhereCache %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -478,7 +526,7 @@ func resourceStorageAnywhereCacheDelete(d *schema.ResourceData, meta interface{}
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}b/{{bucket}}/anywhereCaches/{{anywhere_cache_id}}/disable")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"b/{{bucket}}/anywhereCaches/{{anywhere_cache_id}}/disable")
 	if err != nil {
 		return err
 	}
@@ -562,6 +610,10 @@ func flattenStorageAnywhereCacheState(v interface{}, d *schema.ResourceData, con
 	return v
 }
 
+func flattenStorageAnywhereCacheIngestOnWrite(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func expandStorageAnywhereCacheZone(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
@@ -572,4 +624,42 @@ func expandStorageAnywhereCacheAdmissionPolicy(v interface{}, d tpgresource.Terr
 
 func expandStorageAnywhereCacheTtl(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func expandStorageAnywhereCacheIngestOnWrite(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func ResourceStorageAnywhereCacheFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("zone", flattenStorageAnywhereCacheZone(res["zone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	}
+	if err = d.Set("admission_policy", flattenStorageAnywhereCacheAdmissionPolicy(res["admissionPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	}
+	if err = d.Set("ttl", flattenStorageAnywhereCacheTtl(res["ttl"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	}
+	if err = d.Set("anywhere_cache_id", flattenStorageAnywhereCacheAnywhereCacheId(res["anywhereCacheId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	}
+	if err = d.Set("create_time", flattenStorageAnywhereCacheCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	}
+	if err = d.Set("update_time", flattenStorageAnywhereCacheUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	}
+	if err = d.Set("pending_update", flattenStorageAnywhereCachePendingUpdate(res["pendingUpdate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	}
+	if err = d.Set("state", flattenStorageAnywhereCacheState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	}
+	if err = d.Set("ingest_on_write", flattenStorageAnywhereCacheIngestOnWrite(res["ingestOnWrite"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AnywhereCache: %s", err)
+	}
+
+	return nil
 }

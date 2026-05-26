@@ -187,6 +187,19 @@ correct permissions on it, etc.).`,
 				Computed:    true,
 				Description: `The resource name of the settings. Format is "organizations/{organization_id}/accessApprovalSettings"`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -248,7 +261,7 @@ func resourceAccessApprovalOrganizationSettingsCreate(d *schema.ResourceData, me
 		obj["activeKeyVersion"] = activeKeyVersionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessApprovalBasePath}}organizations/{{organization_id}}/accessApprovalSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization_id}}/accessApprovalSettings")
 	if err != nil {
 		return err
 	}
@@ -330,7 +343,7 @@ func resourceAccessApprovalOrganizationSettingsRead(d *schema.ResourceData, meta
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessApprovalBasePath}}organizations/{{organization_id}}/accessApprovalSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization_id}}/accessApprovalSettings")
 	if err != nil {
 		return err
 	}
@@ -357,26 +370,23 @@ func resourceAccessApprovalOrganizationSettingsRead(d *schema.ResourceData, meta
 
 	log.Printf("[DEBUG] Finished reading AccessApprovalOrganizationSettings %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenAccessApprovalOrganizationSettingsName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("notification_emails", flattenAccessApprovalOrganizationSettingsNotificationEmails(res["notificationEmails"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
-	}
-	if err := d.Set("enrolled_services", flattenAccessApprovalOrganizationSettingsEnrolledServices(res["enrolledServices"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
-	}
-	if err := d.Set("enrolled_ancestor", flattenAccessApprovalOrganizationSettingsEnrolledAncestor(res["enrolledAncestor"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
-	}
-	if err := d.Set("active_key_version", flattenAccessApprovalOrganizationSettingsActiveKeyVersion(res["activeKeyVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
-	}
-	if err := d.Set("ancestor_has_active_key_version", flattenAccessApprovalOrganizationSettingsAncestorHasActiveKeyVersion(res["ancestorHasActiveKeyVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
-	}
-	if err := d.Set("invalid_key_version", flattenAccessApprovalOrganizationSettingsInvalidKeyVersion(res["invalidKeyVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+
+	err = ResourceAccessApprovalOrganizationSettingsFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -395,6 +405,19 @@ func resourceAccessApprovalOrganizationSettingsRead(d *schema.ResourceData, meta
 }
 
 func resourceAccessApprovalOrganizationSettingsUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceAccessApprovalOrganizationSettings().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceAccessApprovalOrganizationSettingsRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -433,7 +456,7 @@ func resourceAccessApprovalOrganizationSettingsUpdate(d *schema.ResourceData, me
 		obj["activeKeyVersion"] = activeKeyVersionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessApprovalBasePath}}organizations/{{organization_id}}/accessApprovalSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization_id}}/accessApprovalSettings")
 	if err != nil {
 		return err
 	}
@@ -494,6 +517,13 @@ func resourceAccessApprovalOrganizationSettingsUpdate(d *schema.ResourceData, me
 }
 
 func resourceAccessApprovalOrganizationSettingsDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy AccessApprovalOrganizationSettings without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing OrganizationSettings %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -663,4 +693,32 @@ func expandAccessApprovalOrganizationSettingsEnrolledServicesEnrollmentLevel(v i
 
 func expandAccessApprovalOrganizationSettingsActiveKeyVersion(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceAccessApprovalOrganizationSettingsFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenAccessApprovalOrganizationSettingsName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+	if err = d.Set("notification_emails", flattenAccessApprovalOrganizationSettingsNotificationEmails(res["notificationEmails"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+	if err = d.Set("enrolled_services", flattenAccessApprovalOrganizationSettingsEnrolledServices(res["enrolledServices"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+	if err = d.Set("enrolled_ancestor", flattenAccessApprovalOrganizationSettingsEnrolledAncestor(res["enrolledAncestor"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+	if err = d.Set("active_key_version", flattenAccessApprovalOrganizationSettingsActiveKeyVersion(res["activeKeyVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+	if err = d.Set("ancestor_has_active_key_version", flattenAccessApprovalOrganizationSettingsAncestorHasActiveKeyVersion(res["ancestorHasActiveKeyVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+	if err = d.Set("invalid_key_version", flattenAccessApprovalOrganizationSettingsInvalidKeyVersion(res["invalidKeyVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+
+	return nil
 }

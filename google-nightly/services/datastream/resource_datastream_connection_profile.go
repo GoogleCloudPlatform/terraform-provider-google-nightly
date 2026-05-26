@@ -127,6 +127,7 @@ func ResourceDatastreamConnectionProfile() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -839,6 +840,18 @@ https://spanner.{region}.rep.googleapis.com.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -931,7 +944,7 @@ func resourceDatastreamConnectionProfileCreate(d *schema.ResourceData, meta inte
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatastreamBasePath}}projects/{{project}}/locations/{{location}}/connectionProfiles?connectionProfileId={{connection_profile_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectionProfiles?connectionProfileId={{connection_profile_id}}")
 	if err != nil {
 		return err
 	}
@@ -1020,7 +1033,7 @@ func resourceDatastreamConnectionProfileRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatastreamBasePath}}projects/{{project}}/locations/{{location}}/connectionProfiles/{{connection_profile_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectionProfiles/{{connection_profile_id}}")
 	if err != nil {
 		return err
 	}
@@ -1053,57 +1066,26 @@ func resourceDatastreamConnectionProfileRead(d *schema.ResourceData, meta interf
 
 	log.Printf("[DEBUG] Finished reading DatastreamConnectionProfile %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
 	}
 
-	if err := d.Set("name", flattenDatastreamConnectionProfileName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("labels", flattenDatastreamConnectionProfileLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("display_name", flattenDatastreamConnectionProfileDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("oracle_profile", flattenDatastreamConnectionProfileOracleProfile(res["oracleProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("gcs_profile", flattenDatastreamConnectionProfileGcsProfile(res["gcsProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("mysql_profile", flattenDatastreamConnectionProfileMysqlProfile(res["mysqlProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("bigquery_profile", flattenDatastreamConnectionProfileBigqueryProfile(res["bigqueryProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("postgresql_profile", flattenDatastreamConnectionProfilePostgresqlProfile(res["postgresqlProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("salesforce_profile", flattenDatastreamConnectionProfileSalesforceProfile(res["salesforceProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("spanner_profile", flattenDatastreamConnectionProfileSpannerProfile(res["spannerProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("sql_server_profile", flattenDatastreamConnectionProfileSqlServerProfile(res["sqlServerProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("mongodb_profile", flattenDatastreamConnectionProfileMongodbProfile(res["mongodbProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("forward_ssh_connectivity", flattenDatastreamConnectionProfileForwardSshConnectivity(res["forwardSshConnectivity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("private_connectivity", flattenDatastreamConnectionProfilePrivateConnectivity(res["privateConnectivity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDatastreamConnectionProfileTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDatastreamConnectionProfileEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	err = ResourceDatastreamConnectionProfileFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1134,6 +1116,19 @@ func resourceDatastreamConnectionProfileRead(d *schema.ResourceData, meta interf
 }
 
 func resourceDatastreamConnectionProfileUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDatastreamConnectionProfile().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDatastreamConnectionProfileRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1248,7 +1243,7 @@ func resourceDatastreamConnectionProfileUpdate(d *schema.ResourceData, meta inte
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatastreamBasePath}}projects/{{project}}/locations/{{location}}/connectionProfiles/{{connection_profile_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectionProfiles/{{connection_profile_id}}")
 	if err != nil {
 		return err
 	}
@@ -1380,6 +1375,13 @@ func resourceDatastreamConnectionProfileUpdate(d *schema.ResourceData, meta inte
 }
 
 func resourceDatastreamConnectionProfileDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DatastreamConnectionProfile without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ConnectionProfile %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1393,8 +1395,7 @@ func resourceDatastreamConnectionProfileDelete(d *schema.ResourceData, meta inte
 		return fmt.Errorf("Error fetching project for ConnectionProfile: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatastreamBasePath}}projects/{{project}}/locations/{{location}}/connectionProfiles/{{connection_profile_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectionProfiles/{{connection_profile_id}}")
 	if err != nil {
 		return err
 	}
@@ -3366,4 +3367,59 @@ func expandDatastreamConnectionProfileEffectiveLabels(v interface{}, d tpgresour
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceDatastreamConnectionProfileFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDatastreamConnectionProfileName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("labels", flattenDatastreamConnectionProfileLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("display_name", flattenDatastreamConnectionProfileDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("oracle_profile", flattenDatastreamConnectionProfileOracleProfile(res["oracleProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("gcs_profile", flattenDatastreamConnectionProfileGcsProfile(res["gcsProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("mysql_profile", flattenDatastreamConnectionProfileMysqlProfile(res["mysqlProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("bigquery_profile", flattenDatastreamConnectionProfileBigqueryProfile(res["bigqueryProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("postgresql_profile", flattenDatastreamConnectionProfilePostgresqlProfile(res["postgresqlProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("salesforce_profile", flattenDatastreamConnectionProfileSalesforceProfile(res["salesforceProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("spanner_profile", flattenDatastreamConnectionProfileSpannerProfile(res["spannerProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("sql_server_profile", flattenDatastreamConnectionProfileSqlServerProfile(res["sqlServerProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("mongodb_profile", flattenDatastreamConnectionProfileMongodbProfile(res["mongodbProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("forward_ssh_connectivity", flattenDatastreamConnectionProfileForwardSshConnectivity(res["forwardSshConnectivity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("private_connectivity", flattenDatastreamConnectionProfilePrivateConnectivity(res["privateConnectivity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDatastreamConnectionProfileTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDatastreamConnectionProfileEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectionProfile: %s", err)
+	}
+
+	return nil
 }

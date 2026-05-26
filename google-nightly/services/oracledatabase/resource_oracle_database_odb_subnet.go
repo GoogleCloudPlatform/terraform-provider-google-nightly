@@ -116,6 +116,7 @@ func ResourceOracleDatabaseOdbSubnet() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -238,6 +239,18 @@ FAILED`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -270,7 +283,7 @@ func resourceOracleDatabaseOdbSubnetCreate(d *schema.ResourceData, meta interfac
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OracleDatabaseBasePath}}projects/{{project}}/locations/{{location}}/odbNetworks/{{odbnetwork}}/odbSubnets?odbSubnetId={{odb_subnet_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/odbNetworks/{{odbnetwork}}/odbSubnets?odbSubnetId={{odb_subnet_id}}")
 	if err != nil {
 		return err
 	}
@@ -359,7 +372,7 @@ func resourceOracleDatabaseOdbSubnetRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OracleDatabaseBasePath}}projects/{{project}}/locations/{{location}}/odbNetworks/{{odbnetwork}}/odbSubnets/{{odb_subnet_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/odbNetworks/{{odbnetwork}}/odbSubnets/{{odb_subnet_id}}")
 	if err != nil {
 		return err
 	}
@@ -398,33 +411,25 @@ func resourceOracleDatabaseOdbSubnetRead(d *schema.ResourceData, meta interface{
 			return fmt.Errorf("Error setting deletion_protection: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading OdbSubnet: %s", err)
 	}
 
-	if err := d.Set("cidr_range", flattenOracleDatabaseOdbSubnetCidrRange(res["cidrRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OdbSubnet: %s", err)
-	}
-	if err := d.Set("create_time", flattenOracleDatabaseOdbSubnetCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OdbSubnet: %s", err)
-	}
-	if err := d.Set("labels", flattenOracleDatabaseOdbSubnetLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OdbSubnet: %s", err)
-	}
-	if err := d.Set("name", flattenOracleDatabaseOdbSubnetName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OdbSubnet: %s", err)
-	}
-	if err := d.Set("purpose", flattenOracleDatabaseOdbSubnetPurpose(res["purpose"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OdbSubnet: %s", err)
-	}
-	if err := d.Set("state", flattenOracleDatabaseOdbSubnetState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OdbSubnet: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenOracleDatabaseOdbSubnetTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OdbSubnet: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenOracleDatabaseOdbSubnetEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OdbSubnet: %s", err)
+	err = ResourceOracleDatabaseOdbSubnetFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -461,11 +466,18 @@ func resourceOracleDatabaseOdbSubnetRead(d *schema.ResourceData, meta interface{
 }
 
 func resourceOracleDatabaseOdbSubnetUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceOracleDatabaseOdbSubnetRead(d, meta)
 }
 
 func resourceOracleDatabaseOdbSubnetDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy OracleDatabaseOdbSubnet without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing OdbSubnet %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -479,8 +491,7 @@ func resourceOracleDatabaseOdbSubnetDelete(d *schema.ResourceData, meta interfac
 		return fmt.Errorf("Error fetching project for OdbSubnet: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{OracleDatabaseBasePath}}projects/{{project}}/locations/{{location}}/odbNetworks/{{odbnetwork}}/odbSubnets/{{odb_subnet_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/odbNetworks/{{odbnetwork}}/odbSubnets/{{odb_subnet_id}}")
 	if err != nil {
 		return err
 	}
@@ -620,4 +631,35 @@ func expandOracleDatabaseOdbSubnetEffectiveLabels(v interface{}, d tpgresource.T
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceOracleDatabaseOdbSubnetFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("cidr_range", flattenOracleDatabaseOdbSubnetCidrRange(res["cidrRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OdbSubnet: %s", err)
+	}
+	if err = d.Set("create_time", flattenOracleDatabaseOdbSubnetCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OdbSubnet: %s", err)
+	}
+	if err = d.Set("labels", flattenOracleDatabaseOdbSubnetLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OdbSubnet: %s", err)
+	}
+	if err = d.Set("name", flattenOracleDatabaseOdbSubnetName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OdbSubnet: %s", err)
+	}
+	if err = d.Set("purpose", flattenOracleDatabaseOdbSubnetPurpose(res["purpose"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OdbSubnet: %s", err)
+	}
+	if err = d.Set("state", flattenOracleDatabaseOdbSubnetState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OdbSubnet: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenOracleDatabaseOdbSubnetTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OdbSubnet: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenOracleDatabaseOdbSubnetEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OdbSubnet: %s", err)
+	}
+
+	return nil
 }

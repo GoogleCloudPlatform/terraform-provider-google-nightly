@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebase"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebaseappcheck"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = firebaseappcheck.Product
 )
 
 func TestAccFirebaseAppCheckDebugToken_firebaseAppCheckDebugTokenBasicExample(t *testing.T) {
@@ -130,8 +133,7 @@ func testAccCheckFirebaseAppCheckDebugTokenDestroyProducer(t *testing.T) func(s 
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{FirebaseAppCheckBasePath}}projects/{{project}}/apps/{{app_id}}/debugTokens/{{debug_token_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(firebaseappcheck.Product, config)+"projects/{{project}}/apps/{{app_id}}/debugTokens/{{debug_token_id}}")
 			if err != nil {
 				return err
 			}

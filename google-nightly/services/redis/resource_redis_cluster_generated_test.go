@@ -30,6 +30,12 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkconnectivityv1"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/privateca"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/redis"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +54,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = redis.Product
 )
 
 func TestAccRedisCluster_redisClusterHaWithLabelsExample(t *testing.T) {
@@ -760,7 +767,7 @@ resource "google_compute_network" "consumer_net" {
 
 func TestAccRedisCluster_redisClusterCmekExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@cloud-redis.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -772,7 +779,7 @@ func TestAccRedisCluster_redisClusterCmekExample(t *testing.T) {
 	context := map[string]interface{}{
 		"cluster_name":                "tf-test-cmek-cluster" + randomSuffix,
 		"deletion_protection_enabled": false,
-		"kms_key_name":                acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name":                kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"kms_ring_name":               "tf-test-my-key-ring" + randomSuffix,
 		"network_name":                "tf-test-my-network" + randomSuffix,
 		"policy_name":                 "tf-test-my-policy" + randomSuffix,
@@ -851,7 +858,7 @@ resource "google_compute_network" "consumer_net" {
 
 func TestAccRedisCluster_redisClusterFlexibleCaExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@cloud-redis.iam.gserviceaccount.com",
 			Role:   "roles/privateca.certificateRequester",
@@ -996,8 +1003,7 @@ func testAccCheckRedisClusterDestroyProducer(t *testing.T) func(s *terraform.Sta
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{RedisBasePath}}projects/{{project}}/locations/{{region}}/clusters/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(redis.Product, config)+"projects/{{project}}/locations/{{region}}/clusters/{{name}}")
 			if err != nil {
 				return err
 			}

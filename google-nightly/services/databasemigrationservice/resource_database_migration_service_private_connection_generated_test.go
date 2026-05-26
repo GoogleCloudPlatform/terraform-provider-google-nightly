@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/databasemigrationservice"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = databasemigrationservice.Product
 )
 
 func TestAccDatabaseMigrationServicePrivateConnection_databaseMigrationServicePrivateConnectionExample(t *testing.T) {
@@ -57,8 +60,8 @@ func TestAccDatabaseMigrationServicePrivateConnection_databaseMigrationServicePr
 
 	context := map[string]interface{}{
 		"create_without_validation": "false" + randomSuffix,
-		"network_name":              "tf-test-my-network" + randomSuffix,
-		"private_connection_id":     "tf-test-my-connection" + randomSuffix,
+		"network_name":              "my-network" + randomSuffix,
+		"private_connection_id":     "my-connection" + randomSuffix,
 		"random_suffix":             randomSuffix,
 	}
 
@@ -90,7 +93,7 @@ func testAccDatabaseMigrationServicePrivateConnection_databaseMigrationServicePr
 	return acctest.Nprintf(`
 resource "google_database_migration_service_private_connection" "default" {
 	display_name          = "dbms_pc"
-	location              = "us-central1"
+	location              = "us-west1"
 	private_connection_id = "%{private_connection_id}"
 
 	labels = {
@@ -112,6 +115,83 @@ resource "google_compute_network" "default" {
 `, context)
 }
 
+func TestAccDatabaseMigrationServicePrivateConnection_databaseMigrationServicePrivateConnectionPscExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"attachment_name":           "my-attachment" + randomSuffix,
+		"create_without_validation": "false" + randomSuffix,
+		"network_name":              "my-network" + randomSuffix,
+		"private_connection_id":     "my-connection" + randomSuffix,
+		"subnetwork_name":           "my-subnetwork" + randomSuffix,
+		"random_suffix":             randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckDatabaseMigrationServicePrivateConnectionDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDatabaseMigrationServicePrivateConnection_databaseMigrationServicePrivateConnectionPscExample(context),
+			},
+			{
+				ResourceName:            "google_database_migration_service_private_connection.default",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"create_without_validation", "labels", "location", "private_connection_id", "terraform_labels"},
+			},
+			{
+				ResourceName:       "google_database_migration_service_private_connection.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccDatabaseMigrationServicePrivateConnection_databaseMigrationServicePrivateConnectionPscExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_database_migration_service_private_connection" "default" {
+	display_name          = "dbms_pc"
+	location              = "us-west1"
+	private_connection_id = "%{private_connection_id}"
+
+	labels = {
+		key = "value"
+	}
+
+	psc_interface_config {
+		network_attachment = resource.google_compute_network_attachment.default.id
+	}
+
+	create_without_validation = false
+}
+
+resource "google_compute_network_attachment" "default" {
+  name                  = "%{attachment_name}"
+  region                = "us-west1"
+  connection_preference = "ACCEPT_AUTOMATIC"
+  subnetworks           = [resource.google_compute_subnetwork.default.id]
+}
+
+resource "google_compute_network" "default" {
+  name = "%{network_name}"
+  auto_create_subnetworks = false
+}
+
+resource "google_compute_subnetwork" "default" {
+  name          = "%{subnetwork_name}"
+  ip_cidr_range = "10.0.0.0/16"
+  region        = "us-west1"
+  network       = google_compute_network.default.id
+}
+`, context)
+}
+
 func testAccCheckDatabaseMigrationServicePrivateConnectionDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {
@@ -123,8 +203,7 @@ func testAccCheckDatabaseMigrationServicePrivateConnectionDestroyProducer(t *tes
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DatabaseMigrationServiceBasePath}}projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(databasemigrationservice.Product, config)+"projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
 			if err != nil {
 				return err
 			}

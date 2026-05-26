@@ -30,6 +30,11 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudrunv2"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/sql"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vpcaccess"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +53,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = cloudrunv2.Product
 )
 
 func TestAccCloudRunV2Job_cloudrunv2JobBasicExample(t *testing.T) {
@@ -575,6 +581,76 @@ resource "google_cloud_run_v2_job" "default" {
 `, context)
 }
 
+func TestAccCloudRunV2Job_cloudrunv2JobEmptydirDiskExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"cloud_run_job_name":  "tf-test-cloudrun-job" + randomSuffix,
+		"deletion_protection": false,
+		"random_suffix":       randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckCloudRunV2JobDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCloudRunV2Job_cloudrunv2JobEmptydirDiskExample(context),
+			},
+			{
+				ResourceName:            "google_cloud_run_v2_job.default",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"annotations", "deletion_protection", "labels", "location", "name", "terraform_labels"},
+			},
+			{
+				ResourceName:       "google_cloud_run_v2_job.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccCloudRunV2Job_cloudrunv2JobEmptydirDiskExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_cloud_run_v2_job" "default" {
+  name     = "%{cloud_run_job_name}"
+  location = "us-central1"
+  launch_stage = "BETA"
+  deletion_protection =  "%{deletion_protection}"
+
+  template {
+    template {
+      containers {
+        image = "us-docker.pkg.dev/cloudrun/container/job"
+	volume_mounts {
+	  name = "empty-dir-volume"
+	  mount_path = "/mnt"
+	}
+      }
+      volumes {
+        name = "empty-dir-volume"
+	empty_dir {
+	  medium = "DISK"
+	  size_limit = "10Gi"
+	}
+      }
+    }
+  }
+  lifecycle {
+    ignore_changes = [
+      launch_stage,
+    ]
+  }
+}
+`, context)
+}
+
 func TestAccCloudRunV2Job_cloudrunv2JobRunJobExample(t *testing.T) {
 	t.Parallel()
 
@@ -751,8 +827,7 @@ func testAccCheckCloudRunV2JobDestroyProducer(t *testing.T) func(s *terraform.St
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{CloudRunV2BasePath}}projects/{{project}}/locations/{{location}}/jobs/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(cloudrunv2.Product, config)+"projects/{{project}}/locations/{{location}}/jobs/{{name}}")
 			if err != nil {
 				return err
 			}

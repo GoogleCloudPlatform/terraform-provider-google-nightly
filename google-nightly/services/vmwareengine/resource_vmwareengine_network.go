@@ -115,6 +115,7 @@ func ResourceVmwareengineNetwork() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -222,6 +223,18 @@ For example: projects/123123/global/networks/my-network`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -248,7 +261,7 @@ func resourceVmwareengineNetworkCreate(d *schema.ResourceData, meta interface{})
 		obj["type"] = typeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}projects/{{project}}/locations/{{location}}/vmwareEngineNetworks?vmwareEngineNetworkId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vmwareEngineNetworks?vmwareEngineNetworkId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -332,7 +345,7 @@ func resourceVmwareengineNetworkRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}projects/{{project}}/locations/{{location}}/vmwareEngineNetworks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vmwareEngineNetworks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -365,33 +378,26 @@ func resourceVmwareengineNetworkRead(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[DEBUG] Finished reading VmwareengineNetwork %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Network: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenVmwareengineNetworkCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Network: %s", err)
-	}
-	if err := d.Set("update_time", flattenVmwareengineNetworkUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Network: %s", err)
-	}
-	if err := d.Set("description", flattenVmwareengineNetworkDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Network: %s", err)
-	}
-	if err := d.Set("vpc_networks", flattenVmwareengineNetworkVpcNetworks(res["vpcNetworks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Network: %s", err)
-	}
-	if err := d.Set("state", flattenVmwareengineNetworkState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Network: %s", err)
-	}
-	if err := d.Set("type", flattenVmwareengineNetworkType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Network: %s", err)
-	}
-	if err := d.Set("uid", flattenVmwareengineNetworkUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Network: %s", err)
-	}
-	if err := d.Set("etag", flattenVmwareengineNetworkEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Network: %s", err)
+	err = ResourceVmwareengineNetworkFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -422,6 +428,19 @@ func resourceVmwareengineNetworkRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceVmwareengineNetworkUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVmwareengineNetwork().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVmwareengineNetworkRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -464,7 +483,7 @@ func resourceVmwareengineNetworkUpdate(d *schema.ResourceData, meta interface{})
 		obj["description"] = descriptionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}projects/{{project}}/locations/{{location}}/vmwareEngineNetworks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vmwareEngineNetworks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -520,6 +539,13 @@ func resourceVmwareengineNetworkUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceVmwareengineNetworkDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VmwareengineNetwork without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Network %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -533,8 +559,7 @@ func resourceVmwareengineNetworkDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error fetching project for Network: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}projects/{{project}}/locations/{{location}}/vmwareEngineNetworks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/vmwareEngineNetworks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -656,4 +681,35 @@ func expandVmwareengineNetworkDescription(v interface{}, d tpgresource.Terraform
 
 func expandVmwareengineNetworkType(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceVmwareengineNetworkFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenVmwareengineNetworkCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Network: %s", err)
+	}
+	if err = d.Set("update_time", flattenVmwareengineNetworkUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Network: %s", err)
+	}
+	if err = d.Set("description", flattenVmwareengineNetworkDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Network: %s", err)
+	}
+	if err = d.Set("vpc_networks", flattenVmwareengineNetworkVpcNetworks(res["vpcNetworks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Network: %s", err)
+	}
+	if err = d.Set("state", flattenVmwareengineNetworkState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Network: %s", err)
+	}
+	if err = d.Set("type", flattenVmwareengineNetworkType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Network: %s", err)
+	}
+	if err = d.Set("uid", flattenVmwareengineNetworkUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Network: %s", err)
+	}
+	if err = d.Set("etag", flattenVmwareengineNetworkEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Network: %s", err)
+	}
+
+	return nil
 }

@@ -116,6 +116,7 @@ func ResourceNetworkSecurityInterceptEndpointGroup() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -268,6 +269,18 @@ See https://google.aip.dev/148#timestamps.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -355,7 +368,7 @@ func resourceNetworkSecurityInterceptEndpointGroupCreate(d *schema.ResourceData,
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/interceptEndpointGroups?interceptEndpointGroupId={{intercept_endpoint_group_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/interceptEndpointGroups?interceptEndpointGroupId={{intercept_endpoint_group_id}}")
 	if err != nil {
 		return err
 	}
@@ -439,7 +452,7 @@ func resourceNetworkSecurityInterceptEndpointGroupRead(d *schema.ResourceData, m
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/interceptEndpointGroups/{{intercept_endpoint_group_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/interceptEndpointGroups/{{intercept_endpoint_group_id}}")
 	if err != nil {
 		return err
 	}
@@ -472,45 +485,26 @@ func resourceNetworkSecurityInterceptEndpointGroupRead(d *schema.ResourceData, m
 
 	log.Printf("[DEBUG] Finished reading NetworkSecurityInterceptEndpointGroup %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
 	}
 
-	if err := d.Set("name", flattenNetworkSecurityInterceptEndpointGroupName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetworkSecurityInterceptEndpointGroupCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkSecurityInterceptEndpointGroupUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkSecurityInterceptEndpointGroupLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("intercept_deployment_group", flattenNetworkSecurityInterceptEndpointGroupInterceptDeploymentGroup(res["interceptDeploymentGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("state", flattenNetworkSecurityInterceptEndpointGroupState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("reconciling", flattenNetworkSecurityInterceptEndpointGroupReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkSecurityInterceptEndpointGroupDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("associations", flattenNetworkSecurityInterceptEndpointGroupAssociations(res["associations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("connected_deployment_group", flattenNetworkSecurityInterceptEndpointGroupConnectedDeploymentGroup(res["connectedDeploymentGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkSecurityInterceptEndpointGroupTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkSecurityInterceptEndpointGroupEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	err = ResourceNetworkSecurityInterceptEndpointGroupFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -541,6 +535,19 @@ func resourceNetworkSecurityInterceptEndpointGroupRead(d *schema.ResourceData, m
 }
 
 func resourceNetworkSecurityInterceptEndpointGroupUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkSecurityInterceptEndpointGroup().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkSecurityInterceptEndpointGroupRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -589,7 +596,7 @@ func resourceNetworkSecurityInterceptEndpointGroupUpdate(d *schema.ResourceData,
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/interceptEndpointGroups/{{intercept_endpoint_group_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/interceptEndpointGroups/{{intercept_endpoint_group_id}}")
 	if err != nil {
 		return err
 	}
@@ -649,6 +656,13 @@ func resourceNetworkSecurityInterceptEndpointGroupUpdate(d *schema.ResourceData,
 }
 
 func resourceNetworkSecurityInterceptEndpointGroupDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkSecurityInterceptEndpointGroup without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing InterceptEndpointGroup %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -662,8 +676,7 @@ func resourceNetworkSecurityInterceptEndpointGroupDelete(d *schema.ResourceData,
 		return fmt.Errorf("Error fetching project for InterceptEndpointGroup: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/interceptEndpointGroups/{{intercept_endpoint_group_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/interceptEndpointGroups/{{intercept_endpoint_group_id}}")
 	if err != nil {
 		return err
 	}
@@ -881,4 +894,47 @@ func expandNetworkSecurityInterceptEndpointGroupEffectiveLabels(v interface{}, d
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkSecurityInterceptEndpointGroupFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenNetworkSecurityInterceptEndpointGroupName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkSecurityInterceptEndpointGroupCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkSecurityInterceptEndpointGroupUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkSecurityInterceptEndpointGroupLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("intercept_deployment_group", flattenNetworkSecurityInterceptEndpointGroupInterceptDeploymentGroup(res["interceptDeploymentGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("state", flattenNetworkSecurityInterceptEndpointGroupState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("reconciling", flattenNetworkSecurityInterceptEndpointGroupReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkSecurityInterceptEndpointGroupDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("associations", flattenNetworkSecurityInterceptEndpointGroupAssociations(res["associations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("connected_deployment_group", flattenNetworkSecurityInterceptEndpointGroupConnectedDeploymentGroup(res["connectedDeploymentGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkSecurityInterceptEndpointGroupTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkSecurityInterceptEndpointGroupEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterceptEndpointGroup: %s", err)
+	}
+
+	return nil
 }

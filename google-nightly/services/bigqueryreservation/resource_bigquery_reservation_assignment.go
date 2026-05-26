@@ -100,6 +100,7 @@ func ResourceBigqueryReservationReservationAssignment() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceBigqueryReservationReservationAssignmentCreate,
 		Read:   resourceBigqueryReservationReservationAssignmentRead,
+		Update: resourceBigqueryReservationReservationAssignmentUpdate,
 		Delete: resourceBigqueryReservationReservationAssignmentDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +114,7 @@ func ResourceBigqueryReservationReservationAssignment() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -187,6 +189,18 @@ Possible values: STATE_UNSPECIFIED, PENDING, ACTIVE`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -213,7 +227,7 @@ func resourceBigqueryReservationReservationAssignmentCreate(d *schema.ResourceDa
 		obj["jobType"] = jobTypeProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{BigqueryReservationBasePath}}projects/{{project}}/locations/{{location}}/reservations/{{reservation}}/assignments")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/reservations/{{reservation}}/assignments")
 	if err != nil {
 		return err
 	}
@@ -234,23 +248,25 @@ func resourceBigqueryReservationReservationAssignmentCreate(d *schema.ResourceDa
 
 	headers := make(http.Header)
 	if _, ok := d.GetOkExists("location"); !ok {
-		// Extract location from parent reservation.
 		reservation := d.Get("reservation").(string)
-
 		tableRef := regexp.MustCompile("projects/(.+)/locations/(.+)/reservations/(.+)")
 		if parts := tableRef.FindStringSubmatch(reservation); parts != nil {
-			err := d.Set("location", parts[2])
-			if err != nil {
+			if err := d.Set("location", parts[2]); err != nil {
 				return err
 			}
+		} else {
+			return fmt.Errorf(
+				"`location` is required on google_bigquery_reservation_assignment "+
+					"when `reservation` is given as a bare name (got %q). Either set "+
+					"`location` explicitly on the assignment, or pass `reservation` "+
+					"as the full path `projects/{project}/locations/{location}/"+
+					"reservations/{name}` (typically `google_bigquery_reservation.<x>.id`).",
+				reservation,
+			)
 		}
 
 		if strings.Contains(url, "locations//") {
-			// re-compute url now that location must be set
 			url = strings.ReplaceAll(url, "/locations//", "/locations/"+d.Get("location").(string)+"/")
-			if err != nil {
-				return err
-			}
 		}
 	}
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
@@ -318,7 +334,7 @@ func resourceBigqueryReservationReservationAssignmentRead(d *schema.ResourceData
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{BigqueryReservationBasePath}}projects/{{project}}/locations/{{location}}/reservations/{{reservation}}/assignments")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/reservations/{{reservation}}/assignments")
 	if err != nil {
 		return err
 	}
@@ -363,21 +379,26 @@ func resourceBigqueryReservationReservationAssignmentRead(d *schema.ResourceData
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading ReservationAssignment: %s", err)
 	}
 
-	if err := d.Set("name", flattenNestedBigqueryReservationReservationAssignmentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReservationAssignment: %s", err)
-	}
-	if err := d.Set("assignee", flattenNestedBigqueryReservationReservationAssignmentAssignee(res["assignee"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReservationAssignment: %s", err)
-	}
-	if err := d.Set("job_type", flattenNestedBigqueryReservationReservationAssignmentJobType(res["jobType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReservationAssignment: %s", err)
-	}
-	if err := d.Set("state", flattenNestedBigqueryReservationReservationAssignmentState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReservationAssignment: %s", err)
+	err = ResourceBigqueryReservationReservationAssignmentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -413,7 +434,19 @@ func resourceBigqueryReservationReservationAssignmentRead(d *schema.ResourceData
 	return nil
 }
 
+func resourceBigqueryReservationReservationAssignmentUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceBigqueryReservationReservationAssignmentRead(d, meta)
+}
+
 func resourceBigqueryReservationReservationAssignmentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BigqueryReservationReservationAssignment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ReservationAssignment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -427,8 +460,7 @@ func resourceBigqueryReservationReservationAssignmentDelete(d *schema.ResourceDa
 		return fmt.Errorf("Error fetching project for ReservationAssignment: %s", err)
 	}
 	billingProject = strings.TrimPrefix(project, "projects/")
-
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{BigqueryReservationBasePath}}projects/{{project}}/locations/{{location}}/reservations/{{reservation}}/assignments/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/reservations/{{reservation}}/assignments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -571,5 +603,24 @@ func resourceBigqueryReservationReservationAssignmentPostCreateSetComputedFields
 	if err := d.Set("name", flattenNestedBigqueryReservationReservationAssignmentName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceBigqueryReservationReservationAssignmentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenNestedBigqueryReservationReservationAssignmentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReservationAssignment: %s", err)
+	}
+	if err = d.Set("assignee", flattenNestedBigqueryReservationReservationAssignmentAssignee(res["assignee"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReservationAssignment: %s", err)
+	}
+	if err = d.Set("job_type", flattenNestedBigqueryReservationReservationAssignmentJobType(res["jobType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReservationAssignment: %s", err)
+	}
+	if err = d.Set("state", flattenNestedBigqueryReservationReservationAssignmentState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReservationAssignment: %s", err)
+	}
+
 	return nil
 }

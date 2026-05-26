@@ -116,6 +116,7 @@ func ResourceNetworkConnectivityGatewayAdvertisedRoute() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -240,6 +241,18 @@ If a gateway advertised route is deleted and another with the same name is creat
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -290,7 +303,7 @@ func resourceNetworkConnectivityGatewayAdvertisedRouteCreate(d *schema.ResourceD
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/spokes/{{spoke}}/gatewayAdvertisedRoutes?gatewayAdvertisedRouteId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/spokes/{{spoke}}/gatewayAdvertisedRoutes?gatewayAdvertisedRouteId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -379,7 +392,7 @@ func resourceNetworkConnectivityGatewayAdvertisedRouteRead(d *schema.ResourceDat
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/spokes/{{spoke}}/gatewayAdvertisedRoutes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/spokes/{{spoke}}/gatewayAdvertisedRoutes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -412,45 +425,26 @@ func resourceNetworkConnectivityGatewayAdvertisedRouteRead(d *schema.ResourceDat
 
 	log.Printf("[DEBUG] Finished reading NetworkConnectivityGatewayAdvertisedRoute %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
 	}
 
-	if err := d.Set("name", flattenNetworkConnectivityGatewayAdvertisedRouteName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetworkConnectivityGatewayAdvertisedRouteCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkConnectivityGatewayAdvertisedRouteUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkConnectivityGatewayAdvertisedRouteLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkConnectivityGatewayAdvertisedRouteDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("unique_id", flattenNetworkConnectivityGatewayAdvertisedRouteUniqueId(res["uniqueId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("state", flattenNetworkConnectivityGatewayAdvertisedRouteState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("ip_range", flattenNetworkConnectivityGatewayAdvertisedRouteIpRange(res["ipRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("recipient", flattenNetworkConnectivityGatewayAdvertisedRouteRecipient(res["recipient"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("priority", flattenNetworkConnectivityGatewayAdvertisedRoutePriority(res["priority"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkConnectivityGatewayAdvertisedRouteTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkConnectivityGatewayAdvertisedRouteEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	err = ResourceNetworkConnectivityGatewayAdvertisedRouteFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -487,6 +481,19 @@ func resourceNetworkConnectivityGatewayAdvertisedRouteRead(d *schema.ResourceDat
 }
 
 func resourceNetworkConnectivityGatewayAdvertisedRouteUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkConnectivityGatewayAdvertisedRoute().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkConnectivityGatewayAdvertisedRouteRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -540,7 +547,7 @@ func resourceNetworkConnectivityGatewayAdvertisedRouteUpdate(d *schema.ResourceD
 		obj["priority"] = priorityProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/spokes/{{spoke}}/gatewayAdvertisedRoutes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/spokes/{{spoke}}/gatewayAdvertisedRoutes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -600,6 +607,13 @@ func resourceNetworkConnectivityGatewayAdvertisedRouteUpdate(d *schema.ResourceD
 }
 
 func resourceNetworkConnectivityGatewayAdvertisedRouteDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkConnectivityGatewayAdvertisedRoute without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing GatewayAdvertisedRoute %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -613,8 +627,7 @@ func resourceNetworkConnectivityGatewayAdvertisedRouteDelete(d *schema.ResourceD
 		return fmt.Errorf("Error fetching project for GatewayAdvertisedRoute: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/spokes/{{spoke}}/gatewayAdvertisedRoutes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/spokes/{{spoke}}/gatewayAdvertisedRoutes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -788,4 +801,47 @@ func expandNetworkConnectivityGatewayAdvertisedRouteEffectiveLabels(v interface{
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkConnectivityGatewayAdvertisedRouteFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenNetworkConnectivityGatewayAdvertisedRouteName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkConnectivityGatewayAdvertisedRouteCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkConnectivityGatewayAdvertisedRouteUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkConnectivityGatewayAdvertisedRouteLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkConnectivityGatewayAdvertisedRouteDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("unique_id", flattenNetworkConnectivityGatewayAdvertisedRouteUniqueId(res["uniqueId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("state", flattenNetworkConnectivityGatewayAdvertisedRouteState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("ip_range", flattenNetworkConnectivityGatewayAdvertisedRouteIpRange(res["ipRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("recipient", flattenNetworkConnectivityGatewayAdvertisedRouteRecipient(res["recipient"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("priority", flattenNetworkConnectivityGatewayAdvertisedRoutePriority(res["priority"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkConnectivityGatewayAdvertisedRouteTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkConnectivityGatewayAdvertisedRouteEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewayAdvertisedRoute: %s", err)
+	}
+
+	return nil
 }

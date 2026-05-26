@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/alloydb"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = alloydb.Product
 )
 
 func TestAccAlloydbCluster_alloydbClusterBasicExample(t *testing.T) {
@@ -112,7 +116,7 @@ func TestAccAlloydbCluster_alloydbClusterBeforeUpgradeExample(t *testing.T) {
 	context := map[string]interface{}{
 		"alloydb_cluster_name":  "tf-test-alloydb-cluster" + randomSuffix,
 		"alloydb_instance_name": "tf-test-alloydb-instance" + randomSuffix,
-		"network_name":          acctest.BootstrapSharedTestNetwork(t, "alloydb-1"),
+		"network_name":          compute.BootstrapSharedTestNetwork(t, "alloydb-1"),
 		"random_suffix":         randomSuffix,
 	}
 
@@ -182,7 +186,7 @@ func TestAccAlloydbCluster_alloydbClusterAfterUpgradeExample(t *testing.T) {
 	context := map[string]interface{}{
 		"alloydb_cluster_name":  "tf-test-alloydb-cluster" + randomSuffix,
 		"alloydb_instance_name": "tf-test-alloydb-instance" + randomSuffix,
-		"network_name":          acctest.BootstrapSharedTestNetwork(t, "alloydb-1"),
+		"network_name":          compute.BootstrapSharedTestNetwork(t, "alloydb-1"),
 		"random_suffix":         randomSuffix,
 	}
 
@@ -347,7 +351,7 @@ func TestAccAlloydbCluster_alloydbSecondaryClusterBasicTestExample(t *testing.T)
 		"alloydb_primary_cluster_name":   "tf-test-alloydb-primary-cluster" + randomSuffix,
 		"alloydb_primary_instance_name":  "tf-test-alloydb-primary-instance" + randomSuffix,
 		"alloydb_secondary_cluster_name": "tf-test-alloydb-secondary-cluster" + randomSuffix,
-		"network_name":                   acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":                   servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 		"random_suffix":                  randomSuffix,
 	}
 
@@ -436,8 +440,7 @@ func testAccCheckAlloydbClusterDestroyProducer(t *testing.T) func(s *terraform.S
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{AlloydbBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(alloydb.Product, config)+"projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
 			if err != nil {
 				return err
 			}

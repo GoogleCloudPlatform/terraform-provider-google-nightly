@@ -30,6 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/managedkafka"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/privateca"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +52,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = managedkafka.Product
 )
 
 func TestAccManagedKafkaCluster_managedkafkaClusterBasicExample(t *testing.T) {
@@ -193,7 +198,7 @@ data "google_project" "project" {
 
 func TestAccManagedKafkaCluster_managedkafkaClusterCmekExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-managedkafka.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -204,7 +209,7 @@ func TestAccManagedKafkaCluster_managedkafkaClusterCmekExample(t *testing.T) {
 
 	context := map[string]interface{}{
 		"cluster_id":    "tf-test-my-cluster" + randomSuffix,
-		"key_name":      acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"key_name":      kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"key_ring_name": "tf-test-example-key-ring" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
@@ -281,8 +286,7 @@ func testAccCheckManagedKafkaClusterDestroyProducer(t *testing.T) func(s *terraf
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ManagedKafkaBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(managedkafka.Product, config)+"projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
 			if err != nil {
 				return err
 			}

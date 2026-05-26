@@ -143,6 +143,137 @@ func IpDiffSuppress(_, old, new string, d *schema.ResourceData) bool {
 	return addr_equality && netmask_equality
 }
 
+// CustomDiff function for secondary_ip_range.
+// Normalizes old state and new config sets before Set comparison to prevent false TypeSet diffs.
+// Specifically handles two Beta-only scenarios where state diverges from HCL config:
+// 1. Automatically inherits allocated ULA CIDRs from state when omitted in HCL config.
+// 2. Normalizes ip_collection self-links to relative paths to match user config short names.
+func resourceComputeSubnetworkSecondaryIpRangeCustomDiff(_ context.Context, diff *schema.ResourceDiff, meta interface{}) error {
+	return resourceComputeSubnetworkSecondaryIpRangeCustomDiffFunc(diff)
+}
+
+func resourceComputeSubnetworkSecondaryIpRangeCustomDiffFunc(diff tpgresource.TerraformResourceDiff) error {
+	if len(diff.GetChangedKeysPrefix("secondary_ip_range")) == 0 {
+		return nil
+	}
+
+	oldCount, newCount := diff.GetChange("secondary_ip_range.#")
+	count := oldCount.(int)
+	if newCount.(int) > count {
+		count = newCount.(int)
+	}
+	if count < 1 {
+		return nil
+	}
+
+	// Extract pristine user CIDR config directly from HCL
+	configCidrByName := make(map[string]string)
+	rawConfig := diff.GetRawConfig().GetAttr("secondary_ip_range")
+	if rawConfig.IsKnown() && !rawConfig.IsNull() {
+		for _, item := range rawConfig.AsValueSlice() {
+			if item.IsKnown() && !item.IsNull() && item.GetAttr("range_name").IsKnown() && !item.GetAttr("range_name").IsNull() {
+				nameVal := item.GetAttr("range_name").AsString()
+				if nameVal != "" {
+					if cidrVal := item.GetAttr("ip_cidr_range"); cidrVal.IsKnown() && !cidrVal.IsNull() {
+						configCidrByName[nameVal] = cidrVal.AsString()
+					} else {
+						configCidrByName[nameVal] = ""
+					}
+				}
+			}
+		}
+	}
+
+	// Extract old state and new proposed maps
+	oldByName := make(map[string]map[string]interface{})
+	var oldList, newList []interface{}
+	for i := 0; i < count; i++ {
+		o, n := diff.GetChange(fmt.Sprintf("secondary_ip_range.%d", i))
+		if o != nil {
+			oldList = append(oldList, o)
+			if m, ok := o.(map[string]interface{}); ok && m["range_name"] != nil {
+				oldByName[m["range_name"].(string)] = m
+			}
+		}
+		if n != nil {
+			newList = append(newList, n)
+		}
+	}
+
+	// Helper: normalizes CIDR strings and ip_collection self-links
+	normalizeItem := func(m map[string]interface{}, overrideCidr string) map[string]interface{} {
+		clean := make(map[string]interface{})
+		for k, v := range m {
+			if k == "ip_cidr_range" {
+				cidrStr, _ := v.(string)
+				if overrideCidr != "" {
+					cidrStr = overrideCidr
+				}
+				if cidrStr == "" {
+					continue
+				}
+				if ip, ipNet, err := net.ParseCIDR(cidrStr); err == nil {
+					maskSize, _ := ipNet.Mask.Size()
+					cidrStr = fmt.Sprintf("%s/%d", ip.String(), maskSize)
+				}
+				clean[k] = cidrStr
+				continue
+			}
+			if v == nil || v == "" {
+				continue
+			}
+			if k == "ip_collection" {
+				if rel, err := tpgresource.GetRelativePath(v.(string)); err == nil {
+					clean[k] = rel
+				} else {
+					clean[k] = v
+				}
+			} else {
+				clean[k] = v
+			}
+		}
+		return clean
+	}
+
+	// Build clean normalized sets
+	var normalizedOld, normalizedNew []interface{}
+	for _, o := range oldList {
+		normalizedOld = append(normalizedOld, normalizeItem(o.(map[string]interface{}), ""))
+	}
+	for _, n := range newList {
+		m := n.(map[string]interface{})
+		rangeName, _ := m["range_name"].(string)
+		userCidr := configCidrByName[rangeName]
+		if userCidr == "" {
+			// Inherit allocated state CIDR for ULA ranges
+			if oldItem, ok := oldByName[rangeName]; ok && oldItem["ip_cidr_range"] != nil {
+				userCidr, _ = oldItem["ip_cidr_range"].(string)
+			}
+		}
+		normalizedNew = append(normalizedNew, normalizeItem(m, userCidr))
+	}
+
+	// Compare Sets and Clear Diff
+	var hashFunc schema.SchemaSetFunc
+	if ResourceComputeSubnetwork().Schema != nil && ResourceComputeSubnetwork().Schema["secondary_ip_range"] != nil {
+		hashFunc = schema.HashResource(ResourceComputeSubnetwork().Schema["secondary_ip_range"].Elem.(*schema.Resource))
+	} else {
+		hashFunc = func(v interface{}) int {
+			buf := &bytes.Buffer{}
+			json.NewEncoder(buf).Encode(v)
+			return schema.HashString(buf.String())
+		}
+	}
+
+	if schema.NewSet(hashFunc, normalizedOld).Equal(schema.NewSet(hashFunc, normalizedNew)) {
+		if err := diff.Clear("secondary_ip_range"); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 var (
 	_ = bytes.Clone
 	_ = context.WithCancel
@@ -205,7 +336,9 @@ func ResourceComputeSubnetwork() *schema.Resource {
 			resourceComputeSubnetworkSecondaryIpRangeSetStyleDiff,
 			customdiff.ForceNewIfChange("ip_cidr_range", IsShrinkageIpCidr),
 			sendSecondaryIpRangeIfEmptyDiff,
+			resourceComputeSubnetworkSecondaryIpRangeCustomDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -298,9 +431,9 @@ non-overlapping within a network. Only IPv4 is supported.
 Field is optional when 'reserved_internal_range' is defined, otherwise required.`,
 			},
 			"ip_collection": {
-				Type:     schema.TypeString,
-				Optional: true,
-				ForceNew: true,
+				Type:             schema.TypeString,
+				Optional:         true,
+				DiffSuppressFunc: tpgresource.CompareSelfLinkOrResourceName,
 				Description: `Resource reference of a PublicDelegatedPrefix. The PDP must be a sub-PDP
 in EXTERNAL_IPV6_SUBNETWORK_CREATION or INTERNAL_IPV6_SUBNETWORK_CREATION
 mode. Use one of the following formats to specify a sub-PDP when creating
@@ -452,8 +585,8 @@ E.g. 'networkconnectivity.googleapis.com/projects/{project}/locations/global/int
 				Type:         schema.TypeString,
 				Optional:     true,
 				ForceNew:     true,
-				ValidateFunc: verify.ValidateEnum([]string{"ARP_ALL_RANGES", "ARP_PRIMARY_RANGE", ""}),
-				Description:  `'Configures subnet mask resolution for this subnetwork.' Possible values: ["ARP_ALL_RANGES", "ARP_PRIMARY_RANGE"]`,
+				ValidateFunc: verify.ValidateEnum([]string{"ARP_ALL_RANGES", "ARP_PRIMARY_RANGE", "ARP_BROADCAST_PRIMARY_RANGE", "ARP_BROADCAST_PRIMARY_RANGE_WITH_LEARNING", ""}),
+				Description:  `'Configures subnet mask resolution for this subnetwork.' Possible values: ["ARP_ALL_RANGES", "ARP_PRIMARY_RANGE", "ARP_BROADCAST_PRIMARY_RANGE", "ARP_BROADCAST_PRIMARY_RANGE_WITH_LEARNING"]`,
 			},
 			"role": {
 				Type:         schema.TypeString,
@@ -498,6 +631,22 @@ range. Provide this property when you create the subnetwork.
 Ranges must be unique and non-overlapping with all primary and
 secondary IP ranges within a network. Only IPv4 is supported.
 Field is optional when 'reserved_internal_range' is defined, otherwise required.`,
+						},
+						"ip_collection": {
+							Type:             schema.TypeString,
+							Optional:         true,
+							DiffSuppressFunc: tpgresource.CompareSelfLinkOrResourceName,
+							Description: `Reference to a Public Delegated Prefix (PDP) for BYOIP.
+This field should be specified for configuring BYOGUA internal IPv6 secondary range.
+When specified along with the ip_cidr_range, the ip_cidr_range must lie within the PDP referenced by the 'ipCollection' field.
+When specified without the ip_cidr_range, the range is auto-allocated from the PDP referenced by the 'ipCollection' field.`,
+						},
+						"ip_version": {
+							Type:         schema.TypeString,
+							Computed:     true,
+							Optional:     true,
+							ValidateFunc: verify.ValidateEnum([]string{"IPV4", "IPV6", ""}),
+							Description:  `The IP version of the secondary range. If not specified, IPV4 is used. Possible values: ["IPV4", "IPV6"]`,
 						},
 						"reserved_internal_range": {
 							Type:             schema.TypeString,
@@ -580,6 +729,18 @@ Defaults to false.`,
 			"self_link": {
 				Type:     schema.TypeString,
 				Computed: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -757,7 +918,7 @@ func resourceComputeSubnetworkCreate(d *schema.ResourceData, meta interface{}) e
 		obj["resolveSubnetMask"] = resolveSubnetMaskProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks")
 	if err != nil {
 		return err
 	}
@@ -841,7 +1002,7 @@ func resourceComputeSubnetworkRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -875,84 +1036,25 @@ func resourceComputeSubnetworkRead(d *schema.ResourceData, meta interface{}) err
 	log.Printf("[DEBUG] Finished reading ComputeSubnetwork %q: %#v", d.Id(), res)
 
 	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Subnetwork: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeSubnetworkCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("description", flattenComputeSubnetworkDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("subnetwork_id", flattenComputeSubnetworkSubnetworkId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("gateway_address", flattenComputeSubnetworkGatewayAddress(res["gatewayAddress"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("ip_cidr_range", flattenComputeSubnetworkIpCidrRange(res["ipCidrRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("reserved_internal_range", flattenComputeSubnetworkReservedInternalRange(res["reservedInternalRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("name", flattenComputeSubnetworkName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("network", flattenComputeSubnetworkNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("purpose", flattenComputeSubnetworkPurpose(res["purpose"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("role", flattenComputeSubnetworkRole(res["role"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("secondary_ip_range", flattenComputeSubnetworkSecondaryIpRange(res["secondaryIpRanges"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("private_ip_google_access", flattenComputeSubnetworkPrivateIpGoogleAccess(res["privateIpGoogleAccess"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("private_ipv6_google_access", flattenComputeSubnetworkPrivateIpv6GoogleAccess(res["privateIpv6GoogleAccess"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("region", flattenComputeSubnetworkRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("log_config", flattenComputeSubnetworkLogConfig(res["logConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("stack_type", flattenComputeSubnetworkStackType(res["stackType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("ipv6_access_type", flattenComputeSubnetworkIpv6AccessType(res["ipv6AccessType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("ipv6_cidr_range", flattenComputeSubnetworkIpv6CidrRange(res["ipv6CidrRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("internal_ipv6_prefix", flattenComputeSubnetworkInternalIpv6Prefix(res["internalIpv6Prefix"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("external_ipv6_prefix", flattenComputeSubnetworkExternalIpv6Prefix(res["externalIpv6Prefix"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("ipv6_gce_endpoint", flattenComputeSubnetworkIpv6GceEndpoint(res["ipv6GceEndpoint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("allow_subnet_cidr_routes_overlap", flattenComputeSubnetworkAllowSubnetCidrRoutesOverlap(res["allowSubnetCidrRoutesOverlap"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("state", flattenComputeSubnetworkState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("resolve_subnet_mask", flattenComputeSubnetworkResolveSubnetMask(res["resolveSubnetMask"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	err = ResourceComputeSubnetworkFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -983,6 +1085,7 @@ func resourceComputeSubnetworkRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1029,7 +1132,7 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 			obj["ipCidrRange"] = ipCidrRangeProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}/expandIpCidrRange")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}/expandIpCidrRange")
 		if err != nil {
 			return err
 		}
@@ -1074,7 +1177,7 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 			obj["privateIpGoogleAccess"] = privateIpGoogleAccessProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}/setPrivateIpGoogleAccess")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}/setPrivateIpGoogleAccess")
 		if err != nil {
 			return err
 		}
@@ -1109,10 +1212,10 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 			return err
 		}
 	}
-	if d.HasChange("private_ipv6_google_access") || d.HasChange("stack_type") || d.HasChange("ipv6_access_type") || d.HasChange("allow_subnet_cidr_routes_overlap") {
+	if d.HasChange("private_ipv6_google_access") || d.HasChange("stack_type") || d.HasChange("ipv6_access_type") || d.HasChange("ip_collection") || d.HasChange("allow_subnet_cidr_routes_overlap") {
 		obj := make(map[string]interface{})
 
-		getUrl, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+		getUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -1153,6 +1256,12 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 		} else if v, ok := d.GetOkExists("ipv6_access_type"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, ipv6AccessTypeProp)) {
 			obj["ipv6AccessType"] = ipv6AccessTypeProp
 		}
+		ipCollectionProp, err := expandComputeSubnetworkIpCollection(d.Get("ip_collection"), d, config)
+		if err != nil {
+			return err
+		} else if v, ok := d.GetOkExists("ip_collection"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, ipCollectionProp)) {
+			obj["ipCollection"] = ipCollectionProp
+		}
 		allowSubnetCidrRoutesOverlapProp, err := expandComputeSubnetworkAllowSubnetCidrRoutesOverlap(d.Get("allow_subnet_cidr_routes_overlap"), d, config)
 		if err != nil {
 			return err
@@ -1160,7 +1269,7 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 			obj["allowSubnetCidrRoutesOverlap"] = allowSubnetCidrRoutesOverlapProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -1198,7 +1307,7 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 	if d.HasChange("log_config") {
 		obj := make(map[string]interface{})
 
-		getUrl, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+		getUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -1228,7 +1337,7 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 			obj["logConfig"] = logConfigProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -1266,7 +1375,7 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 	if d.HasChange("purpose") {
 		obj := make(map[string]interface{})
 
-		getUrl, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+		getUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -1296,7 +1405,7 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 			obj["purpose"] = purposeProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -1334,7 +1443,7 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 	if d.HasChange("role") {
 		obj := make(map[string]interface{})
 
-		getUrl, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+		getUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -1364,7 +1473,7 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 			obj["role"] = roleProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -1404,10 +1513,11 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 
 	// Handle the "Send Empty" override logic
 	if v, ok := d.GetOk("send_secondary_ip_range_if_empty"); ok && v.(bool) {
-		if sv, ok := d.GetOk("secondary_ip_range"); ok {
+		oldRanges, _ := d.GetChange("secondary_ip_range")
+		if oldRanges != nil {
 			configValue := d.GetRawConfig().GetAttr("secondary_ip_range")
-			stateValue := sv.([]interface{})
-			if configValue.LengthInt() == 0 && len(stateValue) != 0 {
+			stateValue := oldRanges.([]interface{})
+			if (configValue.IsNull() || configValue.LengthInt() == 0) && len(stateValue) != 0 {
 				log.Printf("[DEBUG] Sending empty secondary_ip_range in update")
 				obj := make(map[string]interface{})
 				obj["secondaryIpRanges"] = make([]interface{}, 0)
@@ -1601,6 +1711,13 @@ func resourceComputeSubnetworkUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceComputeSubnetworkDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeSubnetwork without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Subnetwork %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1614,8 +1731,7 @@ func resourceComputeSubnetworkDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for Subnetwork: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/subnetworks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1754,6 +1870,8 @@ func flattenComputeSubnetworkSecondaryIpRange(v interface{}, d *schema.ResourceD
 			"range_name":              flattenComputeSubnetworkSecondaryIpRangeRangeName(original["rangeName"], d, config),
 			"ip_cidr_range":           flattenComputeSubnetworkSecondaryIpRangeIpCidrRange(original["ipCidrRange"], d, config),
 			"reserved_internal_range": flattenComputeSubnetworkSecondaryIpRangeReservedInternalRange(original["reservedInternalRange"], d, config),
+			"ip_version":              flattenComputeSubnetworkSecondaryIpRangeIpVersion(original["ipVersion"], d, config),
+			"ip_collection":           flattenComputeSubnetworkSecondaryIpRangeIpCollection(original["ipCollection"], d, config),
 		})
 	}
 	return transformed
@@ -1767,6 +1885,17 @@ func flattenComputeSubnetworkSecondaryIpRangeIpCidrRange(v interface{}, d *schem
 }
 
 func flattenComputeSubnetworkSecondaryIpRangeReservedInternalRange(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return v
+	}
+	return tpgresource.ConvertSelfLinkToV1(v.(string))
+}
+
+func flattenComputeSubnetworkSecondaryIpRangeIpVersion(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeSubnetworkSecondaryIpRangeIpCollection(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return v
 	}
@@ -1838,6 +1967,10 @@ func flattenComputeSubnetworkInternalIpv6Prefix(v interface{}, d *schema.Resourc
 }
 
 func flattenComputeSubnetworkExternalIpv6Prefix(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeSubnetworkIpCollection(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1923,6 +2056,20 @@ func expandComputeSubnetworkSecondaryIpRange(v interface{}, d tpgresource.Terraf
 			transformed["reservedInternalRange"] = transformedReservedInternalRange
 		}
 
+		transformedIpVersion, err := expandComputeSubnetworkSecondaryIpRangeIpVersion(original["ip_version"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedIpVersion); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["ipVersion"] = transformedIpVersion
+		}
+
+		transformedIpCollection, err := expandComputeSubnetworkSecondaryIpRangeIpCollection(original["ip_collection"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedIpCollection); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["ipCollection"] = transformedIpCollection
+		}
+
 		req = append(req, transformed)
 	}
 	return req, nil
@@ -1937,6 +2084,14 @@ func expandComputeSubnetworkSecondaryIpRangeIpCidrRange(v interface{}, d tpgreso
 }
 
 func expandComputeSubnetworkSecondaryIpRangeReservedInternalRange(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandComputeSubnetworkSecondaryIpRangeIpVersion(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandComputeSubnetworkSecondaryIpRangeIpCollection(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -2047,4 +2202,88 @@ func expandComputeSubnetworkParamsResourceManagerTags(v interface{}, d tpgresour
 
 func expandComputeSubnetworkResolveSubnetMask(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceComputeSubnetworkFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeSubnetworkCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("description", flattenComputeSubnetworkDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("subnetwork_id", flattenComputeSubnetworkSubnetworkId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("gateway_address", flattenComputeSubnetworkGatewayAddress(res["gatewayAddress"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("ip_cidr_range", flattenComputeSubnetworkIpCidrRange(res["ipCidrRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("reserved_internal_range", flattenComputeSubnetworkReservedInternalRange(res["reservedInternalRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("name", flattenComputeSubnetworkName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("network", flattenComputeSubnetworkNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("purpose", flattenComputeSubnetworkPurpose(res["purpose"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("role", flattenComputeSubnetworkRole(res["role"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("secondary_ip_range", flattenComputeSubnetworkSecondaryIpRange(res["secondaryIpRanges"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("private_ip_google_access", flattenComputeSubnetworkPrivateIpGoogleAccess(res["privateIpGoogleAccess"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("private_ipv6_google_access", flattenComputeSubnetworkPrivateIpv6GoogleAccess(res["privateIpv6GoogleAccess"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("region", flattenComputeSubnetworkRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("log_config", flattenComputeSubnetworkLogConfig(res["logConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("stack_type", flattenComputeSubnetworkStackType(res["stackType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("ipv6_access_type", flattenComputeSubnetworkIpv6AccessType(res["ipv6AccessType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("ipv6_cidr_range", flattenComputeSubnetworkIpv6CidrRange(res["ipv6CidrRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("internal_ipv6_prefix", flattenComputeSubnetworkInternalIpv6Prefix(res["internalIpv6Prefix"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("external_ipv6_prefix", flattenComputeSubnetworkExternalIpv6Prefix(res["externalIpv6Prefix"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("ip_collection", flattenComputeSubnetworkIpCollection(res["ipCollection"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("ipv6_gce_endpoint", flattenComputeSubnetworkIpv6GceEndpoint(res["ipv6GceEndpoint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("allow_subnet_cidr_routes_overlap", flattenComputeSubnetworkAllowSubnetCidrRoutesOverlap(res["allowSubnetCidrRoutesOverlap"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("state", flattenComputeSubnetworkState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("resolve_subnet_mask", flattenComputeSubnetworkResolveSubnetMask(res["resolveSubnetMask"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading Subnetwork: %s", err)
+	}
+	return nil
 }

@@ -115,6 +115,7 @@ func ResourceCESGuardrail() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -591,6 +592,15 @@ the system uses by default. It is OUTPUT_ONLY.`,
 								},
 							},
 						},
+						"fail_open": {
+							Type:     schema.TypeBool,
+							Optional: true,
+							Description: `Determines the behavior when the guardrail encounters an LLM error.
+- If true: the guardrail is bypassed.
+- If false (default): the guardrail triggers/blocks.
+Note: If a custom policy is provided, this field is ignored in favor of
+the policy's 'failOpen' configuration.`,
+						},
 					},
 				},
 			},
@@ -668,6 +678,18 @@ Format:
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -736,7 +758,7 @@ func resourceCESGuardrailCreate(d *schema.ResourceData, meta interface{}) error 
 		obj["modelSafety"] = modelSafetyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails?guardrailId={{guardrail_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails?guardrailId={{guardrail_id}}")
 	if err != nil {
 		return err
 	}
@@ -821,7 +843,7 @@ func resourceCESGuardrailRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -854,48 +876,26 @@ func resourceCESGuardrailRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading CESGuardrail %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Guardrail: %s", err)
 	}
 
-	if err := d.Set("action", flattenCESGuardrailAction(res["action"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("code_callback", flattenCESGuardrailCodeCallback(res["codeCallback"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("content_filter", flattenCESGuardrailContentFilter(res["contentFilter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("create_time", flattenCESGuardrailCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("description", flattenCESGuardrailDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("display_name", flattenCESGuardrailDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("enabled", flattenCESGuardrailEnabled(res["enabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("etag", flattenCESGuardrailEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("llm_policy", flattenCESGuardrailLlmPolicy(res["llmPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("llm_prompt_security", flattenCESGuardrailLlmPromptSecurity(res["llmPromptSecurity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("model_safety", flattenCESGuardrailModelSafety(res["modelSafety"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("name", flattenCESGuardrailName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
-	}
-	if err := d.Set("update_time", flattenCESGuardrailUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Guardrail: %s", err)
+	err = ResourceCESGuardrailFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -932,6 +932,19 @@ func resourceCESGuardrailRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceCESGuardrailUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCESGuardrail().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCESGuardrailRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1027,7 +1040,7 @@ func resourceCESGuardrailUpdate(d *schema.ResourceData, meta interface{}) error 
 		obj["modelSafety"] = modelSafetyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1108,6 +1121,13 @@ func resourceCESGuardrailUpdate(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceCESGuardrailDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CESGuardrail without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Guardrail %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1121,8 +1141,7 @@ func resourceCESGuardrailDelete(d *schema.ResourceData, meta interface{}) error 
 		return fmt.Errorf("Error fetching project for Guardrail: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1550,12 +1569,18 @@ func flattenCESGuardrailLlmPromptSecurity(v interface{}, d *schema.ResourceData,
 		return nil
 	}
 	transformed := make(map[string]interface{})
+	transformed["fail_open"] =
+		flattenCESGuardrailLlmPromptSecurityFailOpen(original["failOpen"], d, config)
 	transformed["custom_policy"] =
 		flattenCESGuardrailLlmPromptSecurityCustomPolicy(original["customPolicy"], d, config)
 	transformed["default_settings"] =
 		flattenCESGuardrailLlmPromptSecurityDefaultSettings(original["defaultSettings"], d, config)
 	return []interface{}{transformed}
 }
+func flattenCESGuardrailLlmPromptSecurityFailOpen(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenCESGuardrailLlmPromptSecurityCustomPolicy(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return nil
@@ -2296,6 +2321,13 @@ func expandCESGuardrailLlmPromptSecurity(v interface{}, d tpgresource.TerraformR
 	original := raw.(map[string]interface{})
 	transformed := make(map[string]interface{})
 
+	transformedFailOpen, err := expandCESGuardrailLlmPromptSecurityFailOpen(original["fail_open"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedFailOpen); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["failOpen"] = transformedFailOpen
+	}
+
 	transformedCustomPolicy, err := expandCESGuardrailLlmPromptSecurityCustomPolicy(original["custom_policy"], d, config)
 	if err != nil {
 		return nil, err
@@ -2311,6 +2343,10 @@ func expandCESGuardrailLlmPromptSecurity(v interface{}, d tpgresource.TerraformR
 	}
 
 	return transformed, nil
+}
+
+func expandCESGuardrailLlmPromptSecurityFailOpen(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
 }
 
 func expandCESGuardrailLlmPromptSecurityCustomPolicy(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
@@ -2520,5 +2556,51 @@ func resourceCESGuardrailPostCreateSetComputedFields(d *schema.ResourceData, met
 	if err := d.Set("name", flattenCESGuardrailName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceCESGuardrailFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("action", flattenCESGuardrailAction(res["action"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("code_callback", flattenCESGuardrailCodeCallback(res["codeCallback"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("content_filter", flattenCESGuardrailContentFilter(res["contentFilter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("create_time", flattenCESGuardrailCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("description", flattenCESGuardrailDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("display_name", flattenCESGuardrailDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("enabled", flattenCESGuardrailEnabled(res["enabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("etag", flattenCESGuardrailEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("llm_policy", flattenCESGuardrailLlmPolicy(res["llmPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("llm_prompt_security", flattenCESGuardrailLlmPromptSecurity(res["llmPromptSecurity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("model_safety", flattenCESGuardrailModelSafety(res["modelSafety"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("name", flattenCESGuardrailName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+	if err = d.Set("update_time", flattenCESGuardrailUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Guardrail: %s", err)
+	}
+
 	return nil
 }

@@ -117,6 +117,7 @@ func ResourceWorkstationsWorkstationConfig() *schema.Resource {
 			tpgresource.SetLabelsDiff,
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -581,6 +582,40 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Description: `Directories to persist across workstation sessions.`,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
+						"gce_hd": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `A directory to persist across workstation sessions, backed by a Compute Engine Hyperdisk Balanced High Availability disk.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"archive_timeout": {
+										Type:        schema.TypeString,
+										Computed:    true,
+										Optional:    true,
+										Description: `How long to wait before converting the disk into a snapshot.`,
+									},
+									"reclaim_policy": {
+										Type:         schema.TypeString,
+										Computed:     true,
+										Optional:     true,
+										ValidateFunc: verify.ValidateEnum([]string{"DELETE", "RETAIN", ""}),
+										Description:  `Whether the persistent disk should be deleted when the workstation is deleted. Possible values: ["DELETE", "RETAIN"]`,
+									},
+									"size_gb": {
+										Type:        schema.TypeInt,
+										Computed:    true,
+										Optional:    true,
+										Description: `The GB capacity of a persistent home directory. Defaults to '200'.`,
+									},
+									"source_snapshot": {
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: `Name of the snapshot to use as the source for the disk.`,
+									},
+								},
+							},
+						},
 						"gce_pd": {
 							Type:        schema.TypeList,
 							Computed:    true,
@@ -604,6 +639,7 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 									},
 									"reclaim_policy": {
 										Type:         schema.TypeString,
+										Computed:     true,
 										Optional:     true,
 										ValidateFunc: verify.ValidateEnum([]string{"DELETE", "RETAIN", ""}),
 										Description:  `Whether the persistent disk should be deleted when the workstation is deleted. Valid values are 'DELETE' and 'RETAIN'. Defaults to 'DELETE'. Possible values: ["DELETE", "RETAIN"]`,
@@ -748,6 +784,18 @@ May be sent on update and delete requests to ensure that the client has an up-to
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -864,7 +912,7 @@ func resourceWorkstationsWorkstationConfigCreate(d *schema.ResourceData, meta in
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs?workstationConfigId={{workstation_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs?workstationConfigId={{workstation_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -953,7 +1001,7 @@ func resourceWorkstationsWorkstationConfigRead(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -986,81 +1034,26 @@ func resourceWorkstationsWorkstationConfigRead(d *schema.ResourceData, meta inte
 
 	log.Printf("[DEBUG] Finished reading WorkstationsWorkstationConfig %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
 	}
 
-	if err := d.Set("name", flattenWorkstationsWorkstationConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("uid", flattenWorkstationsWorkstationConfigUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("display_name", flattenWorkstationsWorkstationConfigDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("labels", flattenWorkstationsWorkstationConfigLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("annotations", flattenWorkstationsWorkstationConfigAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("etag", flattenWorkstationsWorkstationConfigEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("create_time", flattenWorkstationsWorkstationConfigCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("idle_timeout", flattenWorkstationsWorkstationConfigIdleTimeout(res["idleTimeout"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("running_timeout", flattenWorkstationsWorkstationConfigRunningTimeout(res["runningTimeout"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("replica_zones", flattenWorkstationsWorkstationConfigReplicaZones(res["replicaZones"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("host", flattenWorkstationsWorkstationConfigHost(res["host"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("persistent_directories", flattenWorkstationsWorkstationConfigPersistentDirectories(res["persistentDirectories"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("ephemeral_directories", flattenWorkstationsWorkstationConfigEphemeralDirectories(res["ephemeralDirectories"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("container", flattenWorkstationsWorkstationConfigContainer(res["container"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("encryption_key", flattenWorkstationsWorkstationConfigEncryptionKey(res["encryptionKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("readiness_checks", flattenWorkstationsWorkstationConfigReadinessChecks(res["readinessChecks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("degraded", flattenWorkstationsWorkstationConfigDegraded(res["degraded"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("disable_tcp_connections", flattenWorkstationsWorkstationConfigDisableTcpConnections(res["disableTcpConnections"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("max_usable_workstations", flattenWorkstationsWorkstationConfigMaxUsableWorkstations(res["maxUsableWorkstations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("allowed_ports", flattenWorkstationsWorkstationConfigAllowedPorts(res["allowedPorts"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("conditions", flattenWorkstationsWorkstationConfigConditions(res["conditions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenWorkstationsWorkstationConfigTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenWorkstationsWorkstationConfigEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenWorkstationsWorkstationConfigEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	err = ResourceWorkstationsWorkstationConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1097,6 +1090,19 @@ func resourceWorkstationsWorkstationConfigRead(d *schema.ResourceData, meta inte
 }
 
 func resourceWorkstationsWorkstationConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceWorkstationsWorkstationConfig().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceWorkstationsWorkstationConfigRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1228,7 +1234,7 @@ func resourceWorkstationsWorkstationConfigUpdate(d *schema.ResourceData, meta in
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -1358,6 +1364,13 @@ func resourceWorkstationsWorkstationConfigUpdate(d *schema.ResourceData, meta in
 }
 
 func resourceWorkstationsWorkstationConfigDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy WorkstationsWorkstationConfig without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing WorkstationConfig %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1371,8 +1384,7 @@ func resourceWorkstationsWorkstationConfigDelete(d *schema.ResourceData, meta in
 		return fmt.Errorf("Error fetching project for WorkstationConfig: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -1821,6 +1833,7 @@ func flattenWorkstationsWorkstationConfigPersistentDirectories(v interface{}, d 
 		transformed = append(transformed, map[string]interface{}{
 			"mount_path": flattenWorkstationsWorkstationConfigPersistentDirectoriesMountPath(original["mountPath"], d, config),
 			"gce_pd":     flattenWorkstationsWorkstationConfigPersistentDirectoriesGcePd(original["gcePd"], d, config),
+			"gce_hd":     flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHd(original["gceHd"], d, config),
 		})
 	}
 	return transformed
@@ -1880,6 +1893,54 @@ func flattenWorkstationsWorkstationConfigPersistentDirectoriesGcePdReclaimPolicy
 }
 
 func flattenWorkstationsWorkstationConfigPersistentDirectoriesGcePdSourceSnapshot(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHd(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["size_gb"] =
+		flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHdSizeGb(original["sizeGb"], d, config)
+	transformed["source_snapshot"] =
+		flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHdSourceSnapshot(original["sourceSnapshot"], d, config)
+	transformed["reclaim_policy"] =
+		flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHdReclaimPolicy(original["reclaimPolicy"], d, config)
+	transformed["archive_timeout"] =
+		flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHdArchiveTimeout(original["archiveTimeout"], d, config)
+	return []interface{}{transformed}
+}
+func flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHdSizeGb(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	// Handles the string fixed64 format
+	if strVal, ok := v.(string); ok {
+		if intVal, err := tpgresource.StringToFixed64(strVal); err == nil {
+			return intVal
+		}
+	}
+
+	// number values are represented as float64
+	if floatVal, ok := v.(float64); ok {
+		intVal := int(floatVal)
+		return intVal
+	}
+
+	return v // let terraform core handle it otherwise
+}
+
+func flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHdSourceSnapshot(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHdReclaimPolicy(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenWorkstationsWorkstationConfigPersistentDirectoriesGceHdArchiveTimeout(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -2677,6 +2738,13 @@ func expandWorkstationsWorkstationConfigPersistentDirectories(v interface{}, d t
 			transformed["gcePd"] = transformedGcePd
 		}
 
+		transformedGceHd, err := expandWorkstationsWorkstationConfigPersistentDirectoriesGceHd(original["gce_hd"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedGceHd); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["gceHd"] = transformedGceHd
+		}
+
 		req = append(req, transformed)
 	}
 	return req, nil
@@ -2753,6 +2821,65 @@ func expandWorkstationsWorkstationConfigPersistentDirectoriesGcePdReclaimPolicy(
 }
 
 func expandWorkstationsWorkstationConfigPersistentDirectoriesGcePdSourceSnapshot(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandWorkstationsWorkstationConfigPersistentDirectoriesGceHd(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedSizeGb, err := expandWorkstationsWorkstationConfigPersistentDirectoriesGceHdSizeGb(original["size_gb"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedSizeGb); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["sizeGb"] = transformedSizeGb
+	}
+
+	transformedSourceSnapshot, err := expandWorkstationsWorkstationConfigPersistentDirectoriesGceHdSourceSnapshot(original["source_snapshot"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedSourceSnapshot); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["sourceSnapshot"] = transformedSourceSnapshot
+	}
+
+	transformedReclaimPolicy, err := expandWorkstationsWorkstationConfigPersistentDirectoriesGceHdReclaimPolicy(original["reclaim_policy"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedReclaimPolicy); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["reclaimPolicy"] = transformedReclaimPolicy
+	}
+
+	transformedArchiveTimeout, err := expandWorkstationsWorkstationConfigPersistentDirectoriesGceHdArchiveTimeout(original["archive_timeout"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedArchiveTimeout); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["archiveTimeout"] = transformedArchiveTimeout
+	}
+
+	return transformed, nil
+}
+
+func expandWorkstationsWorkstationConfigPersistentDirectoriesGceHdSizeGb(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandWorkstationsWorkstationConfigPersistentDirectoriesGceHdSourceSnapshot(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandWorkstationsWorkstationConfigPersistentDirectoriesGceHdReclaimPolicy(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandWorkstationsWorkstationConfigPersistentDirectoriesGceHdArchiveTimeout(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -3084,4 +3211,83 @@ func expandWorkstationsWorkstationConfigEffectiveAnnotations(v interface{}, d tp
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceWorkstationsWorkstationConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenWorkstationsWorkstationConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("uid", flattenWorkstationsWorkstationConfigUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("display_name", flattenWorkstationsWorkstationConfigDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("labels", flattenWorkstationsWorkstationConfigLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("annotations", flattenWorkstationsWorkstationConfigAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("etag", flattenWorkstationsWorkstationConfigEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("create_time", flattenWorkstationsWorkstationConfigCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("idle_timeout", flattenWorkstationsWorkstationConfigIdleTimeout(res["idleTimeout"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("running_timeout", flattenWorkstationsWorkstationConfigRunningTimeout(res["runningTimeout"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("replica_zones", flattenWorkstationsWorkstationConfigReplicaZones(res["replicaZones"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("host", flattenWorkstationsWorkstationConfigHost(res["host"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("persistent_directories", flattenWorkstationsWorkstationConfigPersistentDirectories(res["persistentDirectories"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("ephemeral_directories", flattenWorkstationsWorkstationConfigEphemeralDirectories(res["ephemeralDirectories"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("container", flattenWorkstationsWorkstationConfigContainer(res["container"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("encryption_key", flattenWorkstationsWorkstationConfigEncryptionKey(res["encryptionKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("readiness_checks", flattenWorkstationsWorkstationConfigReadinessChecks(res["readinessChecks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("degraded", flattenWorkstationsWorkstationConfigDegraded(res["degraded"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("disable_tcp_connections", flattenWorkstationsWorkstationConfigDisableTcpConnections(res["disableTcpConnections"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("max_usable_workstations", flattenWorkstationsWorkstationConfigMaxUsableWorkstations(res["maxUsableWorkstations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("allowed_ports", flattenWorkstationsWorkstationConfigAllowedPorts(res["allowedPorts"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("conditions", flattenWorkstationsWorkstationConfigConditions(res["conditions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenWorkstationsWorkstationConfigTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenWorkstationsWorkstationConfigEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenWorkstationsWorkstationConfigEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkstationConfig: %s", err)
+	}
+
+	return nil
 }

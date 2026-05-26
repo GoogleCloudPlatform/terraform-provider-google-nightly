@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = compute.Product
 )
 
 func TestAccComputeImage_imageBasicExample(t *testing.T) {
@@ -73,7 +75,7 @@ func TestAccComputeImage_imageBasicExample(t *testing.T) {
 				ResourceName:            "google_compute_image.example",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"image_encryption_key.0.raw_key", "image_encryption_key.0.rsa_encrypted_key", "labels", "raw_disk", "source_disk", "source_disk_encryption_key", "source_image", "source_image_encryption_key", "source_snapshot", "source_snapshot_encryption_key", "terraform_labels"},
+				ImportStateVerifyIgnore: []string{"image_encryption_key.0.raw_key", "image_encryption_key.0.rsa_encrypted_key", "labels", "params", "raw_disk", "source_disk", "source_disk_encryption_key", "source_image", "source_image_encryption_key", "source_snapshot", "source_snapshot_encryption_key", "terraform_labels"},
 			},
 			{
 				ResourceName:       "google_compute_image.example",
@@ -131,7 +133,7 @@ func TestAccComputeImage_imageGuestOsExample(t *testing.T) {
 				ResourceName:            "google_compute_image.example",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"image_encryption_key.0.raw_key", "image_encryption_key.0.rsa_encrypted_key", "labels", "raw_disk", "source_disk", "source_disk_encryption_key", "source_image", "source_image_encryption_key", "source_snapshot", "source_snapshot_encryption_key", "terraform_labels"},
+				ImportStateVerifyIgnore: []string{"image_encryption_key.0.raw_key", "image_encryption_key.0.rsa_encrypted_key", "labels", "params", "raw_disk", "source_disk", "source_disk_encryption_key", "source_image", "source_image_encryption_key", "source_snapshot", "source_snapshot_encryption_key", "terraform_labels"},
 			},
 			{
 				ResourceName:       "google_compute_image.example",
@@ -209,7 +211,7 @@ func TestAccComputeImage_imageBasicStorageLocationExample(t *testing.T) {
 				ResourceName:            "google_compute_image.example",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"image_encryption_key.0.raw_key", "image_encryption_key.0.rsa_encrypted_key", "labels", "raw_disk", "source_disk", "source_disk_encryption_key", "source_image", "source_image_encryption_key", "source_snapshot", "source_snapshot_encryption_key", "terraform_labels"},
+				ImportStateVerifyIgnore: []string{"image_encryption_key.0.raw_key", "image_encryption_key.0.rsa_encrypted_key", "labels", "params", "raw_disk", "source_disk", "source_disk_encryption_key", "source_image", "source_image_encryption_key", "source_snapshot", "source_snapshot_encryption_key", "terraform_labels"},
 			},
 			{
 				ResourceName:       "google_compute_image.example",
@@ -256,8 +258,7 @@ func testAccCheckComputeImageDestroyProducer(t *testing.T) func(s *terraform.Sta
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/global/images/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(compute.Product, config)+"projects/{{project}}/global/images/{{name}}")
 			if err != nil {
 				return err
 			}

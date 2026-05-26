@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/parametermanagerregional"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = parametermanagerregional.Product
 )
 
 func TestAccParameterManagerRegionalRegionalParameterVersion_regionalParameterVersionBasicExample(t *testing.T) {
@@ -192,7 +196,7 @@ resource "google_parameter_manager_regional_parameter_version" "regional-paramet
 
 func TestAccParameterManagerRegionalRegionalParameterVersion_regionalParameterVersionWithKmsKeyExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-pm.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -202,7 +206,7 @@ func TestAccParameterManagerRegionalRegionalParameterVersion_regionalParameterVe
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"kms_key":              acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key":              kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"parameter_id":         "tf_test_regional_parameter" + randomSuffix,
 		"parameter_version_id": "tf_test_regional_parameter_version" + randomSuffix,
 		"random_suffix":        randomSuffix,
@@ -348,8 +352,7 @@ func testAccCheckParameterManagerRegionalRegionalParameterVersionDestroyProducer
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ParameterManagerRegionalBasePath}}{{parameter}}/versions/{{parameter_version_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(parametermanagerregional.Product, config)+"{{parameter}}/versions/{{parameter_version_id}}")
 			if err != nil {
 				return err
 			}

@@ -115,6 +115,7 @@ func ResourceNetworkSecurityGatewaySecurityPolicy() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -189,6 +190,18 @@ Examples: "2014-10-02T15:01:23Z" and "2014-10-02T15:01:23.045123456Z".`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -215,7 +228,7 @@ func resourceNetworkSecurityGatewaySecurityPolicyCreate(d *schema.ResourceData, 
 		obj["tlsInspectionPolicy"] = tlsInspectionPolicyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/gatewaySecurityPolicies?gatewaySecurityPolicyId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/gatewaySecurityPolicies?gatewaySecurityPolicyId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -299,7 +312,7 @@ func resourceNetworkSecurityGatewaySecurityPolicyRead(d *schema.ResourceData, me
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/gatewaySecurityPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/gatewaySecurityPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -332,21 +345,26 @@ func resourceNetworkSecurityGatewaySecurityPolicyRead(d *schema.ResourceData, me
 
 	log.Printf("[DEBUG] Finished reading NetworkSecurityGatewaySecurityPolicy %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading GatewaySecurityPolicy: %s", err)
 	}
 
-	if err := d.Set("self_link", flattenNetworkSecurityGatewaySecurityPolicySelfLink(res["selfLink"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewaySecurityPolicy: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetworkSecurityGatewaySecurityPolicyCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewaySecurityPolicy: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkSecurityGatewaySecurityPolicyUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewaySecurityPolicy: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkSecurityGatewaySecurityPolicyDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GatewaySecurityPolicy: %s", err)
+	err = ResourceNetworkSecurityGatewaySecurityPolicyFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -377,6 +395,19 @@ func resourceNetworkSecurityGatewaySecurityPolicyRead(d *schema.ResourceData, me
 }
 
 func resourceNetworkSecurityGatewaySecurityPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkSecurityGatewaySecurityPolicy().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkSecurityGatewaySecurityPolicyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -425,7 +456,7 @@ func resourceNetworkSecurityGatewaySecurityPolicyUpdate(d *schema.ResourceData, 
 		obj["tlsInspectionPolicy"] = tlsInspectionPolicyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/gatewaySecurityPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/gatewaySecurityPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -485,6 +516,13 @@ func resourceNetworkSecurityGatewaySecurityPolicyUpdate(d *schema.ResourceData, 
 }
 
 func resourceNetworkSecurityGatewaySecurityPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkSecurityGatewaySecurityPolicy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing GatewaySecurityPolicy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -498,8 +536,7 @@ func resourceNetworkSecurityGatewaySecurityPolicyDelete(d *schema.ResourceData, 
 		return fmt.Errorf("Error fetching project for GatewaySecurityPolicy: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/gatewaySecurityPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/gatewaySecurityPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -582,4 +619,23 @@ func expandNetworkSecurityGatewaySecurityPolicyDescription(v interface{}, d tpgr
 
 func expandNetworkSecurityGatewaySecurityPolicyTlsInspectionPolicy(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceNetworkSecurityGatewaySecurityPolicyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("self_link", flattenNetworkSecurityGatewaySecurityPolicySelfLink(res["selfLink"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewaySecurityPolicy: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkSecurityGatewaySecurityPolicyCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewaySecurityPolicy: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkSecurityGatewaySecurityPolicyUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewaySecurityPolicy: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkSecurityGatewaySecurityPolicyDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GatewaySecurityPolicy: %s", err)
+	}
+
+	return nil
 }

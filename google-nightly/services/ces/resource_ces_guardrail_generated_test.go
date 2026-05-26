@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/ces"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = ces.Product
 )
 
 func TestAccCESGuardrail_cesGuardrailBasicExample(t *testing.T) {
@@ -282,7 +284,7 @@ resource "google_ces_guardrail" "ces_guardrail_generative_answer_llm_prompt_secu
     custom_policy {
       max_conversation_messages = 10
       model_settings {
-        model = "gemini-2.5-flash"
+        model = "gemini-3.0-flash-001"
         temperature = 50
       }
       prompt = "example_prompt"
@@ -290,6 +292,81 @@ resource "google_ces_guardrail" "ces_guardrail_generative_answer_llm_prompt_secu
       fail_open = true
       allow_short_utterance = true
     }
+  }
+}
+`, context)
+}
+
+func TestAccCESGuardrail_cesGuardrailLlmPromptSecurityFailOpenExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"app_display_name":       "tf-test-my-app" + randomSuffix,
+		"app_id":                 "tf-test-app-id" + randomSuffix,
+		"guardrail_display_name": "tf-test-my-guardrail" + randomSuffix,
+		"guardrail_id":           "tf-test-guardrail-id" + randomSuffix,
+		"random_suffix":          randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckCESGuardrailDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccCESGuardrail_cesGuardrailLlmPromptSecurityFailOpenExample(context),
+			},
+			{
+				ResourceName:            "google_ces_guardrail.ces_guardrail_llm_prompt_security_fail_open",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"app", "guardrail_id", "location"},
+			},
+			{
+				ResourceName:       "google_ces_guardrail.ces_guardrail_llm_prompt_security_fail_open",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccCESGuardrail_cesGuardrailLlmPromptSecurityFailOpenExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_ces_app" "ces_app_for_guardrail" {
+  app_id = "%{app_id}"
+  location = "us"
+  description = "App used as parent for CES Toolset example"
+  display_name = "%{app_display_name}"
+
+  language_settings {
+    default_language_code    = "en-US"
+    supported_language_codes = ["es-ES", "fr-FR"]
+    enable_multilingual_support = true
+    fallback_action          = "escalate"
+  }
+  time_zone_settings {
+    time_zone = "America/Los_Angeles"
+  }
+}
+
+resource "google_ces_guardrail" "ces_guardrail_llm_prompt_security_fail_open" {
+  guardrail_id = "%{guardrail_id}"
+  location     = google_ces_app.ces_app_for_guardrail.location
+  app          = google_ces_app.ces_app_for_guardrail.app_id
+  display_name = "%{guardrail_display_name}"
+  description  = "Guardrail description"
+  action {
+    generative_answer {
+        prompt = "example_prompt"
+    }
+  }
+  enabled = true
+  llm_prompt_security {
+    fail_open = true
   }
 }
 `, context)
@@ -460,7 +537,7 @@ resource "google_ces_guardrail" "ces_guardrail_llm_policy" {
   llm_policy {
     max_conversation_messages = 10
     model_settings {
-        model = "gemini-2.5-flash"
+        model = "gemini-3.0-flash-001"
         temperature = 50
     }
     prompt = "example_prompt"
@@ -483,8 +560,7 @@ func testAccCheckCESGuardrailDestroyProducer(t *testing.T) func(s *terraform.Sta
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(ces.Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/guardrails/{{name}}")
 			if err != nil {
 				return err
 			}

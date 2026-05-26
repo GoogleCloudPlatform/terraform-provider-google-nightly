@@ -25,6 +25,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudbuild"
+	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -73,9 +76,9 @@ func TestAccCloudbuildWorkerPool_withComputedAnnotations(t *testing.T) {
 func TestAccCloudbuildWorkerPool_basic(t *testing.T) {
 	t.Parallel()
 
-	testNetworkName := acctest.BootstrapSharedTestNetwork(t, "attachment-network")
-	subnetName := acctest.BootstrapSubnet(t, "tf-test-subnet", testNetworkName)
-	networkAttachmentName := acctest.BootstrapNetworkAttachment(t, "tf-test-attachment", subnetName)
+	testNetworkName := tpgcompute.BootstrapSharedTestNetwork(t, "attachment-network")
+	subnetName := tpgcompute.BootstrapSubnet(t, "tf-test-subnet", testNetworkName)
+	networkAttachmentName := tpgcompute.BootstrapNetworkAttachment(t, "tf-test-attachment", subnetName)
 
 	// Need to have the full network attachment name in the format project/{project_id}/regions/{region_id}/networkAttachments/{networkAttachmentName}
 	fullFormNetworkAttachmentName := fmt.Sprintf("projects/%s/regions/%s/networkAttachments/%s", envvar.GetTestProjectFromEnv(), envvar.GetTestRegionFromEnv(), networkAttachmentName)
@@ -197,7 +200,7 @@ func TestAccCloudbuildWorkerPool_withNetwork(t *testing.T) {
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
 		"project":       envvar.GetTestProjectFromEnv(),
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "cloudbuild-workerpool-1"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "cloudbuild-workerpool-1"),
 	}
 
 	acctest.VcrTest(t, resource.TestCase{

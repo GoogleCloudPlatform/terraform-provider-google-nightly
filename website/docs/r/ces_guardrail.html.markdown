@@ -163,7 +163,7 @@ resource "google_ces_guardrail" "ces_guardrail_generative_answer_llm_prompt_secu
     custom_policy {
       max_conversation_messages = 10
       model_settings {
-        model = "gemini-2.5-flash"
+        model = "gemini-3.0-flash-001"
         temperature = 50
       }
       prompt = "example_prompt"
@@ -171,6 +171,49 @@ resource "google_ces_guardrail" "ces_guardrail_generative_answer_llm_prompt_secu
       fail_open = true
       allow_short_utterance = true
     }
+  }
+}
+```
+<div class = "oics-button" style="float: right; margin: 0 0 -15px">
+  <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=ces_guardrail_llm_prompt_security_fail_open&open_in_editor=main.tf" target="_blank">
+    <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
+  </a>
+</div>
+## Example Usage - Ces Guardrail Llm Prompt Security Fail Open
+
+
+```hcl
+resource "google_ces_app" "ces_app_for_guardrail" {
+  app_id = "app-id"
+  location = "us"
+  description = "App used as parent for CES Toolset example"
+  display_name = "my-app"
+
+  language_settings {
+    default_language_code    = "en-US"
+    supported_language_codes = ["es-ES", "fr-FR"]
+    enable_multilingual_support = true
+    fallback_action          = "escalate"
+  }
+  time_zone_settings {
+    time_zone = "America/Los_Angeles"
+  }
+}
+
+resource "google_ces_guardrail" "ces_guardrail_llm_prompt_security_fail_open" {
+  guardrail_id = "guardrail-id"
+  location     = google_ces_app.ces_app_for_guardrail.location
+  app          = google_ces_app.ces_app_for_guardrail.app_id
+  display_name = "my-guardrail"
+  description  = "Guardrail description"
+  action {
+    generative_answer {
+        prompt = "example_prompt"
+    }
+  }
+  enabled = true
+  llm_prompt_security {
+    fail_open = true
   }
 }
 ```
@@ -277,7 +320,7 @@ resource "google_ces_guardrail" "ces_guardrail_llm_policy" {
   llm_policy {
     max_conversation_messages = 10
     model_settings {
-        model = "gemini-2.5-flash"
+        model = "gemini-3.0-flash-001"
         temperature = 50
     }
     prompt = "example_prompt"
@@ -358,6 +401,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_action"></a>The `action` block supports:
@@ -582,6 +631,14 @@ The following arguments are supported:
   responses that are more creative.
 
 <a name="nested_llm_prompt_security"></a>The `llm_prompt_security` block supports:
+
+* `fail_open` -
+  (Optional)
+  Determines the behavior when the guardrail encounters an LLM error.
+  - If true: the guardrail is bypassed.
+  - If false (default): the guardrail triggers/blocks.
+  Note: If a custom policy is provided, this field is ignored in favor of
+  the policy's 'failOpen' configuration.
 
 * `custom_policy` -
   (Optional)

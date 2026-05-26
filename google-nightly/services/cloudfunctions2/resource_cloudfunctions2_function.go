@@ -131,6 +131,7 @@ func ResourceCloudfunctions2function() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -434,7 +435,7 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 						"all_traffic_on_latest_revision": {
 							Type:        schema.TypeBool,
 							Optional:    true,
-							Description: `Whether 100% of traffic is routed to the latest revision. Defaults to true.`,
+							Description: `Whether 100% of traffic is routed to the latest revision. Defaults to true. When false, GCF honors the existing traffic configuration of the underlying Cloud Run service. If that configuration is set to route to LATEST (the default), the new deployment will become LATEST and intercept the traffic. To prevent traffic from shifting, you must manually pin the existing service to a specific revision name in Cloud Run before deploying.`,
 							Default:     true,
 						},
 						"available_cpu": {
@@ -681,6 +682,18 @@ timeout period. Defaults to 60 seconds.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -771,7 +784,7 @@ func resourceCloudfunctions2functionCreate(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{Cloudfunctions2BasePath}}projects/{{project}}/locations/{{location}}/functions?functionId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/functions?functionId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -854,7 +867,7 @@ func resourceCloudfunctions2functionRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{Cloudfunctions2BasePath}}projects/{{project}}/locations/{{location}}/functions/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/functions/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -887,48 +900,26 @@ func resourceCloudfunctions2functionRead(d *schema.ResourceData, meta interface{
 
 	log.Printf("[DEBUG] Finished reading Cloudfunctions2function %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading function: %s", err)
 	}
 
-	if err := d.Set("name", flattenCloudfunctions2functionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("description", flattenCloudfunctions2functionDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("environment", flattenCloudfunctions2functionEnvironment(res["environment"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("url", flattenCloudfunctions2functionUrl(res["url"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("state", flattenCloudfunctions2functionState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("build_config", flattenCloudfunctions2functionBuildConfig(res["buildConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("service_config", flattenCloudfunctions2functionServiceConfig(res["serviceConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("event_trigger", flattenCloudfunctions2functionEventTrigger(res["eventTrigger"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("update_time", flattenCloudfunctions2functionUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("labels", flattenCloudfunctions2functionLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("kms_key_name", flattenCloudfunctions2functionKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenCloudfunctions2functionTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenCloudfunctions2functionEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading function: %s", err)
+	err = ResourceCloudfunctions2functionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -959,6 +950,19 @@ func resourceCloudfunctions2functionRead(d *schema.ResourceData, meta interface{
 }
 
 func resourceCloudfunctions2functionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCloudfunctions2function().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCloudfunctions2functionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1036,7 +1040,7 @@ func resourceCloudfunctions2functionUpdate(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{Cloudfunctions2BasePath}}projects/{{project}}/locations/{{location}}/functions/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/functions/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1112,6 +1116,13 @@ func resourceCloudfunctions2functionUpdate(d *schema.ResourceData, meta interfac
 }
 
 func resourceCloudfunctions2functionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy Cloudfunctions2function without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing function %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1125,8 +1136,7 @@ func resourceCloudfunctions2functionDelete(d *schema.ResourceData, meta interfac
 		return fmt.Errorf("Error fetching project for function: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{Cloudfunctions2BasePath}}projects/{{project}}/locations/{{location}}/functions/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/functions/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2334,7 +2344,7 @@ func expandCloudfunctions2functionServiceConfig(v interface{}, d tpgresource.Ter
 	transformedAllTrafficOnLatestRevision, err := expandCloudfunctions2functionServiceConfigAllTrafficOnLatestRevision(original["all_traffic_on_latest_revision"], d, config)
 	if err != nil {
 		return nil, err
-	} else if val := reflect.ValueOf(transformedAllTrafficOnLatestRevision); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+	} else {
 		transformed["allTrafficOnLatestRevision"] = transformedAllTrafficOnLatestRevision
 	}
 
@@ -2819,4 +2829,50 @@ func resourceCloudfunctions2functionEncoder(d *schema.ResourceData, meta interfa
 	obj["buildConfig"] = build_config
 
 	return obj, nil
+}
+
+func ResourceCloudfunctions2functionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenCloudfunctions2functionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("description", flattenCloudfunctions2functionDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("environment", flattenCloudfunctions2functionEnvironment(res["environment"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("url", flattenCloudfunctions2functionUrl(res["url"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("state", flattenCloudfunctions2functionState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("build_config", flattenCloudfunctions2functionBuildConfig(res["buildConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("service_config", flattenCloudfunctions2functionServiceConfig(res["serviceConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("event_trigger", flattenCloudfunctions2functionEventTrigger(res["eventTrigger"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("update_time", flattenCloudfunctions2functionUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("labels", flattenCloudfunctions2functionLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("kms_key_name", flattenCloudfunctions2functionKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenCloudfunctions2functionTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenCloudfunctions2functionEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading function: %s", err)
+	}
+
+	return nil
 }

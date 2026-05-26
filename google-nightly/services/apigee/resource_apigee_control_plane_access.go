@@ -187,7 +187,7 @@ func resourceApigeeControlPlaneAccessCreate(d *schema.ResourceData, meta interfa
 		obj["analyticsPublisherIdentities"] = analyticsPublisherIdentitiesProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{name}}/controlPlaneAccess")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{name}}/controlPlaneAccess")
 	if err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func resourceApigeeControlPlaneAccessRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{name}}/controlPlaneAccess")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{name}}/controlPlaneAccess")
 	if err != nil {
 		return err
 	}
@@ -282,11 +282,9 @@ func resourceApigeeControlPlaneAccessRead(d *schema.ResourceData, meta interface
 
 	log.Printf("[DEBUG] Finished reading ApigeeControlPlaneAccess %q: %#v", d.Id(), res)
 
-	if err := d.Set("synchronizer_identities", flattenApigeeControlPlaneAccessSynchronizerIdentities(res["synchronizerIdentities"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ControlPlaneAccess: %s", err)
-	}
-	if err := d.Set("analytics_publisher_identities", flattenApigeeControlPlaneAccessAnalyticsPublisherIdentities(res["analyticsPublisherIdentities"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ControlPlaneAccess: %s", err)
+	err = ResourceApigeeControlPlaneAccessFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -305,6 +303,7 @@ func resourceApigeeControlPlaneAccessRead(d *schema.ResourceData, meta interface
 }
 
 func resourceApigeeControlPlaneAccessUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -337,7 +336,7 @@ func resourceApigeeControlPlaneAccessUpdate(d *schema.ResourceData, meta interfa
 		obj["analyticsPublisherIdentities"] = analyticsPublisherIdentitiesProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{name}}/controlPlaneAccess")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{name}}/controlPlaneAccess")
 	if err != nil {
 		return err
 	}
@@ -438,4 +437,17 @@ func expandApigeeControlPlaneAccessSynchronizerIdentities(v interface{}, d tpgre
 
 func expandApigeeControlPlaneAccessAnalyticsPublisherIdentities(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceApigeeControlPlaneAccessFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("synchronizer_identities", flattenApigeeControlPlaneAccessSynchronizerIdentities(res["synchronizerIdentities"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ControlPlaneAccess: %s", err)
+	}
+	if err = d.Set("analytics_publisher_identities", flattenApigeeControlPlaneAccessAnalyticsPublisherIdentities(res["analyticsPublisherIdentities"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ControlPlaneAccess: %s", err)
+	}
+
+	return nil
 }

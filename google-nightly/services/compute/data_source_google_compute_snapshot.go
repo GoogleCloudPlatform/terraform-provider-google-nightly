@@ -21,6 +21,7 @@ import (
 	"sort"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
+	rmClient "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager/client"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -72,7 +73,7 @@ func dataSourceGoogleComputeSnapshotRead(d *schema.ResourceData, meta interface{
 			return err
 		}
 
-		projectGetCall := config.NewResourceManagerClient(userAgent).Projects.Get(project)
+		projectGetCall := rmClient.NewClient(config, userAgent).Projects.Get(project)
 
 		if config.UserProjectOverride {
 			billingProject := project
@@ -88,7 +89,7 @@ func dataSourceGoogleComputeSnapshotRead(d *schema.ResourceData, meta interface{
 		allSnapshots := make([]*compute.Snapshot, 0)
 		token := ""
 		for paginate := true; paginate; {
-			snapshots, err := config.NewComputeClient(userAgent).Snapshots.List(project).Filter(v.(string)).PageToken(token).Do()
+			snapshots, err := NewClient(config, userAgent).Snapshots.List(project).Filter(v.(string)).PageToken(token).Do()
 			if err != nil {
 				return fmt.Errorf("error retrieving list of snapshots: %s", err)
 

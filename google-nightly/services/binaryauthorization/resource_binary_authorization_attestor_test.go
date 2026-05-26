@@ -21,6 +21,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/binaryauthorization"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/containeranalysis"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"testing"
 )
 
@@ -113,7 +115,7 @@ func TestAccBinaryAuthorizationAttestor_full(t *testing.T) {
 func TestAccBinaryAuthorizationAttestor_kms(t *testing.T) {
 	t.Parallel()
 
-	kms := acctest.BootstrapKMSKeyWithPurpose(t, "ASYMMETRIC_SIGN")
+	bootstrapped := kms.BootstrapKMSKeyWithPurpose(t, "ASYMMETRIC_SIGN")
 	attestorName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -122,7 +124,7 @@ func TestAccBinaryAuthorizationAttestor_kms(t *testing.T) {
 		CheckDestroy:             testAccCheckBinaryAuthorizationAttestorDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccBinaryAuthorizationAttestorKms(attestorName, kms.CryptoKey.Name),
+				Config: testAccBinaryAuthorizationAttestorKms(attestorName, bootstrapped.CryptoKey.Name),
 			},
 			{
 				ResourceName:      "google_binary_authorization_attestor.attestor",

@@ -31,6 +31,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamconnectors"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -49,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = iamconnectors.Product
 )
 
 func TestAccIamConnectorsConnector_iamConnectorsConnectorBasicExample(t *testing.T) {
@@ -57,7 +59,7 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorBasicExample(t *testing
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"connector":     "connector" + randomSuffix,
+		"connector":     "tf-test-connector" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
 
@@ -110,7 +112,7 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorGeminiEnterpriseExample
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"connector":     "connector" + randomSuffix,
+		"connector":     "tf-test-connector" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
 
@@ -163,7 +165,7 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorThreeLeggedExample(t *t
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"connector":     "connector" + randomSuffix,
+		"connector":     "tf-test-connector" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
 
@@ -222,7 +224,7 @@ func TestAccIamConnectorsConnector_iamConnectorsConnectorTwoLeggedExample(t *tes
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"connector":     "connector" + randomSuffix,
+		"connector":     "tf-test-connector" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
 

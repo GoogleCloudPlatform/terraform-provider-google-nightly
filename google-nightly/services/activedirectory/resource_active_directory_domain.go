@@ -116,6 +116,7 @@ func ResourceActiveDirectoryDomain() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -230,6 +231,18 @@ When the field is set to false, deleting the domain is allowed.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -274,7 +287,7 @@ func resourceActiveDirectoryDomainCreate(d *schema.ResourceData, meta interface{
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ActiveDirectoryBasePath}}projects/{{project}}/locations/global/domains?domainName={{domain_name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/domains?domainName={{domain_name}}")
 	if err != nil {
 		return err
 	}
@@ -368,7 +381,7 @@ func resourceActiveDirectoryDomainRead(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ActiveDirectoryBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -408,36 +421,25 @@ func resourceActiveDirectoryDomainRead(d *schema.ResourceData, meta interface{})
 			return fmt.Errorf("Error setting deletion_protection: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Domain: %s", err)
 	}
 
-	if err := d.Set("name", flattenActiveDirectoryDomainName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Domain: %s", err)
-	}
-	if err := d.Set("labels", flattenActiveDirectoryDomainLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Domain: %s", err)
-	}
-	if err := d.Set("authorized_networks", flattenActiveDirectoryDomainAuthorizedNetworks(res["authorizedNetworks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Domain: %s", err)
-	}
-	if err := d.Set("reserved_ip_range", flattenActiveDirectoryDomainReservedIpRange(res["reservedIpRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Domain: %s", err)
-	}
-	if err := d.Set("locations", flattenActiveDirectoryDomainLocations(res["locations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Domain: %s", err)
-	}
-	if err := d.Set("admin", flattenActiveDirectoryDomainAdmin(res["admin"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Domain: %s", err)
-	}
-	if err := d.Set("fqdn", flattenActiveDirectoryDomainFqdn(res["fqdn"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Domain: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenActiveDirectoryDomainTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Domain: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenActiveDirectoryDomainEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Domain: %s", err)
+	err = ResourceActiveDirectoryDomainFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -462,6 +464,19 @@ func resourceActiveDirectoryDomainRead(d *schema.ResourceData, meta interface{})
 }
 
 func resourceActiveDirectoryDomainUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceActiveDirectoryDomain().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceActiveDirectoryDomainRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -511,7 +526,7 @@ func resourceActiveDirectoryDomainUpdate(d *schema.ResourceData, meta interface{
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ActiveDirectoryBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -576,6 +591,13 @@ func resourceActiveDirectoryDomainUpdate(d *schema.ResourceData, meta interface{
 }
 
 func resourceActiveDirectoryDomainDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ActiveDirectoryDomain without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Domain %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -589,8 +611,7 @@ func resourceActiveDirectoryDomainDelete(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error fetching project for Domain: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ActiveDirectoryBasePath}}projects/{{project}}/locations/global/domains/{{domain_name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/domains/{{domain_name}}")
 	if err != nil {
 		return err
 	}
@@ -734,4 +755,38 @@ func expandActiveDirectoryDomainEffectiveLabels(v interface{}, d tpgresource.Ter
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceActiveDirectoryDomainFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenActiveDirectoryDomainName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Domain: %s", err)
+	}
+	if err = d.Set("labels", flattenActiveDirectoryDomainLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Domain: %s", err)
+	}
+	if err = d.Set("authorized_networks", flattenActiveDirectoryDomainAuthorizedNetworks(res["authorizedNetworks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Domain: %s", err)
+	}
+	if err = d.Set("reserved_ip_range", flattenActiveDirectoryDomainReservedIpRange(res["reservedIpRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Domain: %s", err)
+	}
+	if err = d.Set("locations", flattenActiveDirectoryDomainLocations(res["locations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Domain: %s", err)
+	}
+	if err = d.Set("admin", flattenActiveDirectoryDomainAdmin(res["admin"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Domain: %s", err)
+	}
+	if err = d.Set("fqdn", flattenActiveDirectoryDomainFqdn(res["fqdn"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Domain: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenActiveDirectoryDomainTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Domain: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenActiveDirectoryDomainEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Domain: %s", err)
+	}
+
+	return nil
 }

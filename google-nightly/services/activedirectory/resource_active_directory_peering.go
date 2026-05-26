@@ -112,6 +112,7 @@ func ResourceActiveDirectoryPeering() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -195,6 +196,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -233,7 +246,7 @@ func resourceActiveDirectoryPeeringCreate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ActiveDirectoryBasePath}}projects/{{project}}/locations/global/peerings?peeringId={{peering_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/peerings?peeringId={{peering_id}}")
 	if err != nil {
 		return err
 	}
@@ -326,7 +339,7 @@ func resourceActiveDirectoryPeeringRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ActiveDirectoryBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -359,27 +372,26 @@ func resourceActiveDirectoryPeeringRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading ActiveDirectoryPeering %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Peering: %s", err)
 	}
 
-	if err := d.Set("name", flattenActiveDirectoryPeeringName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Peering: %s", err)
-	}
-	if err := d.Set("labels", flattenActiveDirectoryPeeringLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Peering: %s", err)
-	}
-	if err := d.Set("authorized_network", flattenActiveDirectoryPeeringAuthorizedNetwork(res["authorizedNetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Peering: %s", err)
-	}
-	if err := d.Set("domain_resource", flattenActiveDirectoryPeeringDomainResource(res["domainResource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Peering: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenActiveDirectoryPeeringTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Peering: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenActiveDirectoryPeeringEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Peering: %s", err)
+	err = ResourceActiveDirectoryPeeringFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -404,6 +416,19 @@ func resourceActiveDirectoryPeeringRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceActiveDirectoryPeeringUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceActiveDirectoryPeering().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceActiveDirectoryPeeringRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -447,7 +472,7 @@ func resourceActiveDirectoryPeeringUpdate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ActiveDirectoryBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -489,6 +514,13 @@ func resourceActiveDirectoryPeeringUpdate(d *schema.ResourceData, meta interface
 }
 
 func resourceActiveDirectoryPeeringDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ActiveDirectoryPeering without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Peering %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -502,8 +534,7 @@ func resourceActiveDirectoryPeeringDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for Peering: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ActiveDirectoryBasePath}}projects/{{project}}/locations/global/peerings/{{peering_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/global/peerings/{{peering_id}}")
 	if err != nil {
 		return err
 	}
@@ -611,4 +642,29 @@ func expandActiveDirectoryPeeringEffectiveLabels(v interface{}, d tpgresource.Te
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceActiveDirectoryPeeringFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenActiveDirectoryPeeringName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Peering: %s", err)
+	}
+	if err = d.Set("labels", flattenActiveDirectoryPeeringLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Peering: %s", err)
+	}
+	if err = d.Set("authorized_network", flattenActiveDirectoryPeeringAuthorizedNetwork(res["authorizedNetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Peering: %s", err)
+	}
+	if err = d.Set("domain_resource", flattenActiveDirectoryPeeringDomainResource(res["domainResource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Peering: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenActiveDirectoryPeeringTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Peering: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenActiveDirectoryPeeringEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Peering: %s", err)
+	}
+
+	return nil
 }

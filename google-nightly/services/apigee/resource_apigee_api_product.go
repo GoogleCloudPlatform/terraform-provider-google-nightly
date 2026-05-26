@@ -312,6 +312,19 @@ For example, a quota of 50, for a quotaInterval of 12 and a quotaTimeUnit of hou
 				Computed:    true,
 				Description: `Response only. Modified time of this environment as milliseconds since epoch.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -701,7 +714,7 @@ func resourceApigeeApiProductCreate(d *schema.ResourceData, meta interface{}) er
 		obj["space"] = spaceProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/apiproducts")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/apiproducts")
 	if err != nil {
 		return err
 	}
@@ -764,7 +777,7 @@ func resourceApigeeApiProductRead(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/apiproducts/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/apiproducts/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -791,62 +804,23 @@ func resourceApigeeApiProductRead(d *schema.ResourceData, meta interface{}) erro
 
 	log.Printf("[DEBUG] Finished reading ApigeeApiProduct %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenApigeeApiProductName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("display_name", flattenApigeeApiProductDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("description", flattenApigeeApiProductDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("approval_type", flattenApigeeApiProductApprovalType(res["approvalType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("attributes", flattenApigeeApiProductAttributes(res["attributes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("api_resources", flattenApigeeApiProductApiResources(res["apiResources"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("environments", flattenApigeeApiProductEnvironments(res["environments"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("proxies", flattenApigeeApiProductProxies(res["proxies"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("scopes", flattenApigeeApiProductScopes(res["scopes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("quota", flattenApigeeApiProductQuota(res["quota"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("quota_interval", flattenApigeeApiProductQuotaInterval(res["quotaInterval"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("quota_time_unit", flattenApigeeApiProductQuotaTimeUnit(res["quotaTimeUnit"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("created_at", flattenApigeeApiProductCreatedAt(res["createdAt"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("last_modified_at", flattenApigeeApiProductLastModifiedAt(res["lastModifiedAt"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("operation_group", flattenApigeeApiProductOperationGroup(res["operationGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("graphql_operation_group", flattenApigeeApiProductGraphqlOperationGroup(res["graphqlOperationGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("grpc_operation_group", flattenApigeeApiProductGrpcOperationGroup(res["grpcOperationGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("quota_counter_scope", flattenApigeeApiProductQuotaCounterScope(res["quotaCounterScope"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
-	}
-	if err := d.Set("space", flattenApigeeApiProductSpace(res["space"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ApiProduct: %s", err)
+
+	err = ResourceApigeeApiProductFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -871,6 +845,19 @@ func resourceApigeeApiProductRead(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceApigeeApiProductUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceApigeeApiProduct().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceApigeeApiProductRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -998,7 +985,7 @@ func resourceApigeeApiProductUpdate(d *schema.ResourceData, meta interface{}) er
 		obj["space"] = spaceProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/apiproducts/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/apiproducts/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1032,6 +1019,13 @@ func resourceApigeeApiProductUpdate(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceApigeeApiProductDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ApigeeApiProduct without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ApiProduct %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1040,7 +1034,7 @@ func resourceApigeeApiProductDelete(d *schema.ResourceData, meta interface{}) er
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/apiproducts/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/apiproducts/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2304,4 +2298,68 @@ func expandApigeeApiProductQuotaCounterScope(v interface{}, d tpgresource.Terraf
 
 func expandApigeeApiProductSpace(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceApigeeApiProductFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenApigeeApiProductName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("display_name", flattenApigeeApiProductDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("description", flattenApigeeApiProductDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("approval_type", flattenApigeeApiProductApprovalType(res["approvalType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("attributes", flattenApigeeApiProductAttributes(res["attributes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("api_resources", flattenApigeeApiProductApiResources(res["apiResources"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("environments", flattenApigeeApiProductEnvironments(res["environments"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("proxies", flattenApigeeApiProductProxies(res["proxies"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("scopes", flattenApigeeApiProductScopes(res["scopes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("quota", flattenApigeeApiProductQuota(res["quota"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("quota_interval", flattenApigeeApiProductQuotaInterval(res["quotaInterval"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("quota_time_unit", flattenApigeeApiProductQuotaTimeUnit(res["quotaTimeUnit"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("created_at", flattenApigeeApiProductCreatedAt(res["createdAt"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("last_modified_at", flattenApigeeApiProductLastModifiedAt(res["lastModifiedAt"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("operation_group", flattenApigeeApiProductOperationGroup(res["operationGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("graphql_operation_group", flattenApigeeApiProductGraphqlOperationGroup(res["graphqlOperationGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("grpc_operation_group", flattenApigeeApiProductGrpcOperationGroup(res["grpcOperationGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("quota_counter_scope", flattenApigeeApiProductQuotaCounterScope(res["quotaCounterScope"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+	if err = d.Set("space", flattenApigeeApiProductSpace(res["space"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ApiProduct: %s", err)
+	}
+
+	return nil
 }

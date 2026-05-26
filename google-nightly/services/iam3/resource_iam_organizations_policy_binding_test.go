@@ -23,6 +23,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iam3"
 )
 
 func TestAccIAM3OrganizationsPolicyBinding_iam3OrganizationsPolicyBindingExample_update(t *testing.T) {

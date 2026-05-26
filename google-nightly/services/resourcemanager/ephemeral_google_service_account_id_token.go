@@ -30,11 +30,21 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwutils"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwvalidators"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
+	iamcredentials_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamcredentials"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"google.golang.org/api/iamcredentials/v1"
 )
 
 var _ ephemeral.EphemeralResource = &googleEphemeralServiceAccountIdToken{}
+
+func init() {
+	registry.FrameworkEphemeralResource{
+		Name:        "google_service_account_id_token",
+		ProductName: "resourcemanager",
+		Func:        GoogleEphemeralServiceAccountIdToken,
+	}.Register()
+}
 
 func GoogleEphemeralServiceAccountIdToken() ephemeral.EphemeralResource {
 	return &googleEphemeralServiceAccountIdToken{}
@@ -131,7 +141,7 @@ func (p *googleEphemeralServiceAccountIdToken) Open(ctx context.Context, req eph
 	targetServiceAccount := data.TargetServiceAccount
 	// If a target service account is provided, use the API to generate the idToken
 	if !targetServiceAccount.IsNull() && !targetServiceAccount.IsUnknown() {
-		service := p.providerConfig.NewIamCredentialsClient(p.providerConfig.UserAgent)
+		service := iamcredentials_tpg.NewClient(p.providerConfig, p.providerConfig.UserAgent)
 		name := fmt.Sprintf("projects/-/serviceAccounts/%s", targetServiceAccount.ValueString())
 
 		tokenRequest := &iamcredentials.GenerateIdTokenRequest{

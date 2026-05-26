@@ -21,6 +21,8 @@ fields:
       provider_only: true
     - api_field: exadataInfrastructure
     - api_field: gcpOracleZone
+    - api_field: identityConnector.connectionState
+    - api_field: identityConnector.serviceAgentEmail
     - api_field: labels
     - field: location
       provider_only: true
@@ -64,4 +66,6 @@ fields:
     - api_field: properties.timeZone.id
     - api_field: properties.timeZone.version
     - field: terraform_labels
+      provider_only: true
+    - field: deletion_policy
       provider_only: true

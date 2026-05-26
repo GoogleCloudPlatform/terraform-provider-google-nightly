@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = secretmanager.Product
 )
 
 func TestAccSecretManagerSecret_secretConfigBasicExample(t *testing.T) {
@@ -220,7 +223,7 @@ func TestAccSecretManagerSecret_secretWithAutomaticCmekExample(t *testing.T) {
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"kms_key_name":  acctest.BootstrapKMSKey(t).CryptoKey.Name,
+		"kms_key_name":  kms.BootstrapKMSKey(t).CryptoKey.Name,
 		"secret_id":     "secret" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
@@ -286,8 +289,7 @@ func testAccCheckSecretManagerSecretDestroyProducer(t *testing.T) func(s *terraf
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{SecretManagerBasePath}}projects/{{project}}/secrets/{{secret_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(secretmanager.Product, config)+"projects/{{project}}/secrets/{{secret_id}}")
 			if err != nil {
 				return err
 			}

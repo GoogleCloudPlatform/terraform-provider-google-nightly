@@ -306,7 +306,7 @@ func resourceStorageControlOrganizationIntelligenceConfigCreate(d *schema.Resour
 		obj["filter"] = filterProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageControlBasePath}}organizations/{{name}}/locations/global/intelligenceConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{name}}/locations/global/intelligenceConfig")
 	if err != nil {
 		return err
 	}
@@ -375,7 +375,7 @@ func resourceStorageControlOrganizationIntelligenceConfigRead(d *schema.Resource
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageControlBasePath}}organizations/{{name}}/locations/global/intelligenceConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{name}}/locations/global/intelligenceConfig")
 	if err != nil {
 		return err
 	}
@@ -402,20 +402,9 @@ func resourceStorageControlOrganizationIntelligenceConfigRead(d *schema.Resource
 
 	log.Printf("[DEBUG] Finished reading StorageControlOrganizationIntelligenceConfig %q: %#v", d.Id(), res)
 
-	if err := d.Set("edition_config", flattenStorageControlOrganizationIntelligenceConfigEditionConfig(res["editionConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
-	}
-	if err := d.Set("update_time", flattenStorageControlOrganizationIntelligenceConfigUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
-	}
-	if err := d.Set("filter", flattenStorageControlOrganizationIntelligenceConfigFilter(res["filter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
-	}
-	if err := d.Set("effective_intelligence_config", flattenStorageControlOrganizationIntelligenceConfigEffectiveIntelligenceConfig(res["effectiveIntelligenceConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
-	}
-	if err := d.Set("trial_config", flattenStorageControlOrganizationIntelligenceConfigTrialConfig(res["trialConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
+	err = ResourceStorageControlOrganizationIntelligenceConfigFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -434,6 +423,7 @@ func resourceStorageControlOrganizationIntelligenceConfigRead(d *schema.Resource
 }
 
 func resourceStorageControlOrganizationIntelligenceConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -466,7 +456,7 @@ func resourceStorageControlOrganizationIntelligenceConfigUpdate(d *schema.Resour
 		obj["filter"] = filterProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageControlBasePath}}organizations/{{name}}/locations/global/intelligenceConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{name}}/locations/global/intelligenceConfig")
 	if err != nil {
 		return err
 	}
@@ -834,4 +824,26 @@ func expandStorageControlOrganizationIntelligenceConfigFilterIncludedCloudStorag
 
 func expandStorageControlOrganizationIntelligenceConfigFilterIncludedCloudStorageLocationsLocations(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceStorageControlOrganizationIntelligenceConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("edition_config", flattenStorageControlOrganizationIntelligenceConfigEditionConfig(res["editionConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
+	}
+	if err = d.Set("update_time", flattenStorageControlOrganizationIntelligenceConfigUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
+	}
+	if err = d.Set("filter", flattenStorageControlOrganizationIntelligenceConfigFilter(res["filter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
+	}
+	if err = d.Set("effective_intelligence_config", flattenStorageControlOrganizationIntelligenceConfigEffectiveIntelligenceConfig(res["effectiveIntelligenceConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
+	}
+	if err = d.Set("trial_config", flattenStorageControlOrganizationIntelligenceConfigTrialConfig(res["trialConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationIntelligenceConfig: %s", err)
+	}
+
+	return nil
 }

@@ -115,6 +115,7 @@ func ResourceDialogflowCXAgent() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -550,6 +551,18 @@ The ID of the implicitly created engine is stored in the 'genAppBuilderSettings'
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -684,7 +697,7 @@ func resourceDialogflowCXAgentCreate(d *schema.ResourceData, meta interface{}) e
 		obj["clientCertificateSettings"] = clientCertificateSettingsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}projects/{{project}}/locations/{{location}}/agents")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/agents")
 	if err != nil {
 		return err
 	}
@@ -764,7 +777,7 @@ func resourceDialogflowCXAgentRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}projects/{{project}}/locations/{{location}}/agents/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/agents/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -803,72 +816,25 @@ func resourceDialogflowCXAgentRead(d *schema.ResourceData, meta interface{}) err
 			return fmt.Errorf("Error setting delete_chat_engine_on_destroy: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Agent: %s", err)
 	}
 
-	if err := d.Set("name", flattenDialogflowCXAgentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("display_name", flattenDialogflowCXAgentDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("default_language_code", flattenDialogflowCXAgentDefaultLanguageCode(res["defaultLanguageCode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("supported_language_codes", flattenDialogflowCXAgentSupportedLanguageCodes(res["supportedLanguageCodes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("time_zone", flattenDialogflowCXAgentTimeZone(res["timeZone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("description", flattenDialogflowCXAgentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("avatar_uri", flattenDialogflowCXAgentAvatarUri(res["avatarUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("speech_to_text_settings", flattenDialogflowCXAgentSpeechToTextSettings(res["speechToTextSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("start_flow", flattenDialogflowCXAgentStartFlow(res["startFlow"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("security_settings", flattenDialogflowCXAgentSecuritySettings(res["securitySettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("enable_spell_correction", flattenDialogflowCXAgentEnableSpellCorrection(res["enableSpellCorrection"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("advanced_settings", flattenDialogflowCXAgentAdvancedSettings(res["advancedSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("git_integration_settings", flattenDialogflowCXAgentGitIntegrationSettings(res["gitIntegrationSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("text_to_speech_settings", flattenDialogflowCXAgentTextToSpeechSettings(res["textToSpeechSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("gen_app_builder_settings", flattenDialogflowCXAgentGenAppBuilderSettings(res["genAppBuilderSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("enable_multi_language_training", flattenDialogflowCXAgentEnableMultiLanguageTraining(res["enableMultiLanguageTraining"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("locked", flattenDialogflowCXAgentLocked(res["locked"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("satisfies_pzs", flattenDialogflowCXAgentSatisfiesPzs(res["satisfiesPzs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("satisfies_pzi", flattenDialogflowCXAgentSatisfiesPzi(res["satisfiesPzi"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("personalization_settings", flattenDialogflowCXAgentPersonalizationSettings(res["personalizationSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
-	}
-	if err := d.Set("client_certificate_settings", flattenDialogflowCXAgentClientCertificateSettings(res["clientCertificateSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Agent: %s", err)
+	err = ResourceDialogflowCXAgentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -899,6 +865,19 @@ func resourceDialogflowCXAgentRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceDialogflowCXAgentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDialogflowCXAgent().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDialogflowCXAgentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1049,7 +1028,7 @@ func resourceDialogflowCXAgentUpdate(d *schema.ResourceData, meta interface{}) e
 		obj["clientCertificateSettings"] = clientCertificateSettingsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}projects/{{project}}/locations/{{location}}/agents/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/agents/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1170,6 +1149,13 @@ func resourceDialogflowCXAgentUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceDialogflowCXAgentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DialogflowCXAgent without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Agent %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1183,8 +1169,7 @@ func resourceDialogflowCXAgentDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for Agent: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DialogflowCXBasePath}}projects/{{project}}/locations/{{location}}/agents/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/agents/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2216,5 +2201,75 @@ func resourceDialogflowCXAgentPostCreateSetComputedFields(d *schema.ResourceData
 	if err := d.Set("name", flattenDialogflowCXAgentName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceDialogflowCXAgentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDialogflowCXAgentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("display_name", flattenDialogflowCXAgentDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("default_language_code", flattenDialogflowCXAgentDefaultLanguageCode(res["defaultLanguageCode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("supported_language_codes", flattenDialogflowCXAgentSupportedLanguageCodes(res["supportedLanguageCodes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("time_zone", flattenDialogflowCXAgentTimeZone(res["timeZone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("description", flattenDialogflowCXAgentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("avatar_uri", flattenDialogflowCXAgentAvatarUri(res["avatarUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("speech_to_text_settings", flattenDialogflowCXAgentSpeechToTextSettings(res["speechToTextSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("start_flow", flattenDialogflowCXAgentStartFlow(res["startFlow"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("security_settings", flattenDialogflowCXAgentSecuritySettings(res["securitySettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("enable_spell_correction", flattenDialogflowCXAgentEnableSpellCorrection(res["enableSpellCorrection"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("advanced_settings", flattenDialogflowCXAgentAdvancedSettings(res["advancedSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("git_integration_settings", flattenDialogflowCXAgentGitIntegrationSettings(res["gitIntegrationSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("text_to_speech_settings", flattenDialogflowCXAgentTextToSpeechSettings(res["textToSpeechSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("gen_app_builder_settings", flattenDialogflowCXAgentGenAppBuilderSettings(res["genAppBuilderSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("enable_multi_language_training", flattenDialogflowCXAgentEnableMultiLanguageTraining(res["enableMultiLanguageTraining"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("locked", flattenDialogflowCXAgentLocked(res["locked"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("satisfies_pzs", flattenDialogflowCXAgentSatisfiesPzs(res["satisfiesPzs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("satisfies_pzi", flattenDialogflowCXAgentSatisfiesPzi(res["satisfiesPzi"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("personalization_settings", flattenDialogflowCXAgentPersonalizationSettings(res["personalizationSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+	if err = d.Set("client_certificate_settings", flattenDialogflowCXAgentClientCertificateSettings(res["clientCertificateSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Agent: %s", err)
+	}
+
 	return nil
 }

@@ -225,6 +225,19 @@ This can be used e.g. in UIs which allow to enter the expression.`,
 				Computed:    true,
 				Description: `The hash of the resource. Used internally during updates.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -257,7 +270,7 @@ func resourceIAM2AccessBoundaryPolicyCreate(d *schema.ResourceData, meta interfa
 		obj["rules"] = rulesProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAM2BasePath}}policies/{{parent}}/accessboundarypolicies?policyId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"policies/{{parent}}/accessboundarypolicies?policyId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -330,7 +343,7 @@ func resourceIAM2AccessBoundaryPolicyRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAM2BasePath}}policies/{{parent}}/accessboundarypolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"policies/{{parent}}/accessboundarypolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -357,14 +370,23 @@ func resourceIAM2AccessBoundaryPolicyRead(d *schema.ResourceData, meta interface
 
 	log.Printf("[DEBUG] Finished reading IAM2AccessBoundaryPolicy %q: %#v", d.Id(), res)
 
-	if err := d.Set("display_name", flattenIAM2AccessBoundaryPolicyDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessBoundaryPolicy: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("etag", flattenIAM2AccessBoundaryPolicyEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessBoundaryPolicy: %s", err)
-	}
-	if err := d.Set("rules", flattenIAM2AccessBoundaryPolicyRules(res["rules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessBoundaryPolicy: %s", err)
+
+	err = ResourceIAM2AccessBoundaryPolicyFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -389,6 +411,19 @@ func resourceIAM2AccessBoundaryPolicyRead(d *schema.ResourceData, meta interface
 }
 
 func resourceIAM2AccessBoundaryPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceIAM2AccessBoundaryPolicy().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceIAM2AccessBoundaryPolicyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -432,7 +467,7 @@ func resourceIAM2AccessBoundaryPolicyUpdate(d *schema.ResourceData, meta interfa
 		obj["rules"] = rulesProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAM2BasePath}}policies/{{parent}}/accessboundarypolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"policies/{{parent}}/accessboundarypolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -474,6 +509,13 @@ func resourceIAM2AccessBoundaryPolicyUpdate(d *schema.ResourceData, meta interfa
 }
 
 func resourceIAM2AccessBoundaryPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy IAM2AccessBoundaryPolicy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing AccessBoundaryPolicy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -482,7 +524,7 @@ func resourceIAM2AccessBoundaryPolicyDelete(d *schema.ResourceData, meta interfa
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAM2BasePath}}policies/{{parent}}/accessboundarypolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"policies/{{parent}}/accessboundarypolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -777,4 +819,20 @@ func expandIAM2AccessBoundaryPolicyRulesAccessBoundaryRuleAvailabilityConditionD
 
 func expandIAM2AccessBoundaryPolicyRulesAccessBoundaryRuleAvailabilityConditionLocation(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceIAM2AccessBoundaryPolicyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("display_name", flattenIAM2AccessBoundaryPolicyDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessBoundaryPolicy: %s", err)
+	}
+	if err = d.Set("etag", flattenIAM2AccessBoundaryPolicyEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessBoundaryPolicy: %s", err)
+	}
+	if err = d.Set("rules", flattenIAM2AccessBoundaryPolicyRules(res["rules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessBoundaryPolicy: %s", err)
+	}
+
+	return nil
 }

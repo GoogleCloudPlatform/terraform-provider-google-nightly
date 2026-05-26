@@ -55,9 +55,16 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
-import "net/url"
+import (
+	"net/url"
 
-var _ = url.Parse
+	rmClient "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager/client"
+)
+
+var (
+	_ = url.Parse
+	_ = rmClient.NewClient
+)
 
 var (
 	_ = bytes.Clone
@@ -119,6 +126,7 @@ func ResourceComputeReservation() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Schema: map[string]*schema.Schema{
@@ -601,6 +609,18 @@ reservations that are tied to a commitment.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -675,7 +695,7 @@ func resourceComputeReservationCreate(d *schema.ResourceData, meta interface{}) 
 		obj["zone"] = zoneProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/reservations")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/reservations")
 	if err != nil {
 		return err
 	}
@@ -738,7 +758,7 @@ func resourceComputeReservationRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/reservations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/reservations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -809,66 +829,44 @@ func resourceComputeReservationRead(d *schema.ResourceData, meta interface{}) er
 	}
 
 	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Reservation: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeReservationCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("description", flattenComputeReservationDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("name", flattenComputeReservationName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("commitment", flattenComputeReservationCommitment(res["commitment"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("specific_reservation_required", flattenComputeReservationSpecificReservationRequired(res["specificReservationRequired"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("status", flattenComputeReservationStatus(res["status"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("specific_reservation", flattenComputeReservationSpecificReservation(res["specificReservation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("delete_at_time", flattenComputeReservationDeleteAtTime(res["deleteAtTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("reservation_sharing_policy", flattenComputeReservationReservationSharingPolicy(res["reservationSharingPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("reservation_block_count", flattenComputeReservationReservationBlockCount(res["reservationBlockCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("kind", flattenComputeReservationKind(res["kind"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("id", flattenComputeReservationId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("linked_commitments", flattenComputeReservationLinkedCommitments(res["linkedCommitments"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("satisfies_pzs", flattenComputeReservationSatisfiesPzs(res["satisfiesPzs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("resource_status", flattenComputeReservationResourceStatus(res["resourceStatus"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("zone", flattenComputeReservationZone(res["zone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
+	err = ResourceComputeReservationFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceComputeReservationUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeReservation().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeReservationRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -908,7 +906,7 @@ func resourceComputeReservationUpdate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/reservations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/reservations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -995,7 +993,7 @@ func resourceComputeReservationUpdate(d *schema.ResourceData, meta interface{}) 
 			return err
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/reservations/{{name}}/resize")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/reservations/{{name}}/resize")
 		if err != nil {
 			return err
 		}
@@ -1048,6 +1046,13 @@ func resourceComputeReservationUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceComputeReservationDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeReservation without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Reservation %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1061,8 +1066,7 @@ func resourceComputeReservationDelete(d *schema.ResourceData, meta interface{}) 
 		return fmt.Errorf("Error fetching project for Reservation: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/reservations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/reservations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2205,7 +2209,7 @@ func resourceComputeReservationUpdateEncoder(d *schema.ResourceData, meta interf
 			// convert id to number.
 			if err != nil {
 				config := meta.(*transport_tpg.Config)
-				project, err := config.NewResourceManagerClient(config.UserAgent).Projects.Get(projectId).Do()
+				project, err := rmClient.NewClient(config, config.UserAgent).Projects.Get(projectId).Do()
 				if err != nil {
 					return nil, fmt.Errorf("Invalid value for projectId: %s", err)
 				}
@@ -2233,4 +2237,61 @@ func resourceComputeReservationUpdateEncoder(d *schema.ResourceData, meta interf
 	}
 
 	return newObj, nil
+}
+
+func ResourceComputeReservationFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeReservationCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("description", flattenComputeReservationDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("name", flattenComputeReservationName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("commitment", flattenComputeReservationCommitment(res["commitment"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("specific_reservation_required", flattenComputeReservationSpecificReservationRequired(res["specificReservationRequired"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("status", flattenComputeReservationStatus(res["status"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("specific_reservation", flattenComputeReservationSpecificReservation(res["specificReservation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("delete_at_time", flattenComputeReservationDeleteAtTime(res["deleteAtTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("reservation_sharing_policy", flattenComputeReservationReservationSharingPolicy(res["reservationSharingPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("reservation_block_count", flattenComputeReservationReservationBlockCount(res["reservationBlockCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("kind", flattenComputeReservationKind(res["kind"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("id", flattenComputeReservationId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("linked_commitments", flattenComputeReservationLinkedCommitments(res["linkedCommitments"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("satisfies_pzs", flattenComputeReservationSatisfiesPzs(res["satisfiesPzs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("resource_status", flattenComputeReservationResourceStatus(res["resourceStatus"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("zone", flattenComputeReservationZone(res["zone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	return nil
 }

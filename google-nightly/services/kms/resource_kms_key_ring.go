@@ -189,7 +189,7 @@ func resourceKMSKeyRingCreate(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}projects/{{project}}/locations/{{location}}/keyRings?keyRingId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/keyRings?keyRingId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -263,7 +263,7 @@ func resourceKMSKeyRingRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}projects/{{project}}/locations/{{location}}/keyRings/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/keyRings/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -312,8 +312,9 @@ func resourceKMSKeyRingRead(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Error reading KeyRing: %s", err)
 	}
 
-	if err := d.Set("name", flattenKMSKeyRingName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading KeyRing: %s", err)
+	err = ResourceKMSKeyRingFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -398,4 +399,14 @@ func resourceKMSKeyRingDecoder(d *schema.ResourceData, meta interface{}, res map
 		res["name"] = v.(string)
 	}
 	return res, nil
+}
+
+func ResourceKMSKeyRingFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenKMSKeyRingName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading KeyRing: %s", err)
+	}
+
+	return nil
 }

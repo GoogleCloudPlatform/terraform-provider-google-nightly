@@ -116,6 +116,7 @@ func ResourceNetworkConnectivitySpoke() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -558,6 +559,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -638,7 +651,7 @@ func resourceNetworkConnectivitySpokeCreate(d *schema.ResourceData, meta interfa
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/spokes?spokeId={{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/spokes?spokeId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -722,7 +735,7 @@ func resourceNetworkConnectivitySpokeRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/spokes/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/spokes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -755,63 +768,26 @@ func resourceNetworkConnectivitySpokeRead(d *schema.ResourceData, meta interface
 
 	log.Printf("[DEBUG] Finished reading NetworkConnectivitySpoke %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Spoke: %s", err)
 	}
 
-	if err := d.Set("name", flattenNetworkConnectivitySpokeName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetworkConnectivitySpokeCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkConnectivitySpokeUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkConnectivitySpokeLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkConnectivitySpokeDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("hub", flattenNetworkConnectivitySpokeHub(res["hub"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("group", flattenNetworkConnectivitySpokeGroup(res["group"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("linked_vpn_tunnels", flattenNetworkConnectivitySpokeLinkedVpnTunnels(res["linkedVpnTunnels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("linked_interconnect_attachments", flattenNetworkConnectivitySpokeLinkedInterconnectAttachments(res["linkedInterconnectAttachments"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("linked_router_appliance_instances", flattenNetworkConnectivitySpokeLinkedRouterApplianceInstances(res["linkedRouterApplianceInstances"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("linked_vpc_network", flattenNetworkConnectivitySpokeLinkedVpcNetwork(res["linkedVpcNetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("linked_producer_vpc_network", flattenNetworkConnectivitySpokeLinkedProducerVpcNetwork(res["linkedProducerVpcNetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("gateway", flattenNetworkConnectivitySpokeGateway(res["gateway"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("unique_id", flattenNetworkConnectivitySpokeUniqueId(res["uniqueId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("state", flattenNetworkConnectivitySpokeState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("reasons", flattenNetworkConnectivitySpokeReasons(res["reasons"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkConnectivitySpokeTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkConnectivitySpokeEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Spoke: %s", err)
+	err = ResourceNetworkConnectivitySpokeFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -842,6 +818,19 @@ func resourceNetworkConnectivitySpokeRead(d *schema.ResourceData, meta interface
 }
 
 func resourceNetworkConnectivitySpokeUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkConnectivitySpoke().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkConnectivitySpokeRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -914,7 +903,7 @@ func resourceNetworkConnectivitySpokeUpdate(d *schema.ResourceData, meta interfa
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/spokes/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/spokes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1001,6 +990,13 @@ func resourceNetworkConnectivitySpokeUpdate(d *schema.ResourceData, meta interfa
 }
 
 func resourceNetworkConnectivitySpokeDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkConnectivitySpoke without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Spoke %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1014,8 +1010,7 @@ func resourceNetworkConnectivitySpokeDelete(d *schema.ResourceData, meta interfa
 		return fmt.Errorf("Error fetching project for Spoke: %s", err)
 	}
 	billingProject = strings.TrimPrefix(project, "projects/")
-
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/spokes/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/spokes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1954,4 +1949,65 @@ func expandNetworkConnectivitySpokeEffectiveLabels(v interface{}, d tpgresource.
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkConnectivitySpokeFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenNetworkConnectivitySpokeName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkConnectivitySpokeCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkConnectivitySpokeUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkConnectivitySpokeLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkConnectivitySpokeDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("hub", flattenNetworkConnectivitySpokeHub(res["hub"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("group", flattenNetworkConnectivitySpokeGroup(res["group"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("linked_vpn_tunnels", flattenNetworkConnectivitySpokeLinkedVpnTunnels(res["linkedVpnTunnels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("linked_interconnect_attachments", flattenNetworkConnectivitySpokeLinkedInterconnectAttachments(res["linkedInterconnectAttachments"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("linked_router_appliance_instances", flattenNetworkConnectivitySpokeLinkedRouterApplianceInstances(res["linkedRouterApplianceInstances"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("linked_vpc_network", flattenNetworkConnectivitySpokeLinkedVpcNetwork(res["linkedVpcNetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("linked_producer_vpc_network", flattenNetworkConnectivitySpokeLinkedProducerVpcNetwork(res["linkedProducerVpcNetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("gateway", flattenNetworkConnectivitySpokeGateway(res["gateway"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("unique_id", flattenNetworkConnectivitySpokeUniqueId(res["uniqueId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("state", flattenNetworkConnectivitySpokeState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("reasons", flattenNetworkConnectivitySpokeReasons(res["reasons"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkConnectivitySpokeTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkConnectivitySpokeEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Spoke: %s", err)
+	}
+
+	return nil
 }

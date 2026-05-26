@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/chronicle"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = chronicle.Product
 )
 
 func TestAccChronicleDataTableRow_chronicleDataTableRowBasicExample(t *testing.T) {
@@ -63,7 +65,7 @@ func TestAccChronicleDataTableRow_chronicleDataTableRowBasicExample(t *testing.T
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckChronicleDataTableRowDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -88,7 +90,6 @@ func TestAccChronicleDataTableRow_chronicleDataTableRowBasicExample(t *testing.T
 func testAccChronicleDataTableRow_chronicleDataTableRowBasicExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_chronicle_data_table" "example_dt" {
-  provider       = google-beta
   location       = "us"
   instance = "%{instance_id}"
   data_table_id  = "%{data_table_id}"
@@ -106,7 +107,6 @@ resource "google_chronicle_data_table" "example_dt" {
 }
 
 resource "google_chronicle_data_table_row" "example_row" {
-  provider       = google-beta
   location       = "us"
   instance       = "%{instance_id}"
   data_table_id  = google_chronicle_data_table.example_dt.data_table_id
@@ -152,8 +152,7 @@ func testAccCheckChronicleDataTableRowDestroyProducer(t *testing.T) func(s *terr
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables/{{data_table_id}}/dataTableRows/{{data_table_row}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(chronicle.Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/dataTables/{{data_table_id}}/dataTableRows/{{data_table_row}}")
 			if err != nil {
 				return err
 			}

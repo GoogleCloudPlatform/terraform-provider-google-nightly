@@ -125,6 +125,7 @@ func ResourceNetworkServicesMesh() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -221,6 +222,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -253,7 +266,7 @@ func resourceNetworkServicesMeshCreate(d *schema.ResourceData, meta interface{})
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkServicesBasePath}}projects/{{project}}/locations/{{location}}/meshes?meshId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/meshes?meshId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -337,7 +350,7 @@ func resourceNetworkServicesMeshRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkServicesBasePath}}projects/{{project}}/locations/{{location}}/meshes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/meshes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -370,33 +383,26 @@ func resourceNetworkServicesMeshRead(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[DEBUG] Finished reading NetworkServicesMesh %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Mesh: %s", err)
 	}
 
-	if err := d.Set("self_link", flattenNetworkServicesMeshSelfLink(res["selfLink"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Mesh: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetworkServicesMeshCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Mesh: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkServicesMeshUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Mesh: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkServicesMeshLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Mesh: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkServicesMeshDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Mesh: %s", err)
-	}
-	if err := d.Set("interception_port", flattenNetworkServicesMeshInterceptionPort(res["interceptionPort"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Mesh: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkServicesMeshTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Mesh: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkServicesMeshEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Mesh: %s", err)
+	err = ResourceNetworkServicesMeshFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -427,6 +433,19 @@ func resourceNetworkServicesMeshRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceNetworkServicesMeshUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkServicesMesh().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkServicesMeshRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -481,7 +500,7 @@ func resourceNetworkServicesMeshUpdate(d *schema.ResourceData, meta interface{})
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkServicesBasePath}}projects/{{project}}/locations/{{location}}/meshes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/meshes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -545,6 +564,13 @@ func resourceNetworkServicesMeshUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceNetworkServicesMeshDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkServicesMesh without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Mesh %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -558,8 +584,7 @@ func resourceNetworkServicesMeshDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error fetching project for Mesh: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkServicesBasePath}}projects/{{project}}/locations/{{location}}/meshes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/meshes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -803,4 +828,35 @@ func ResourceNetworkServicesMeshUpgradeV0(_ context.Context, rawState map[string
 	}
 	log.Printf("[DEBUG] Attributes after migration: %#v", rawState)
 	return rawState, nil
+}
+
+func ResourceNetworkServicesMeshFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("self_link", flattenNetworkServicesMeshSelfLink(res["selfLink"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Mesh: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkServicesMeshCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Mesh: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkServicesMeshUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Mesh: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkServicesMeshLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Mesh: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkServicesMeshDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Mesh: %s", err)
+	}
+	if err = d.Set("interception_port", flattenNetworkServicesMeshInterceptionPort(res["interceptionPort"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Mesh: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkServicesMeshTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Mesh: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkServicesMeshEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Mesh: %s", err)
+	}
+
+	return nil
 }

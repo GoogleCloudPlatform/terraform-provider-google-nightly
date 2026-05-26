@@ -100,6 +100,7 @@ func ResourceApigeeEnvironmentApiRevisionDeployment() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceApigeeEnvironmentApiRevisionDeploymentCreate,
 		Read:   resourceApigeeEnvironmentApiRevisionDeploymentRead,
+		Update: resourceApigeeEnvironmentApiRevisionDeploymentUpdate,
 		Delete: resourceApigeeEnvironmentApiRevisionDeploymentDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -201,6 +202,19 @@ func ResourceApigeeEnvironmentApiRevisionDeployment() *schema.Resource {
 				Computed:    true,
 				Description: `Deployment state reported by Apigee.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -215,7 +229,7 @@ func resourceApigeeEnvironmentApiRevisionDeploymentCreate(d *schema.ResourceData
 
 	obj := make(map[string]interface{})
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/apis/{{api}}/revisions/{{revision}}/deployments?override={{override}}&sequencedRollout={{sequenced_rollout}}&serviceAccount={{service_account}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/apis/{{api}}/revisions/{{revision}}/deployments?override={{override}}&sequencedRollout={{sequenced_rollout}}&serviceAccount={{service_account}}")
 	if err != nil {
 		return err
 	}
@@ -289,7 +303,7 @@ func resourceApigeeEnvironmentApiRevisionDeploymentRead(d *schema.ResourceData, 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/apis/{{api}}/revisions/{{revision}}/deployments")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/apis/{{api}}/revisions/{{revision}}/deployments")
 	if err != nil {
 		return err
 	}
@@ -316,14 +330,23 @@ func resourceApigeeEnvironmentApiRevisionDeploymentRead(d *schema.ResourceData, 
 
 	log.Printf("[DEBUG] Finished reading ApigeeEnvironmentApiRevisionDeployment %q: %#v", d.Id(), res)
 
-	if err := d.Set("state", flattenApigeeEnvironmentApiRevisionDeploymentState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading EnvironmentApiRevisionDeployment: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("basepaths", flattenApigeeEnvironmentApiRevisionDeploymentBasepaths(res["basePath"], d, config)); err != nil {
-		return fmt.Errorf("Error reading EnvironmentApiRevisionDeployment: %s", err)
-	}
-	if err := d.Set("deploy_start_time", flattenApigeeEnvironmentApiRevisionDeploymentDeployStartTime(res["deployStartTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading EnvironmentApiRevisionDeployment: %s", err)
+
+	err = ResourceApigeeEnvironmentApiRevisionDeploymentFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -359,7 +382,19 @@ func resourceApigeeEnvironmentApiRevisionDeploymentRead(d *schema.ResourceData, 
 	return nil
 }
 
+func resourceApigeeEnvironmentApiRevisionDeploymentUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceApigeeEnvironmentApiRevisionDeploymentRead(d, meta)
+}
+
 func resourceApigeeEnvironmentApiRevisionDeploymentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ApigeeEnvironmentApiRevisionDeployment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing EnvironmentApiRevisionDeployment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -368,7 +403,7 @@ func resourceApigeeEnvironmentApiRevisionDeploymentDelete(d *schema.ResourceData
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/apis/{{api}}/revisions/{{revision}}/deployments")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/apis/{{api}}/revisions/{{revision}}/deployments")
 	if err != nil {
 		return err
 	}
@@ -431,4 +466,20 @@ func flattenApigeeEnvironmentApiRevisionDeploymentBasepaths(v interface{}, d *sc
 
 func flattenApigeeEnvironmentApiRevisionDeploymentDeployStartTime(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
+}
+
+func ResourceApigeeEnvironmentApiRevisionDeploymentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("state", flattenApigeeEnvironmentApiRevisionDeploymentState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading EnvironmentApiRevisionDeployment: %s", err)
+	}
+	if err = d.Set("basepaths", flattenApigeeEnvironmentApiRevisionDeploymentBasepaths(res["basePath"], d, config)); err != nil {
+		return fmt.Errorf("Error reading EnvironmentApiRevisionDeployment: %s", err)
+	}
+	if err = d.Set("deploy_start_time", flattenApigeeEnvironmentApiRevisionDeploymentDeployStartTime(res["deployStartTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading EnvironmentApiRevisionDeployment: %s", err)
+	}
+
+	return nil
 }

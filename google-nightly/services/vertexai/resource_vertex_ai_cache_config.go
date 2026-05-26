@@ -169,7 +169,7 @@ func resourceVertexAICacheConfigCreate(d *schema.ResourceData, meta interface{})
 		obj["disableCache"] = disableCacheProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/cacheConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/cacheConfig")
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func resourceVertexAICacheConfigRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/cacheConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/cacheConfig")
 	if err != nil {
 		return err
 	}
@@ -280,11 +280,9 @@ func resourceVertexAICacheConfigRead(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error reading CacheConfig: %s", err)
 	}
 
-	if err := d.Set("name", flattenVertexAICacheConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CacheConfig: %s", err)
-	}
-	if err := d.Set("disable_cache", flattenVertexAICacheConfigDisableCache(res["disableCache"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CacheConfig: %s", err)
+	err = ResourceVertexAICacheConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -303,6 +301,7 @@ func resourceVertexAICacheConfigRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceVertexAICacheConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -335,7 +334,7 @@ func resourceVertexAICacheConfigUpdate(d *schema.ResourceData, meta interface{})
 		obj["disableCache"] = disableCacheProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/cacheConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/cacheConfig")
 	if err != nil {
 		return err
 	}
@@ -414,4 +413,17 @@ func flattenVertexAICacheConfigDisableCache(v interface{}, d *schema.ResourceDat
 
 func expandVertexAICacheConfigDisableCache(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceVertexAICacheConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenVertexAICacheConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CacheConfig: %s", err)
+	}
+	if err = d.Set("disable_cache", flattenVertexAICacheConfigDisableCache(res["disableCache"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CacheConfig: %s", err)
+	}
+
+	return nil
 }

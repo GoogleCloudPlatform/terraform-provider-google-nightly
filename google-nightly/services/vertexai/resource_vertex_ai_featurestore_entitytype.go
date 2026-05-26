@@ -115,6 +115,7 @@ func ResourceVertexAIFeaturestoreEntitytype() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -309,6 +310,19 @@ If both FeaturestoreMonitoringConfig.SnapshotAnalysis.monitoring_interval_days a
 				Computed:    true,
 				Description: "The region of the EntityType.",
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -353,7 +367,7 @@ func resourceVertexAIFeaturestoreEntitytypeCreate(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}{{featurestore}}/entityTypes?entityTypeId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{featurestore}}/entityTypes?entityTypeId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -435,7 +449,7 @@ func resourceVertexAIFeaturestoreEntitytypeRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}{{featurestore}}/entityTypes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{featurestore}}/entityTypes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -462,29 +476,23 @@ func resourceVertexAIFeaturestoreEntitytypeRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading VertexAIFeaturestoreEntitytype %q: %#v", d.Id(), res)
 
-	if err := d.Set("description", flattenVertexAIFeaturestoreEntitytypeDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("create_time", flattenVertexAIFeaturestoreEntitytypeCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
-	}
-	if err := d.Set("update_time", flattenVertexAIFeaturestoreEntitytypeUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
-	}
-	if err := d.Set("labels", flattenVertexAIFeaturestoreEntitytypeLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
-	}
-	if err := d.Set("monitoring_config", flattenVertexAIFeaturestoreEntitytypeMonitoringConfig(res["monitoringConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
-	}
-	if err := d.Set("offline_storage_ttl_days", flattenVertexAIFeaturestoreEntitytypeOfflineStorageTtlDays(res["offlineStorageTtlDays"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenVertexAIFeaturestoreEntitytypeTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenVertexAIFeaturestoreEntitytypeEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+
+	err = ResourceVertexAIFeaturestoreEntitytypeFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -509,6 +517,19 @@ func resourceVertexAIFeaturestoreEntitytypeRead(d *schema.ResourceData, meta int
 }
 
 func resourceVertexAIFeaturestoreEntitytypeUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVertexAIFeaturestoreEntitytype().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVertexAIFeaturestoreEntitytypeRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -563,7 +584,7 @@ func resourceVertexAIFeaturestoreEntitytypeUpdate(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}{{featurestore}}/entityTypes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{featurestore}}/entityTypes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -624,6 +645,13 @@ func resourceVertexAIFeaturestoreEntitytypeUpdate(d *schema.ResourceData, meta i
 }
 
 func resourceVertexAIFeaturestoreEntitytypeDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VertexAIFeaturestoreEntitytype without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing FeaturestoreEntitytype %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -633,7 +661,7 @@ func resourceVertexAIFeaturestoreEntitytypeDelete(d *schema.ResourceData, meta i
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}{{featurestore}}/entityTypes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{featurestore}}/entityTypes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1127,4 +1155,35 @@ func resourceVertexAIFeaturestoreEntitytypeEncoder(d *schema.ResourceData, meta 
 	}
 
 	return obj, nil
+}
+
+func ResourceVertexAIFeaturestoreEntitytypeFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("description", flattenVertexAIFeaturestoreEntitytypeDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+	}
+	if err = d.Set("create_time", flattenVertexAIFeaturestoreEntitytypeCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+	}
+	if err = d.Set("update_time", flattenVertexAIFeaturestoreEntitytypeUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+	}
+	if err = d.Set("labels", flattenVertexAIFeaturestoreEntitytypeLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+	}
+	if err = d.Set("monitoring_config", flattenVertexAIFeaturestoreEntitytypeMonitoringConfig(res["monitoringConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+	}
+	if err = d.Set("offline_storage_ttl_days", flattenVertexAIFeaturestoreEntitytypeOfflineStorageTtlDays(res["offlineStorageTtlDays"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenVertexAIFeaturestoreEntitytypeTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenVertexAIFeaturestoreEntitytypeEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeaturestoreEntitytype: %s", err)
+	}
+
+	return nil
 }

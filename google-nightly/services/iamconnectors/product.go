@@ -23,11 +23,13 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 )
 
-const ProductName = "iamconnectors"
+var Product = registry.Product{
+	Name:                 "iamconnectors",
+	BaseUrl:              "https://iamconnectors.googleapis.com/v1alpha/",
+	CustomEndpointField:  "iam_connectors_custom_endpoint",
+	CustomEndpointEnvVar: "GOOGLE_IAM_CONNECTORS_CUSTOM_ENDPOINT",
+}
 
 func init() {
-	registry.Product{
-		Name:    "iamconnectors",
-		BaseUrl: "https://iamconnectors.googleapis.com/v1alpha/",
-	}.Register()
+	Product.Register()
 }

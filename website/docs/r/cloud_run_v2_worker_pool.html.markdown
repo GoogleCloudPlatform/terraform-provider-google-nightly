@@ -398,6 +398,44 @@ resource "google_storage_bucket" "default" {
 }
 ```
 <div class = "oics-button" style="float: right; margin: 0 0 -15px">
+  <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=cloudrunv2_worker_pool_emptydir_disk&open_in_editor=main.tf" target="_blank">
+    <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
+  </a>
+</div>
+## Example Usage - Cloudrunv2 Worker Pool Emptydir Disk
+
+
+```hcl
+resource "google_cloud_run_v2_worker_pool" "default" {
+  name     = "cloudrun-worker-pool"
+  location     = "us-central1"
+  launch_stage = "BETA"
+  deletion_protection =  "true"
+
+  template {
+    containers {
+        image = "us-docker.pkg.dev/cloudrun/container/worker-pool"
+        volume_mounts {
+            name = "empty-dir-volume"
+            mount_path = "/mnt"
+        }
+    }
+    volumes {
+        name = "empty-dir-volume"
+        empty_dir {
+            medium = "DISK"
+            size_limit = "10Gi"
+        }
+      }
+  }
+  lifecycle {
+    ignore_changes = [
+      launch_stage,
+    ]
+  }
+}
+```
+<div class = "oics-button" style="float: right; margin: 0 0 -15px">
   <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=cloudrunv2_worker_pool_mount_nfs&open_in_editor=main.tf" target="_blank">
     <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
   </a>
@@ -606,6 +644,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 * `deletion_protection` - (Optional) Whether Terraform will be prevented from destroying the service. Defaults to true.
 When a`terraform destroy` or `terraform apply` would delete the service,
 the command will fail if this field is not set to false in Terraform state.
@@ -1045,7 +1089,7 @@ When the field is set to false, deleting the WorkerPool is allowed.
   (Optional)
   The different types of medium supported for EmptyDir.
   Default value is `MEMORY`.
-  Possible values are: `MEMORY`.
+  Possible values are: `MEMORY`, `DISK`.
 
 * `size_limit` -
   (Optional)

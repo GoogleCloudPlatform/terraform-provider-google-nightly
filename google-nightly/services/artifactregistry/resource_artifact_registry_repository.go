@@ -125,9 +125,22 @@ func durationDiffSuppress(k, oldr, newr string, d *schema.ResourceData) bool {
 }
 
 func mapHashID(v any) int {
-	replaceNestedValue(v, []string{"condition", "older_than"}, expandDuration)
-	replaceNestedValue(v, []string{"condition", "newer_than"}, expandDuration)
-	return schema.HashString(fmt.Sprintf("%v", v))
+	// v's dynamic type can differ between config and state, so we need to marshal and unmarshal to ensure consistent key order.
+	b, err := json.Marshal(v)
+	if err != nil {
+		return schema.HashString(fmt.Sprintf("%v", v))
+	}
+	var c any
+	if err := json.Unmarshal(b, &c); err != nil {
+		return schema.HashString(fmt.Sprintf("%v", v))
+	}
+	m, ok := c.(map[string]any)
+	if !ok {
+		return schema.HashString(fmt.Sprintf("%v", v))
+	}
+	replaceNestedValue(m, []string{"condition", "older_than"}, expandDuration)
+	replaceNestedValue(m, []string{"condition", "newer_than"}, expandDuration)
+	return schema.HashString(fmt.Sprintf("%v", m))
 }
 
 func expandDuration(v any) (any, bool) {
@@ -260,6 +273,7 @@ func ResourceArtifactRegistryRepository() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -910,6 +924,18 @@ Repository. Upstream policies cannot be set on a standard repository.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1001,9 +1027,12 @@ func resourceArtifactRegistryRepositoryCreate(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ArtifactRegistryBasePath}}projects/{{project}}/locations/{{location}}/repositories?repository_id={{repository_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories?repository_id={{repository_id}}")
 	if err != nil {
 		return err
+	}
+	if strings.Contains(url, "{{location}}") {
+		return fmt.Errorf("failed to qualify endpoint for a resource with a regionalized endpoint %s", url)
 	}
 
 	log.Printf("[DEBUG] Creating new Repository: %#v", obj)
@@ -1042,8 +1071,10 @@ func resourceArtifactRegistryRepositoryCreate(d *schema.ResourceData, meta inter
 	}
 	d.SetId(id)
 
+	// Derive location for use in REP endpoints
+	location := tpgresource.LocationFromId(d.Id())
 	err = ArtifactRegistryOperationWaitTime(
-		config, res, project, "Creating Repository", userAgent,
+		config, res, project, location, "Creating Repository", userAgent,
 		d.Timeout(schema.TimeoutCreate))
 
 	if err != nil {
@@ -1085,9 +1116,12 @@ func resourceArtifactRegistryRepositoryRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ArtifactRegistryBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}")
 	if err != nil {
 		return err
+	}
+	if strings.Contains(url, "{{location}}") {
+		return fmt.Errorf("failed to qualify endpoint for a resource with a regionalized endpoint %s", url)
 	}
 
 	billingProject := ""
@@ -1118,63 +1152,26 @@ func resourceArtifactRegistryRepositoryRead(d *schema.ResourceData, meta interfa
 
 	log.Printf("[DEBUG] Finished reading ArtifactRegistryRepository %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Repository: %s", err)
 	}
 
-	if err := d.Set("name", flattenArtifactRegistryRepositoryName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("format", flattenArtifactRegistryRepositoryFormat(res["format"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("description", flattenArtifactRegistryRepositoryDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("labels", flattenArtifactRegistryRepositoryLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("registry_uri", flattenArtifactRegistryRepositoryRegistryUri(res["registryUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("kms_key_name", flattenArtifactRegistryRepositoryKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("create_time", flattenArtifactRegistryRepositoryCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("update_time", flattenArtifactRegistryRepositoryUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("docker_config", flattenArtifactRegistryRepositoryDockerConfig(res["dockerConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("maven_config", flattenArtifactRegistryRepositoryMavenConfig(res["mavenConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("mode", flattenArtifactRegistryRepositoryMode(res["mode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("virtual_repository_config", flattenArtifactRegistryRepositoryVirtualRepositoryConfig(res["virtualRepositoryConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("cleanup_policies", flattenArtifactRegistryRepositoryCleanupPolicies(res["cleanupPolicies"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("remote_repository_config", flattenArtifactRegistryRepositoryRemoteRepositoryConfig(res["remoteRepositoryConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("cleanup_policy_dry_run", flattenArtifactRegistryRepositoryCleanupPolicyDryRun(res["cleanupPolicyDryRun"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("vulnerability_scanning_config", flattenArtifactRegistryRepositoryVulnerabilityScanningConfig(res["vulnerabilityScanningConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenArtifactRegistryRepositoryTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenArtifactRegistryRepositoryEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Repository: %s", err)
+	err = ResourceArtifactRegistryRepositoryFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1205,6 +1202,19 @@ func resourceArtifactRegistryRepositoryRead(d *schema.ResourceData, meta interfa
 }
 
 func resourceArtifactRegistryRepositoryUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceArtifactRegistryRepository().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceArtifactRegistryRepositoryRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1294,9 +1304,12 @@ func resourceArtifactRegistryRepositoryUpdate(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ArtifactRegistryBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}")
 	if err != nil {
 		return err
+	}
+	if strings.Contains(url, "{{location}}") {
+		return fmt.Errorf("failed to qualify endpoint for a resource with a regionalized endpoint %s", url)
 	}
 
 	log.Printf("[DEBUG] Updating Repository %q: %#v", d.Id(), obj)
@@ -1371,6 +1384,13 @@ func resourceArtifactRegistryRepositoryUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceArtifactRegistryRepositoryDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ArtifactRegistryRepository without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Repository %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1384,10 +1404,12 @@ func resourceArtifactRegistryRepositoryDelete(d *schema.ResourceData, meta inter
 		return fmt.Errorf("Error fetching project for Repository: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ArtifactRegistryBasePath}}projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/repositories/{{repository_id}}")
 	if err != nil {
 		return err
+	}
+	if strings.Contains(url, "{{location}}") {
+		return fmt.Errorf("failed to qualify endpoint for a resource with a regionalized endpoint %s", url)
 	}
 
 	var obj map[string]interface{}
@@ -1414,8 +1436,10 @@ func resourceArtifactRegistryRepositoryDelete(d *schema.ResourceData, meta inter
 		return transport_tpg.HandleNotFoundError(err, d, "Repository")
 	}
 
+	// Derive location for use in REP endpoints
+	location := tpgresource.LocationFromId(d.Id())
 	err = ArtifactRegistryOperationWaitTime(
-		config, res, project, "Deleting Repository", userAgent,
+		config, res, project, location, "Deleting Repository", userAgent,
 		d.Timeout(schema.TimeoutDelete))
 
 	if err != nil {
@@ -3042,4 +3066,65 @@ func resourceArtifactRegistryRepositoryEncoder(d *schema.ResourceData, meta inte
 		}
 	}
 	return obj, nil
+}
+
+func ResourceArtifactRegistryRepositoryFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenArtifactRegistryRepositoryName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("format", flattenArtifactRegistryRepositoryFormat(res["format"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("description", flattenArtifactRegistryRepositoryDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("labels", flattenArtifactRegistryRepositoryLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("registry_uri", flattenArtifactRegistryRepositoryRegistryUri(res["registryUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("kms_key_name", flattenArtifactRegistryRepositoryKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("create_time", flattenArtifactRegistryRepositoryCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("update_time", flattenArtifactRegistryRepositoryUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("docker_config", flattenArtifactRegistryRepositoryDockerConfig(res["dockerConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("maven_config", flattenArtifactRegistryRepositoryMavenConfig(res["mavenConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("mode", flattenArtifactRegistryRepositoryMode(res["mode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("virtual_repository_config", flattenArtifactRegistryRepositoryVirtualRepositoryConfig(res["virtualRepositoryConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("cleanup_policies", flattenArtifactRegistryRepositoryCleanupPolicies(res["cleanupPolicies"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("remote_repository_config", flattenArtifactRegistryRepositoryRemoteRepositoryConfig(res["remoteRepositoryConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("cleanup_policy_dry_run", flattenArtifactRegistryRepositoryCleanupPolicyDryRun(res["cleanupPolicyDryRun"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("vulnerability_scanning_config", flattenArtifactRegistryRepositoryVulnerabilityScanningConfig(res["vulnerabilityScanningConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenArtifactRegistryRepositoryTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenArtifactRegistryRepositoryEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Repository: %s", err)
+	}
+
+	return nil
 }

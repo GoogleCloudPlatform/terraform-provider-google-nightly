@@ -116,6 +116,7 @@ func ResourceVertexAIFeatureOnlineStore() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -346,6 +347,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -396,7 +409,7 @@ func resourceVertexAIFeatureOnlineStoreCreate(d *schema.ResourceData, meta inter
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/featureOnlineStores?featureOnlineStoreId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/featureOnlineStores?featureOnlineStoreId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -480,7 +493,7 @@ func resourceVertexAIFeatureOnlineStoreRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/featureOnlineStores/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/featureOnlineStores/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -519,42 +532,25 @@ func resourceVertexAIFeatureOnlineStoreRead(d *schema.ResourceData, meta interfa
 			return fmt.Errorf("Error setting force_destroy: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenVertexAIFeatureOnlineStoreCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("update_time", flattenVertexAIFeatureOnlineStoreUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("labels", flattenVertexAIFeatureOnlineStoreLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("state", flattenVertexAIFeatureOnlineStoreState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("bigtable", flattenVertexAIFeatureOnlineStoreBigtable(res["bigtable"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("optimized", flattenVertexAIFeatureOnlineStoreOptimized(res["optimized"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("dedicated_serving_endpoint", flattenVertexAIFeatureOnlineStoreDedicatedServingEndpoint(res["dedicatedServingEndpoint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("embedding_management", flattenVertexAIFeatureOnlineStoreEmbeddingManagement(res["embeddingManagement"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("encryption_spec", flattenVertexAIFeatureOnlineStoreEncryptionSpec(res["encryptionSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenVertexAIFeatureOnlineStoreTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenVertexAIFeatureOnlineStoreEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	err = ResourceVertexAIFeatureOnlineStoreFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -585,6 +581,19 @@ func resourceVertexAIFeatureOnlineStoreRead(d *schema.ResourceData, meta interfa
 }
 
 func resourceVertexAIFeatureOnlineStoreUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVertexAIFeatureOnlineStore().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVertexAIFeatureOnlineStoreRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -657,7 +666,7 @@ func resourceVertexAIFeatureOnlineStoreUpdate(d *schema.ResourceData, meta inter
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/featureOnlineStores/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/featureOnlineStores/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -733,6 +742,13 @@ func resourceVertexAIFeatureOnlineStoreUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceVertexAIFeatureOnlineStoreDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VertexAIFeatureOnlineStore without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing FeatureOnlineStore %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -746,8 +762,7 @@ func resourceVertexAIFeatureOnlineStoreDelete(d *schema.ResourceData, meta inter
 		return fmt.Errorf("Error fetching project for FeatureOnlineStore: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/featureOnlineStores/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/featureOnlineStores/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1302,4 +1317,44 @@ func expandVertexAIFeatureOnlineStoreEffectiveLabels(v interface{}, d tpgresourc
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceVertexAIFeatureOnlineStoreFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenVertexAIFeatureOnlineStoreCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("update_time", flattenVertexAIFeatureOnlineStoreUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("labels", flattenVertexAIFeatureOnlineStoreLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("state", flattenVertexAIFeatureOnlineStoreState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("bigtable", flattenVertexAIFeatureOnlineStoreBigtable(res["bigtable"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("optimized", flattenVertexAIFeatureOnlineStoreOptimized(res["optimized"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("dedicated_serving_endpoint", flattenVertexAIFeatureOnlineStoreDedicatedServingEndpoint(res["dedicatedServingEndpoint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("embedding_management", flattenVertexAIFeatureOnlineStoreEmbeddingManagement(res["embeddingManagement"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("encryption_spec", flattenVertexAIFeatureOnlineStoreEncryptionSpec(res["encryptionSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenVertexAIFeatureOnlineStoreTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenVertexAIFeatureOnlineStoreEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FeatureOnlineStore: %s", err)
+	}
+
+	return nil
 }

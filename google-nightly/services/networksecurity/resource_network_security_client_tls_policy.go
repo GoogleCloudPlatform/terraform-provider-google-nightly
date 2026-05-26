@@ -116,6 +116,7 @@ func ResourceNetworkSecurityClientTlsPolicy() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -286,6 +287,18 @@ The default value is 'global'.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -330,7 +343,7 @@ func resourceNetworkSecurityClientTlsPolicyCreate(d *schema.ResourceData, meta i
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/clientTlsPolicies?clientTlsPolicyId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clientTlsPolicies?clientTlsPolicyId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -414,7 +427,7 @@ func resourceNetworkSecurityClientTlsPolicyRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/clientTlsPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clientTlsPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -447,36 +460,26 @@ func resourceNetworkSecurityClientTlsPolicyRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading NetworkSecurityClientTlsPolicy %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenNetworkSecurityClientTlsPolicyCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkSecurityClientTlsPolicyUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkSecurityClientTlsPolicyLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkSecurityClientTlsPolicyDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
-	}
-	if err := d.Set("sni", flattenNetworkSecurityClientTlsPolicySni(res["sni"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
-	}
-	if err := d.Set("client_certificate", flattenNetworkSecurityClientTlsPolicyClientCertificate(res["clientCertificate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
-	}
-	if err := d.Set("server_validation_ca", flattenNetworkSecurityClientTlsPolicyServerValidationCa(res["serverValidationCa"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkSecurityClientTlsPolicyTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkSecurityClientTlsPolicyEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	err = ResourceNetworkSecurityClientTlsPolicyFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -507,6 +510,19 @@ func resourceNetworkSecurityClientTlsPolicyRead(d *schema.ResourceData, meta int
 }
 
 func resourceNetworkSecurityClientTlsPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkSecurityClientTlsPolicy().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkSecurityClientTlsPolicyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -573,7 +589,7 @@ func resourceNetworkSecurityClientTlsPolicyUpdate(d *schema.ResourceData, meta i
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/clientTlsPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clientTlsPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -645,6 +661,13 @@ func resourceNetworkSecurityClientTlsPolicyUpdate(d *schema.ResourceData, meta i
 }
 
 func resourceNetworkSecurityClientTlsPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkSecurityClientTlsPolicy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ClientTlsPolicy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -658,8 +681,7 @@ func resourceNetworkSecurityClientTlsPolicyDelete(d *schema.ResourceData, meta i
 		return fmt.Errorf("Error fetching project for ClientTlsPolicy: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/clientTlsPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clientTlsPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1054,4 +1076,38 @@ func expandNetworkSecurityClientTlsPolicyEffectiveLabels(v interface{}, d tpgres
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkSecurityClientTlsPolicyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenNetworkSecurityClientTlsPolicyCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkSecurityClientTlsPolicyUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkSecurityClientTlsPolicyLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkSecurityClientTlsPolicyDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	}
+	if err = d.Set("sni", flattenNetworkSecurityClientTlsPolicySni(res["sni"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	}
+	if err = d.Set("client_certificate", flattenNetworkSecurityClientTlsPolicyClientCertificate(res["clientCertificate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	}
+	if err = d.Set("server_validation_ca", flattenNetworkSecurityClientTlsPolicyServerValidationCa(res["serverValidationCa"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkSecurityClientTlsPolicyTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkSecurityClientTlsPolicyEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ClientTlsPolicy: %s", err)
+	}
+
+	return nil
 }

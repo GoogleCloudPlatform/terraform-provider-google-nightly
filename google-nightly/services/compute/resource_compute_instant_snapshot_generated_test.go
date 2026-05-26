@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = compute.Product
 )
 
 func TestAccComputeInstantSnapshot_instantSnapshotBasicExample(t *testing.T) {
@@ -73,7 +75,7 @@ func TestAccComputeInstantSnapshot_instantSnapshotBasicExample(t *testing.T) {
 				ResourceName:            "google_compute_instant_snapshot.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"labels", "source_disk", "terraform_labels", "zone"},
+				ImportStateVerifyIgnore: []string{"labels", "params", "source_disk", "terraform_labels", "zone"},
 			},
 			{
 				ResourceName:       "google_compute_instant_snapshot.default",
@@ -112,8 +114,7 @@ func testAccCheckComputeInstantSnapshotDestroyProducer(t *testing.T) func(s *ter
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instantSnapshots/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(compute.Product, config)+"projects/{{project}}/zones/{{zone}}/instantSnapshots/{{name}}")
 			if err != nil {
 				return err
 			}

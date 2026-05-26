@@ -220,6 +220,19 @@ This field is provided in responses, and is ignored when provided in create requ
 A timestamp in RFC3339 UTC "Zulu" format, with nanosecond resolution and up to nine fractional digits.
 Examples: "2014-10-02T15:01:23Z" and "2014-10-02T15:01:23.045123456Z".`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -252,7 +265,7 @@ func resourceSecurityCenterOrganizationSccBigQueryExportCreate(d *schema.Resourc
 		obj["filter"] = filterProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}organizations/{{organization}}/bigQueryExports?bigQueryExportId={{big_query_export_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/bigQueryExports?bigQueryExportId={{big_query_export_id}}")
 	if err != nil {
 		return err
 	}
@@ -315,7 +328,7 @@ func resourceSecurityCenterOrganizationSccBigQueryExportRead(d *schema.ResourceD
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}organizations/{{organization}}/bigQueryExports/{{big_query_export_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/bigQueryExports/{{big_query_export_id}}")
 	if err != nil {
 		return err
 	}
@@ -342,29 +355,23 @@ func resourceSecurityCenterOrganizationSccBigQueryExportRead(d *schema.ResourceD
 
 	log.Printf("[DEBUG] Finished reading SecurityCenterOrganizationSccBigQueryExport %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenSecurityCenterOrganizationSccBigQueryExportName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("description", flattenSecurityCenterOrganizationSccBigQueryExportDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
-	}
-	if err := d.Set("dataset", flattenSecurityCenterOrganizationSccBigQueryExportDataset(res["dataset"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecurityCenterOrganizationSccBigQueryExportCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
-	}
-	if err := d.Set("update_time", flattenSecurityCenterOrganizationSccBigQueryExportUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
-	}
-	if err := d.Set("most_recent_editor", flattenSecurityCenterOrganizationSccBigQueryExportMostRecentEditor(res["mostRecentEditor"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
-	}
-	if err := d.Set("principal", flattenSecurityCenterOrganizationSccBigQueryExportPrincipal(res["principal"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
-	}
-	if err := d.Set("filter", flattenSecurityCenterOrganizationSccBigQueryExportFilter(res["filter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+
+	err = ResourceSecurityCenterOrganizationSccBigQueryExportFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -389,6 +396,19 @@ func resourceSecurityCenterOrganizationSccBigQueryExportRead(d *schema.ResourceD
 }
 
 func resourceSecurityCenterOrganizationSccBigQueryExportUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecurityCenterOrganizationSccBigQueryExport().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecurityCenterOrganizationSccBigQueryExportRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -432,7 +452,7 @@ func resourceSecurityCenterOrganizationSccBigQueryExportUpdate(d *schema.Resourc
 		obj["filter"] = filterProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}organizations/{{organization}}/bigQueryExports/{{big_query_export_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/bigQueryExports/{{big_query_export_id}}")
 	if err != nil {
 		return err
 	}
@@ -489,6 +509,13 @@ func resourceSecurityCenterOrganizationSccBigQueryExportUpdate(d *schema.Resourc
 }
 
 func resourceSecurityCenterOrganizationSccBigQueryExportDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecurityCenterOrganizationSccBigQueryExport without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing OrganizationSccBigQueryExport %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -497,7 +524,7 @@ func resourceSecurityCenterOrganizationSccBigQueryExportDelete(d *schema.Resourc
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}organizations/{{organization}}/bigQueryExports/{{big_query_export_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/bigQueryExports/{{big_query_export_id}}")
 	if err != nil {
 		return err
 	}
@@ -591,4 +618,35 @@ func expandSecurityCenterOrganizationSccBigQueryExportDataset(v interface{}, d t
 
 func expandSecurityCenterOrganizationSccBigQueryExportFilter(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceSecurityCenterOrganizationSccBigQueryExportFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecurityCenterOrganizationSccBigQueryExportName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+	}
+	if err = d.Set("description", flattenSecurityCenterOrganizationSccBigQueryExportDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+	}
+	if err = d.Set("dataset", flattenSecurityCenterOrganizationSccBigQueryExportDataset(res["dataset"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecurityCenterOrganizationSccBigQueryExportCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+	}
+	if err = d.Set("update_time", flattenSecurityCenterOrganizationSccBigQueryExportUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+	}
+	if err = d.Set("most_recent_editor", flattenSecurityCenterOrganizationSccBigQueryExportMostRecentEditor(res["mostRecentEditor"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+	}
+	if err = d.Set("principal", flattenSecurityCenterOrganizationSccBigQueryExportPrincipal(res["principal"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+	}
+	if err = d.Set("filter", flattenSecurityCenterOrganizationSccBigQueryExportFilter(res["filter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSccBigQueryExport: %s", err)
+	}
+
+	return nil
 }

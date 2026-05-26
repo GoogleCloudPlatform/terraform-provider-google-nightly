@@ -30,10 +30,16 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/monitoring"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
 	"google.golang.org/api/googleapi"
+)
+
+import (
+	rmClient "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager/client"
 )
 
 var (
@@ -48,6 +54,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = monitoring.Product
 )
 
 func TestAccMonitoringMonitoredProject_monitoringMonitoredProjectBasicExample(t *testing.T) {
@@ -174,7 +181,7 @@ func testAccCheckMonitoringMonitoredProjectDestroyProducer(t *testing.T) func(s 
 			})
 
 			rName := tpgresource.GetResourceNameFromSelfLink(rs.Primary.Attributes["name"])
-			project, err := config.NewResourceManagerClient(config.UserAgent).Projects.Get(rName).Do()
+			project, err := rmClient.NewClient(config, config.UserAgent).Projects.Get(rName).Do()
 			rName = strconv.FormatInt(project.ProjectNumber, 10)
 
 			for _, monitoredProject := range res["monitoredProjects"].([]any) {

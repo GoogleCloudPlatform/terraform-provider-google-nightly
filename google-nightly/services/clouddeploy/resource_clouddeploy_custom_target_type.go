@@ -117,6 +117,7 @@ func ResourceClouddeployCustomTargetType() *schema.Resource {
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -273,6 +274,7 @@ Please refer to the field 'effective_annotations' for all of the annotations pre
 						},
 					},
 				},
+				ConflictsWith: []string{"tasks"},
 			},
 			"description": {
 				Type:        schema.TypeString,
@@ -287,6 +289,111 @@ Please refer to the field 'effective_annotations' for all of the annotations pre
 **Note**: This field is non-authoritative, and will only manage the labels present in your configuration.
 Please refer to the field 'effective_labels' for all of the labels present on the resource.`,
 				Elem: &schema.Schema{Type: schema.TypeString},
+			},
+			"tasks": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: `Configures render and deploy for the 'CustomTargetType' using tasks.`,
+				MaxItems:    1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"deploy": {
+							Type:        schema.TypeList,
+							Required:    true,
+							Description: `The task responsible for deploy operations.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"container": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `This task is represented by a container that is executed in the Cloud Build execution environment.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"image": {
+													Type:        schema.TypeString,
+													Required:    true,
+													Description: `Image is the container image to use.`,
+												},
+												"args": {
+													Type:        schema.TypeList,
+													Optional:    true,
+													Description: `Args is the container arguments to use. This overrides the default arguments defined in the container image.`,
+													Elem: &schema.Schema{
+														Type: schema.TypeString,
+													},
+												},
+												"command": {
+													Type:        schema.TypeList,
+													Optional:    true,
+													Description: `Command is the container entrypoint to use. This overrides the default entrypoint defined in the container image.`,
+													Elem: &schema.Schema{
+														Type: schema.TypeString,
+													},
+												},
+												"env": {
+													Type:        schema.TypeMap,
+													Optional:    true,
+													Description: `Environment variables that are set in the container.`,
+													Elem:        &schema.Schema{Type: schema.TypeString},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+						"render": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `The task responsible for render operations. If not provided then Cloud Deploy will perform its default rendering operation.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"container": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `This task is represented by a container that is executed in the Cloud Build execution environment.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"image": {
+													Type:        schema.TypeString,
+													Required:    true,
+													Description: `Image is the container image to use.`,
+												},
+												"args": {
+													Type:        schema.TypeList,
+													Optional:    true,
+													Description: `Args is the container arguments to use. This overrides the default arguments defined in the container image.`,
+													Elem: &schema.Schema{
+														Type: schema.TypeString,
+													},
+												},
+												"command": {
+													Type:        schema.TypeList,
+													Optional:    true,
+													Description: `Command is the container entrypoint to use. This overrides the default entrypoint defined in the container image.`,
+													Elem: &schema.Schema{
+														Type: schema.TypeString,
+													},
+												},
+												"env": {
+													Type:        schema.TypeMap,
+													Optional:    true,
+													Description: `Environment variables that are set in the container.`,
+													Elem:        &schema.Schema{Type: schema.TypeString},
+												},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+				ConflictsWith: []string{"custom_actions"},
 			},
 			"create_time": {
 				Type:        schema.TypeString,
@@ -338,6 +445,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -363,6 +482,12 @@ func resourceClouddeployCustomTargetTypeCreate(d *schema.ResourceData, meta inte
 	} else if v, ok := d.GetOkExists("custom_actions"); !tpgresource.IsEmptyValue(reflect.ValueOf(customActionsProp)) && (ok || !reflect.DeepEqual(v, customActionsProp)) {
 		obj["customActions"] = customActionsProp
 	}
+	tasksProp, err := expandClouddeployCustomTargetTypeTasks(d.Get("tasks"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("tasks"); !tpgresource.IsEmptyValue(reflect.ValueOf(tasksProp)) && (ok || !reflect.DeepEqual(v, tasksProp)) {
+		obj["tasks"] = tasksProp
+	}
 	effectiveAnnotationsProp, err := expandClouddeployCustomTargetTypeEffectiveAnnotations(d.Get("effective_annotations"), d, config)
 	if err != nil {
 		return err
@@ -376,7 +501,7 @@ func resourceClouddeployCustomTargetTypeCreate(d *schema.ResourceData, meta inte
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ClouddeployBasePath}}projects/{{project}}/locations/{{location}}/customTargetTypes?customTargetTypeId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customTargetTypes?customTargetTypeId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -460,7 +585,7 @@ func resourceClouddeployCustomTargetTypeRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ClouddeployBasePath}}projects/{{project}}/locations/{{location}}/customTargetTypes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customTargetTypes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -493,45 +618,26 @@ func resourceClouddeployCustomTargetTypeRead(d *schema.ResourceData, meta interf
 
 	log.Printf("[DEBUG] Finished reading ClouddeployCustomTargetType %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading CustomTargetType: %s", err)
 	}
 
-	if err := d.Set("custom_target_type_id", flattenClouddeployCustomTargetTypeCustomTargetTypeId(res["customTargetTypeId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("uid", flattenClouddeployCustomTargetTypeUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("description", flattenClouddeployCustomTargetTypeDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("annotations", flattenClouddeployCustomTargetTypeAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("labels", flattenClouddeployCustomTargetTypeLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("create_time", flattenClouddeployCustomTargetTypeCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("update_time", flattenClouddeployCustomTargetTypeUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("etag", flattenClouddeployCustomTargetTypeEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("custom_actions", flattenClouddeployCustomTargetTypeCustomActions(res["customActions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenClouddeployCustomTargetTypeEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenClouddeployCustomTargetTypeTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenClouddeployCustomTargetTypeEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	err = ResourceClouddeployCustomTargetTypeFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -562,6 +668,19 @@ func resourceClouddeployCustomTargetTypeRead(d *schema.ResourceData, meta interf
 }
 
 func resourceClouddeployCustomTargetTypeUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceClouddeployCustomTargetType().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceClouddeployCustomTargetTypeRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -609,6 +728,12 @@ func resourceClouddeployCustomTargetTypeUpdate(d *schema.ResourceData, meta inte
 	} else if v, ok := d.GetOkExists("custom_actions"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, customActionsProp)) {
 		obj["customActions"] = customActionsProp
 	}
+	tasksProp, err := expandClouddeployCustomTargetTypeTasks(d.Get("tasks"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("tasks"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, tasksProp)) {
+		obj["tasks"] = tasksProp
+	}
 	effectiveAnnotationsProp, err := expandClouddeployCustomTargetTypeEffectiveAnnotations(d.Get("effective_annotations"), d, config)
 	if err != nil {
 		return err
@@ -622,7 +747,7 @@ func resourceClouddeployCustomTargetTypeUpdate(d *schema.ResourceData, meta inte
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ClouddeployBasePath}}projects/{{project}}/locations/{{location}}/customTargetTypes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customTargetTypes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -637,6 +762,10 @@ func resourceClouddeployCustomTargetTypeUpdate(d *schema.ResourceData, meta inte
 
 	if d.HasChange("custom_actions") {
 		updateMask = append(updateMask, "customActions")
+	}
+
+	if d.HasChange("tasks") {
+		updateMask = append(updateMask, "tasks")
 	}
 
 	if d.HasChange("effective_annotations") {
@@ -690,6 +819,13 @@ func resourceClouddeployCustomTargetTypeUpdate(d *schema.ResourceData, meta inte
 }
 
 func resourceClouddeployCustomTargetTypeDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ClouddeployCustomTargetType without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing CustomTargetType %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -703,8 +839,7 @@ func resourceClouddeployCustomTargetTypeDelete(d *schema.ResourceData, meta inte
 		return fmt.Errorf("Error fetching project for CustomTargetType: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ClouddeployBasePath}}projects/{{project}}/locations/{{location}}/customTargetTypes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customTargetTypes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -947,6 +1082,117 @@ func flattenClouddeployCustomTargetTypeCustomActionsIncludeSkaffoldModulesGoogle
 }
 
 func flattenClouddeployCustomTargetTypeCustomActionsIncludeSkaffoldModulesGoogleCloudBuildRepoRef(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenClouddeployCustomTargetTypeTasks(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["render"] =
+		flattenClouddeployCustomTargetTypeTasksRender(original["render"], d, config)
+	transformed["deploy"] =
+		flattenClouddeployCustomTargetTypeTasksDeploy(original["deploy"], d, config)
+	return []interface{}{transformed}
+}
+func flattenClouddeployCustomTargetTypeTasksRender(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["container"] =
+		flattenClouddeployCustomTargetTypeTasksRenderContainer(original["container"], d, config)
+	return []interface{}{transformed}
+}
+func flattenClouddeployCustomTargetTypeTasksRenderContainer(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["image"] =
+		flattenClouddeployCustomTargetTypeTasksRenderContainerImage(original["image"], d, config)
+	transformed["command"] =
+		flattenClouddeployCustomTargetTypeTasksRenderContainerCommand(original["command"], d, config)
+	transformed["args"] =
+		flattenClouddeployCustomTargetTypeTasksRenderContainerArgs(original["args"], d, config)
+	transformed["env"] =
+		flattenClouddeployCustomTargetTypeTasksRenderContainerEnv(original["env"], d, config)
+	return []interface{}{transformed}
+}
+func flattenClouddeployCustomTargetTypeTasksRenderContainerImage(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenClouddeployCustomTargetTypeTasksRenderContainerCommand(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenClouddeployCustomTargetTypeTasksRenderContainerArgs(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenClouddeployCustomTargetTypeTasksRenderContainerEnv(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenClouddeployCustomTargetTypeTasksDeploy(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["container"] =
+		flattenClouddeployCustomTargetTypeTasksDeployContainer(original["container"], d, config)
+	return []interface{}{transformed}
+}
+func flattenClouddeployCustomTargetTypeTasksDeployContainer(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["image"] =
+		flattenClouddeployCustomTargetTypeTasksDeployContainerImage(original["image"], d, config)
+	transformed["command"] =
+		flattenClouddeployCustomTargetTypeTasksDeployContainerCommand(original["command"], d, config)
+	transformed["args"] =
+		flattenClouddeployCustomTargetTypeTasksDeployContainerArgs(original["args"], d, config)
+	transformed["env"] =
+		flattenClouddeployCustomTargetTypeTasksDeployContainerEnv(original["env"], d, config)
+	return []interface{}{transformed}
+}
+func flattenClouddeployCustomTargetTypeTasksDeployContainerImage(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenClouddeployCustomTargetTypeTasksDeployContainerCommand(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenClouddeployCustomTargetTypeTasksDeployContainerArgs(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenClouddeployCustomTargetTypeTasksDeployContainerEnv(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1204,6 +1450,211 @@ func expandClouddeployCustomTargetTypeCustomActionsIncludeSkaffoldModulesGoogleC
 	return v, nil
 }
 
+func expandClouddeployCustomTargetTypeTasks(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedRender, err := expandClouddeployCustomTargetTypeTasksRender(original["render"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedRender); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["render"] = transformedRender
+	}
+
+	transformedDeploy, err := expandClouddeployCustomTargetTypeTasksDeploy(original["deploy"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedDeploy); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["deploy"] = transformedDeploy
+	}
+
+	return transformed, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksRender(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedContainer, err := expandClouddeployCustomTargetTypeTasksRenderContainer(original["container"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedContainer); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["container"] = transformedContainer
+	}
+
+	return transformed, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksRenderContainer(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedImage, err := expandClouddeployCustomTargetTypeTasksRenderContainerImage(original["image"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedImage); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["image"] = transformedImage
+	}
+
+	transformedCommand, err := expandClouddeployCustomTargetTypeTasksRenderContainerCommand(original["command"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedCommand); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["command"] = transformedCommand
+	}
+
+	transformedArgs, err := expandClouddeployCustomTargetTypeTasksRenderContainerArgs(original["args"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedArgs); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["args"] = transformedArgs
+	}
+
+	transformedEnv, err := expandClouddeployCustomTargetTypeTasksRenderContainerEnv(original["env"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedEnv); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["env"] = transformedEnv
+	}
+
+	return transformed, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksRenderContainerImage(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksRenderContainerCommand(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksRenderContainerArgs(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksRenderContainerEnv(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksDeploy(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedContainer, err := expandClouddeployCustomTargetTypeTasksDeployContainer(original["container"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedContainer); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["container"] = transformedContainer
+	}
+
+	return transformed, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksDeployContainer(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedImage, err := expandClouddeployCustomTargetTypeTasksDeployContainerImage(original["image"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedImage); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["image"] = transformedImage
+	}
+
+	transformedCommand, err := expandClouddeployCustomTargetTypeTasksDeployContainerCommand(original["command"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedCommand); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["command"] = transformedCommand
+	}
+
+	transformedArgs, err := expandClouddeployCustomTargetTypeTasksDeployContainerArgs(original["args"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedArgs); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["args"] = transformedArgs
+	}
+
+	transformedEnv, err := expandClouddeployCustomTargetTypeTasksDeployContainerEnv(original["env"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedEnv); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["env"] = transformedEnv
+	}
+
+	return transformed, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksDeployContainerImage(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksDeployContainerCommand(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksDeployContainerArgs(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandClouddeployCustomTargetTypeTasksDeployContainerEnv(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
+}
+
 func expandClouddeployCustomTargetTypeEffectiveAnnotations(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
 	if v == nil {
 		return map[string]string{}, nil
@@ -1224,4 +1675,50 @@ func expandClouddeployCustomTargetTypeEffectiveLabels(v interface{}, d tpgresour
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceClouddeployCustomTargetTypeFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("custom_target_type_id", flattenClouddeployCustomTargetTypeCustomTargetTypeId(res["customTargetTypeId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("uid", flattenClouddeployCustomTargetTypeUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("description", flattenClouddeployCustomTargetTypeDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("annotations", flattenClouddeployCustomTargetTypeAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("labels", flattenClouddeployCustomTargetTypeLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("create_time", flattenClouddeployCustomTargetTypeCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("update_time", flattenClouddeployCustomTargetTypeUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("etag", flattenClouddeployCustomTargetTypeEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("custom_actions", flattenClouddeployCustomTargetTypeCustomActions(res["customActions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("tasks", flattenClouddeployCustomTargetTypeTasks(res["tasks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenClouddeployCustomTargetTypeEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenClouddeployCustomTargetTypeTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenClouddeployCustomTargetTypeEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomTargetType: %s", err)
+	}
+
+	return nil
 }

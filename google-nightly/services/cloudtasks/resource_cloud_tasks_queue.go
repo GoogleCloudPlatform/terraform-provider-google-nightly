@@ -123,6 +123,7 @@ func ResourceCloudTasksQueue() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -551,6 +552,18 @@ default and means that no operations are logged.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -601,7 +614,7 @@ func resourceCloudTasksQueueCreate(d *schema.ResourceData, meta interface{}) err
 		obj["httpTarget"] = httpTargetProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudTasksBasePath}}projects/{{project}}/locations/{{location}}/queues")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/queues")
 	if err != nil {
 		return err
 	}
@@ -644,7 +657,7 @@ func resourceCloudTasksQueueCreate(d *schema.ResourceData, meta interface{}) err
 
 	// Handle desired state after queue creation
 	if v, ok := d.GetOk("desired_state"); ok && v.(string) == "PAUSED" {
-		pauseUrl := fmt.Sprintf("%s%s:pause", config.CloudTasksBasePath, id)
+		pauseUrl := fmt.Sprintf("%s%s:pause", transport_tpg.BaseUrl(Product, config), id)
 
 		_, err = transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 			Config:    config,
@@ -692,7 +705,7 @@ func resourceCloudTasksQueueRead(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudTasksBasePath}}projects/{{project}}/locations/{{location}}/queues/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/queues/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -731,30 +744,25 @@ func resourceCloudTasksQueueRead(d *schema.ResourceData, meta interface{}) error
 			return fmt.Errorf("Error setting desired_state: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Queue: %s", err)
 	}
 
-	if err := d.Set("name", flattenCloudTasksQueueName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Queue: %s", err)
-	}
-	if err := d.Set("app_engine_routing_override", flattenCloudTasksQueueAppEngineRoutingOverride(res["appEngineRoutingOverride"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Queue: %s", err)
-	}
-	if err := d.Set("rate_limits", flattenCloudTasksQueueRateLimits(res["rateLimits"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Queue: %s", err)
-	}
-	if err := d.Set("retry_config", flattenCloudTasksQueueRetryConfig(res["retryConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Queue: %s", err)
-	}
-	if err := d.Set("stackdriver_logging_config", flattenCloudTasksQueueStackdriverLoggingConfig(res["stackdriverLoggingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Queue: %s", err)
-	}
-	if err := d.Set("state", flattenCloudTasksQueueState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Queue: %s", err)
-	}
-	if err := d.Set("http_target", flattenCloudTasksQueueHttpTarget(res["httpTarget"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Queue: %s", err)
+	err = ResourceCloudTasksQueueFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -785,6 +793,19 @@ func resourceCloudTasksQueueRead(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceCloudTasksQueueUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCloudTasksQueue().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCloudTasksQueueRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -851,7 +872,7 @@ func resourceCloudTasksQueueUpdate(d *schema.ResourceData, meta interface{}) err
 		obj["httpTarget"] = httpTargetProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudTasksBasePath}}projects/{{project}}/locations/{{location}}/queues/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/queues/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -951,6 +972,13 @@ func resourceCloudTasksQueueUpdate(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceCloudTasksQueueDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CloudTasksQueue without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Queue %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -964,8 +992,7 @@ func resourceCloudTasksQueueDelete(d *schema.ResourceData, meta interface{}) err
 		return fmt.Errorf("Error fetching project for Queue: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudTasksBasePath}}projects/{{project}}/locations/{{location}}/queues/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/queues/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1897,4 +1924,32 @@ func expandCloudTasksQueueHttpTargetOidcTokenServiceAccountEmail(v interface{}, 
 
 func expandCloudTasksQueueHttpTargetOidcTokenAudience(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceCloudTasksQueueFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenCloudTasksQueueName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Queue: %s", err)
+	}
+	if err = d.Set("app_engine_routing_override", flattenCloudTasksQueueAppEngineRoutingOverride(res["appEngineRoutingOverride"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Queue: %s", err)
+	}
+	if err = d.Set("rate_limits", flattenCloudTasksQueueRateLimits(res["rateLimits"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Queue: %s", err)
+	}
+	if err = d.Set("retry_config", flattenCloudTasksQueueRetryConfig(res["retryConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Queue: %s", err)
+	}
+	if err = d.Set("stackdriver_logging_config", flattenCloudTasksQueueStackdriverLoggingConfig(res["stackdriverLoggingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Queue: %s", err)
+	}
+	if err = d.Set("state", flattenCloudTasksQueueState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Queue: %s", err)
+	}
+	if err = d.Set("http_target", flattenCloudTasksQueueHttpTarget(res["httpTarget"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Queue: %s", err)
+	}
+
+	return nil
 }

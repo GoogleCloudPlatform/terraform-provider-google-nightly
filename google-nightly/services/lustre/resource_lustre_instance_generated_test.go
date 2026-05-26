@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/lustre"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = lustre.Product
 )
 
 func TestAccLustreInstance_lustreInstanceBasicExample(t *testing.T) {
@@ -58,7 +61,7 @@ func TestAccLustreInstance_lustreInstanceBasicExample(t *testing.T) {
 	context := map[string]interface{}{
 		"address_name":    "tf-test-my-ip-address-name" + randomSuffix,
 		"name":            "tf-test-my-instance" + randomSuffix,
-		"network_name":    acctest.BootstrapSharedServiceNetworkingConnection(t, "default-vpc"),
+		"network_name":    servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "default-vpc"),
 		"subnetwork_name": "tf-test-my-subnetwork" + randomSuffix,
 		"random_suffix":   randomSuffix,
 	}
@@ -130,8 +133,7 @@ func testAccCheckLustreInstanceDestroyProducer(t *testing.T) func(s *terraform.S
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{LustreBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(lustre.Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 			if err != nil {
 				return err
 			}

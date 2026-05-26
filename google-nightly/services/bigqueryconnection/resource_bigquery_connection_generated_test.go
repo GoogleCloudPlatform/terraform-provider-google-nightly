@@ -30,6 +30,14 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/alloydb"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigqueryconnection"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataproc"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/sql"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +56,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = bigqueryconnection.Product
 )
 
 func TestAccBigqueryConnectionConnection_bigqueryConnectionCloudResourceExample(t *testing.T) {
@@ -571,7 +580,7 @@ resource "google_dataproc_cluster" "basic" {
 
 func TestAccBigqueryConnectionConnection_bigqueryConnectionSqlWithCmekExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:bq-{project_number}@bigquery-encryption.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -583,7 +592,7 @@ func TestAccBigqueryConnectionConnection_bigqueryConnectionSqlWithCmekExample(t 
 	context := map[string]interface{}{
 		"database_instance_name": "tf-test-my-database-instance" + randomSuffix,
 		"deletion_protection":    false,
-		"kms_key_name":           acctest.BootstrapKMSKey(t).CryptoKey.Name,
+		"kms_key_name":           kms.BootstrapKMSKey(t).CryptoKey.Name,
 		"username":               "user" + randomSuffix,
 		"random_suffix":          randomSuffix,
 	}
@@ -655,6 +664,126 @@ resource "google_bigquery_connection" "bq-connection-cmek" {
 `, context)
 }
 
+func TestAccBigqueryConnectionConnection_bigqueryConnectionConnectorConfigurationExample(t *testing.T) {
+	acctest.SkipIfVcr(t)
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"connection_id": "tf-test-my-connection" + randomSuffix,
+		"password":      "password",
+		"username":      "user" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ExternalProviders: map[string]resource.ExternalProvider{
+			"random": {},
+			"time":   {},
+		},
+		CheckDestroy: testAccCheckBigqueryConnectionConnectionDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccBigqueryConnectionConnection_bigqueryConnectionConnectorConfigurationExample(context),
+			},
+			{
+				ResourceName:            "google_bigquery_connection.connection",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"configuration.0.authentication.0.username_password.0.password", "location"},
+			},
+			{
+				ResourceName:       "google_bigquery_connection.connection",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccBigqueryConnectionConnection_bigqueryConnectionConnectorConfigurationExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_alloydb_cluster" "default" {
+  cluster_id = "alloydb-cluster-${local.name_suffix}"
+  location   = "us-central1"
+  network_config {
+    network = google_compute_network.default.id
+  }
+
+  initial_user {
+    password = "alloydb-cluster-password"
+  }
+
+  deletion_protection = false
+
+  lifecycle {
+    ignore_changes = [initial_user]
+  }
+}
+
+resource "google_alloydb_instance" "default" {
+  cluster       = google_alloydb_cluster.default.name
+  instance_id   = "alloydb-instance-${local.name_suffix}"
+  instance_type = "PRIMARY"
+
+  machine_config {
+    cpu_count = 2
+  }
+
+  depends_on = [google_service_networking_connection.vpc_connection]
+}
+
+resource "google_compute_network" "default" {
+  name = "alloydb-network-${local.name_suffix}"
+}
+
+resource "google_compute_global_address" "private_ip_alloc" {
+  name          = "alloydb-ip-${local.name_suffix}"
+  address_type  = "INTERNAL"
+  purpose       = "VPC_PEERING"
+  prefix_length = 16
+  network       = google_compute_network.default.id
+}
+
+resource "google_service_networking_connection" "vpc_connection" {
+  network                 = google_compute_network.default.id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.private_ip_alloc.name]
+}
+
+locals {
+  name_suffix = "%{connection_id}"
+}
+
+resource "google_bigquery_connection" "connection" {
+  connection_id = "%{connection_id}"
+  location      = "us-central1"
+  friendly_name = "alloydb connection"
+  description   = "AlloyDB connection using connector configuration"
+
+  configuration {
+    connector_id = "google-alloydb"
+    asset {
+      database              = "postgres"
+      google_cloud_resource = "//alloydb.googleapis.com/${google_alloydb_instance.default.id}"
+    }
+    authentication {
+      username_password {
+        username = "%{username}"
+        password {
+          plaintext = "%{password}"
+        }
+      }
+    }
+  }
+}
+`, context)
+}
+
 func testAccCheckBigqueryConnectionConnectionDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {
@@ -666,8 +795,7 @@ func testAccCheckBigqueryConnectionConnectionDestroyProducer(t *testing.T) func(
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{BigqueryConnectionBasePath}}projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(bigqueryconnection.Product, config)+"projects/{{project}}/locations/{{location}}/connections/{{connection_id}}")
 			if err != nil {
 				return err
 			}

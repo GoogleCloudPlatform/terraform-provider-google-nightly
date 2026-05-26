@@ -201,6 +201,19 @@ or projects/{project}/muteConfigs/{configId}`,
 updated. This field is set by the server and will be ignored if
 provided on config creation or update.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -239,7 +252,7 @@ func resourceSecurityCenterMuteConfigCreate(d *schema.ResourceData, meta interfa
 		obj["expiryTime"] = expiryTimeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}{{parent}}/muteConfigs?muteConfigId={{mute_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/muteConfigs?muteConfigId={{mute_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -303,7 +316,7 @@ func resourceSecurityCenterMuteConfigRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -330,29 +343,23 @@ func resourceSecurityCenterMuteConfigRead(d *schema.ResourceData, meta interface
 
 	log.Printf("[DEBUG] Finished reading SecurityCenterMuteConfig %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenSecurityCenterMuteConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MuteConfig: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("description", flattenSecurityCenterMuteConfigDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MuteConfig: %s", err)
-	}
-	if err := d.Set("filter", flattenSecurityCenterMuteConfigFilter(res["filter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MuteConfig: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecurityCenterMuteConfigCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MuteConfig: %s", err)
-	}
-	if err := d.Set("update_time", flattenSecurityCenterMuteConfigUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MuteConfig: %s", err)
-	}
-	if err := d.Set("most_recent_editor", flattenSecurityCenterMuteConfigMostRecentEditor(res["mostRecentEditor"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MuteConfig: %s", err)
-	}
-	if err := d.Set("type", flattenSecurityCenterMuteConfigType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MuteConfig: %s", err)
-	}
-	if err := d.Set("expiry_time", flattenSecurityCenterMuteConfigExpiryTime(res["expiryTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading MuteConfig: %s", err)
+
+	err = ResourceSecurityCenterMuteConfigFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -371,6 +378,19 @@ func resourceSecurityCenterMuteConfigRead(d *schema.ResourceData, meta interface
 }
 
 func resourceSecurityCenterMuteConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecurityCenterMuteConfig().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecurityCenterMuteConfigRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -415,7 +435,7 @@ func resourceSecurityCenterMuteConfigUpdate(d *schema.ResourceData, meta interfa
 		obj["expiryTime"] = expiryTimeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -476,6 +496,13 @@ func resourceSecurityCenterMuteConfigUpdate(d *schema.ResourceData, meta interfa
 }
 
 func resourceSecurityCenterMuteConfigDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecurityCenterMuteConfig without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing MuteConfig %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -484,7 +511,7 @@ func resourceSecurityCenterMuteConfigDelete(d *schema.ResourceData, meta interfa
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -607,5 +634,36 @@ func resourceSecurityCenterMuteConfigPostCreateSetComputedFields(d *schema.Resou
 	if err := d.Set("name", flattenSecurityCenterMuteConfigName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceSecurityCenterMuteConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecurityCenterMuteConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MuteConfig: %s", err)
+	}
+	if err = d.Set("description", flattenSecurityCenterMuteConfigDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MuteConfig: %s", err)
+	}
+	if err = d.Set("filter", flattenSecurityCenterMuteConfigFilter(res["filter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MuteConfig: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecurityCenterMuteConfigCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MuteConfig: %s", err)
+	}
+	if err = d.Set("update_time", flattenSecurityCenterMuteConfigUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MuteConfig: %s", err)
+	}
+	if err = d.Set("most_recent_editor", flattenSecurityCenterMuteConfigMostRecentEditor(res["mostRecentEditor"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MuteConfig: %s", err)
+	}
+	if err = d.Set("type", flattenSecurityCenterMuteConfigType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MuteConfig: %s", err)
+	}
+	if err = d.Set("expiry_time", flattenSecurityCenterMuteConfigExpiryTime(res["expiryTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading MuteConfig: %s", err)
+	}
+
 	return nil
 }

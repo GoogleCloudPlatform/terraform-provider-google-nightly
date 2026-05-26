@@ -141,6 +141,7 @@ func ResourceDeploymentManagerDeployment() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			customDiffDeploymentManagerDeployment,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -289,6 +290,18 @@ was successfully deployed.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -344,7 +357,7 @@ func resourceDeploymentManagerDeploymentCreate(d *schema.ResourceData, meta inte
 		obj["target"] = targetProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeploymentManagerBasePath}}projects/{{project}}/global/deployments?preview={{preview}}&createPolicy={{create_policy}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/deployments?preview={{preview}}&createPolicy={{create_policy}}")
 	if err != nil {
 		return err
 	}
@@ -424,7 +437,7 @@ func resourceDeploymentManagerDeploymentRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeploymentManagerBasePath}}projects/{{project}}/global/deployments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/deployments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -457,27 +470,26 @@ func resourceDeploymentManagerDeploymentRead(d *schema.ResourceData, meta interf
 
 	log.Printf("[DEBUG] Finished reading DeploymentManagerDeployment %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Deployment: %s", err)
 	}
 
-	if err := d.Set("name", flattenDeploymentManagerDeploymentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("description", flattenDeploymentManagerDeploymentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("labels", flattenDeploymentManagerDeploymentLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("deployment_id", flattenDeploymentManagerDeploymentDeploymentId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("manifest", flattenDeploymentManagerDeploymentManifest(res["manifest"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("self_link", flattenDeploymentManagerDeploymentSelfLink(res["selfLink"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
+	err = ResourceDeploymentManagerDeploymentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -502,6 +514,19 @@ func resourceDeploymentManagerDeploymentRead(d *schema.ResourceData, meta interf
 }
 
 func resourceDeploymentManagerDeploymentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDeploymentManagerDeployment().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDeploymentManagerDeploymentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -536,7 +561,7 @@ func resourceDeploymentManagerDeploymentUpdate(d *schema.ResourceData, meta inte
 	if d.HasChange("preview") {
 		obj := make(map[string]interface{})
 
-		getUrl, err := tpgresource.ReplaceVars(d, config, "{{DeploymentManagerBasePath}}projects/{{project}}/global/deployments/{{name}}")
+		getUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/deployments/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -559,7 +584,7 @@ func resourceDeploymentManagerDeploymentUpdate(d *schema.ResourceData, meta inte
 
 		obj["fingerprint"] = getRes["fingerprint"]
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{DeploymentManagerBasePath}}projects/{{project}}/global/deployments/{{name}}?preview={{preview}}&createPolicy={{create_policy}}&deletePolicy={{delete_policy}}")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/deployments/{{name}}?preview={{preview}}&createPolicy={{create_policy}}&deletePolicy={{delete_policy}}")
 		if err != nil {
 			return err
 		}
@@ -597,7 +622,7 @@ func resourceDeploymentManagerDeploymentUpdate(d *schema.ResourceData, meta inte
 	if d.HasChange("description") || d.HasChange("labels") || d.HasChange("target") {
 		obj := make(map[string]interface{})
 
-		getUrl, err := tpgresource.ReplaceVars(d, config, "{{DeploymentManagerBasePath}}projects/{{project}}/global/deployments/{{name}}")
+		getUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/deployments/{{name}}")
 		if err != nil {
 			return err
 		}
@@ -639,7 +664,7 @@ func resourceDeploymentManagerDeploymentUpdate(d *schema.ResourceData, meta inte
 			obj["target"] = targetProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{DeploymentManagerBasePath}}projects/{{project}}/global/deployments/{{name}}?preview={{preview}}&createPolicy={{create_policy}}&deletePolicy={{delete_policy}}")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/deployments/{{name}}?preview={{preview}}&createPolicy={{create_policy}}&deletePolicy={{delete_policy}}")
 		if err != nil {
 			return err
 		}
@@ -681,6 +706,13 @@ func resourceDeploymentManagerDeploymentUpdate(d *schema.ResourceData, meta inte
 }
 
 func resourceDeploymentManagerDeploymentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DeploymentManagerDeployment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Deployment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -694,8 +726,7 @@ func resourceDeploymentManagerDeploymentDelete(d *schema.ResourceData, meta inte
 		return fmt.Errorf("Error fetching project for Deployment: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeploymentManagerBasePath}}projects/{{project}}/global/deployments/{{name}}?deletePolicy={{delete_policy}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/deployments/{{name}}?deletePolicy={{delete_policy}}")
 	if err != nil {
 		return err
 	}
@@ -962,4 +993,29 @@ func resourceDeploymentManagerDeploymentPostCreateFailure(d *schema.ResourceData
 	if cleanErr != nil {
 		log.Printf("[WARN] Could not confirm cleanup of Deployment if created in error state: %v", cleanErr)
 	}
+}
+
+func ResourceDeploymentManagerDeploymentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDeploymentManagerDeploymentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("description", flattenDeploymentManagerDeploymentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("labels", flattenDeploymentManagerDeploymentLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("deployment_id", flattenDeploymentManagerDeploymentDeploymentId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("manifest", flattenDeploymentManagerDeploymentManifest(res["manifest"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("self_link", flattenDeploymentManagerDeploymentSelfLink(res["selfLink"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+
+	return nil
 }

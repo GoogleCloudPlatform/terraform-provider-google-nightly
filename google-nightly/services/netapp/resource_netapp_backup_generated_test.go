@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/netapp"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = netapp.Product
 )
 
 func TestAccNetappBackup_netappBackupExample(t *testing.T) {
@@ -58,7 +61,7 @@ func TestAccNetappBackup_netappBackupExample(t *testing.T) {
 	context := map[string]interface{}{
 		"backup_name":       "tf-test-test-backup" + randomSuffix,
 		"backup_vault_name": "tf-test-backup-vault" + randomSuffix,
-		"network_name":      acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":      servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"pool_name":         "tf-test-backup-pool" + randomSuffix,
 		"volume_name":       "tf-test-backup-volume" + randomSuffix,
 		"random_suffix":     randomSuffix,
@@ -140,8 +143,7 @@ func testAccCheckNetappBackupDestroyProducer(t *testing.T) func(s *terraform.Sta
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/backupVaults/{{vault_name}}/backups/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(netapp.Product, config)+"projects/{{project}}/locations/{{location}}/backupVaults/{{vault_name}}/backups/{{name}}")
 			if err != nil {
 				return err
 			}

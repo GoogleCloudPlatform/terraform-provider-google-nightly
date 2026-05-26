@@ -116,6 +116,7 @@ func ResourceVertexAIEndpoint() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -535,6 +536,18 @@ the 'deployModel' [example](https://cloud.google.com/vertex-ai/docs/general/depl
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -603,7 +616,7 @@ func resourceVertexAIEndpointCreate(d *schema.ResourceData, meta interface{}) er
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{location}}/endpoints?endpointId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/endpoints?endpointId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -687,7 +700,7 @@ func resourceVertexAIEndpointRead(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -720,57 +733,26 @@ func resourceVertexAIEndpointRead(d *schema.ResourceData, meta interface{}) erro
 
 	log.Printf("[DEBUG] Finished reading VertexAIEndpoint %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Endpoint: %s", err)
 	}
 
-	if err := d.Set("display_name", flattenVertexAIEndpointDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("description", flattenVertexAIEndpointDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("deployed_models", flattenVertexAIEndpointDeployedModels(res["deployedModels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("traffic_split", flattenVertexAIEndpointTrafficSplit(res["trafficSplit"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("labels", flattenVertexAIEndpointLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("create_time", flattenVertexAIEndpointCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("update_time", flattenVertexAIEndpointUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("encryption_spec", flattenVertexAIEndpointEncryptionSpec(res["encryptionSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("network", flattenVertexAIEndpointNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("private_service_connect_config", flattenVertexAIEndpointPrivateServiceConnectConfig(res["privateServiceConnectConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("model_deployment_monitoring_job", flattenVertexAIEndpointModelDeploymentMonitoringJob(res["modelDeploymentMonitoringJob"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("predict_request_response_logging_config", flattenVertexAIEndpointPredictRequestResponseLoggingConfig(res["predictRequestResponseLoggingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("dedicated_endpoint_enabled", flattenVertexAIEndpointDedicatedEndpointEnabled(res["dedicatedEndpointEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("dedicated_endpoint_dns", flattenVertexAIEndpointDedicatedEndpointDns(res["dedicatedEndpointDns"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenVertexAIEndpointTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenVertexAIEndpointEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Endpoint: %s", err)
+	err = ResourceVertexAIEndpointFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -801,6 +783,19 @@ func resourceVertexAIEndpointRead(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceVertexAIEndpointUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVertexAIEndpoint().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVertexAIEndpointRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -879,7 +874,7 @@ func resourceVertexAIEndpointUpdate(d *schema.ResourceData, meta interface{}) er
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -952,6 +947,13 @@ func resourceVertexAIEndpointUpdate(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceVertexAIEndpointDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VertexAIEndpoint without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Endpoint %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -965,8 +967,7 @@ func resourceVertexAIEndpointDelete(d *schema.ResourceData, meta interface{}) er
 		return fmt.Errorf("Error fetching project for Endpoint: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/endpoints/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1798,4 +1799,59 @@ func expandVertexAIEndpointEffectiveLabels(v interface{}, d tpgresource.Terrafor
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceVertexAIEndpointFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("display_name", flattenVertexAIEndpointDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("description", flattenVertexAIEndpointDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("deployed_models", flattenVertexAIEndpointDeployedModels(res["deployedModels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("traffic_split", flattenVertexAIEndpointTrafficSplit(res["trafficSplit"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("labels", flattenVertexAIEndpointLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("create_time", flattenVertexAIEndpointCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("update_time", flattenVertexAIEndpointUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("encryption_spec", flattenVertexAIEndpointEncryptionSpec(res["encryptionSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("network", flattenVertexAIEndpointNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("private_service_connect_config", flattenVertexAIEndpointPrivateServiceConnectConfig(res["privateServiceConnectConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("model_deployment_monitoring_job", flattenVertexAIEndpointModelDeploymentMonitoringJob(res["modelDeploymentMonitoringJob"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("predict_request_response_logging_config", flattenVertexAIEndpointPredictRequestResponseLoggingConfig(res["predictRequestResponseLoggingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("dedicated_endpoint_enabled", flattenVertexAIEndpointDedicatedEndpointEnabled(res["dedicatedEndpointEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("dedicated_endpoint_dns", flattenVertexAIEndpointDedicatedEndpointDns(res["dedicatedEndpointDns"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenVertexAIEndpointTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenVertexAIEndpointEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Endpoint: %s", err)
+	}
+
+	return nil
 }

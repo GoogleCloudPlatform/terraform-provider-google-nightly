@@ -200,7 +200,7 @@ func resourceLoggingFolderSettingsCreate(d *schema.ResourceData, meta interface{
 		obj["disableDefaultSink"] = disableDefaultSinkProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}folders/{{folder}}/settings?updateMask=disableDefaultSink,storageLocation,kmsKeyName")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/settings?updateMask=disableDefaultSink,storageLocation,kmsKeyName")
 	if err != nil {
 		return err
 	}
@@ -258,7 +258,7 @@ func resourceLoggingFolderSettingsRead(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}folders/{{folder}}/settings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/settings")
 	if err != nil {
 		return err
 	}
@@ -285,23 +285,9 @@ func resourceLoggingFolderSettingsRead(d *schema.ResourceData, meta interface{})
 
 	log.Printf("[DEBUG] Finished reading LoggingFolderSettings %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenLoggingFolderSettingsName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSettings: %s", err)
-	}
-	if err := d.Set("kms_key_name", flattenLoggingFolderSettingsKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSettings: %s", err)
-	}
-	if err := d.Set("kms_service_account_id", flattenLoggingFolderSettingsKmsServiceAccountId(res["kmsServiceAccountId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSettings: %s", err)
-	}
-	if err := d.Set("storage_location", flattenLoggingFolderSettingsStorageLocation(res["storageLocation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSettings: %s", err)
-	}
-	if err := d.Set("disable_default_sink", flattenLoggingFolderSettingsDisableDefaultSink(res["disableDefaultSink"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSettings: %s", err)
-	}
-	if err := d.Set("logging_service_account_id", flattenLoggingFolderSettingsLoggingServiceAccountId(res["loggingServiceAccountId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSettings: %s", err)
+	err = ResourceLoggingFolderSettingsFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -320,6 +306,7 @@ func resourceLoggingFolderSettingsRead(d *schema.ResourceData, meta interface{})
 }
 
 func resourceLoggingFolderSettingsUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -358,7 +345,7 @@ func resourceLoggingFolderSettingsUpdate(d *schema.ResourceData, meta interface{
 		obj["disableDefaultSink"] = disableDefaultSinkProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}folders/{{folder}}/settings?updateMask=disableDefaultSink,storageLocation,kmsKeyName")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/settings?updateMask=disableDefaultSink,storageLocation,kmsKeyName")
 	if err != nil {
 		return err
 	}
@@ -453,4 +440,29 @@ func expandLoggingFolderSettingsStorageLocation(v interface{}, d tpgresource.Ter
 
 func expandLoggingFolderSettingsDisableDefaultSink(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceLoggingFolderSettingsFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenLoggingFolderSettingsName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSettings: %s", err)
+	}
+	if err = d.Set("kms_key_name", flattenLoggingFolderSettingsKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSettings: %s", err)
+	}
+	if err = d.Set("kms_service_account_id", flattenLoggingFolderSettingsKmsServiceAccountId(res["kmsServiceAccountId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSettings: %s", err)
+	}
+	if err = d.Set("storage_location", flattenLoggingFolderSettingsStorageLocation(res["storageLocation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSettings: %s", err)
+	}
+	if err = d.Set("disable_default_sink", flattenLoggingFolderSettingsDisableDefaultSink(res["disableDefaultSink"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSettings: %s", err)
+	}
+	if err = d.Set("logging_service_account_id", flattenLoggingFolderSettingsLoggingServiceAccountId(res["loggingServiceAccountId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSettings: %s", err)
+	}
+
+	return nil
 }

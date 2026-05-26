@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/redis"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = redis.Product
 )
 
 func TestAccRedisInstance_redisInstanceBasicExample(t *testing.T) {
@@ -106,7 +110,7 @@ func TestAccRedisInstance_redisInstanceFullExample(t *testing.T) {
 
 	context := map[string]interface{}{
 		"instance_name":   "tf-test-ha-memory-cache" + randomSuffix,
-		"network_name":    acctest.BootstrapSharedTestNetwork(t, "redis-full"),
+		"network_name":    compute.BootstrapSharedTestNetwork(t, "redis-full"),
 		"prevent_destroy": false,
 		"random_suffix":   randomSuffix,
 	}
@@ -194,7 +198,7 @@ func TestAccRedisInstance_redisInstanceFullWithPersistenceConfigExample(t *testi
 
 	context := map[string]interface{}{
 		"instance_name":   "tf-test-ha-memory-cache-persis" + randomSuffix,
-		"network_name":    acctest.BootstrapSharedTestNetwork(t, "redis-full-persis"),
+		"network_name":    compute.BootstrapSharedTestNetwork(t, "redis-full-persis"),
 		"prevent_destroy": false,
 		"random_suffix":   randomSuffix,
 	}
@@ -251,7 +255,7 @@ func TestAccRedisInstance_redisInstancePrivateServiceTestExample(t *testing.T) {
 
 	context := map[string]interface{}{
 		"instance_name":   "tf-test-private-cache" + randomSuffix,
-		"network_name":    acctest.BootstrapSharedServiceNetworkingConnection(t, "vpc-network-1"),
+		"network_name":    servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "vpc-network-1"),
 		"prevent_destroy": false,
 		"random_suffix":   randomSuffix,
 	}
@@ -322,7 +326,7 @@ func TestAccRedisInstance_redisInstanceMrrExample(t *testing.T) {
 
 	context := map[string]interface{}{
 		"instance_name":   "tf-test-mrr-memory-cache" + randomSuffix,
-		"network_name":    acctest.BootstrapSharedTestNetwork(t, "redis-mrr"),
+		"network_name":    compute.BootstrapSharedTestNetwork(t, "redis-mrr"),
 		"prevent_destroy": false,
 		"random_suffix":   randomSuffix,
 	}
@@ -403,8 +407,7 @@ func testAccCheckRedisInstanceDestroyProducer(t *testing.T) func(s *terraform.St
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{RedisBasePath}}projects/{{project}}/locations/{{region}}/instances/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(redis.Product, config)+"projects/{{project}}/locations/{{region}}/instances/{{name}}")
 			if err != nil {
 				return err
 			}

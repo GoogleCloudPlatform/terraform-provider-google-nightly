@@ -50,8 +50,10 @@ func ResourceComputeRegionInstanceGroupManager() *schema.Resource {
 		},
 
 		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 			tpgresource.DefaultProviderProject,
 			tpgresource.DefaultProviderRegion,
+			customdiff.ForceNewIfChange("resource_policies.0.workload_policy", ForceNewResourcePoliciesWorkloadPolicyIfNewIsEmpty),
 		),
 
 		Schema: map[string]*schema.Schema{
@@ -923,6 +925,22 @@ func ResourceComputeRegionInstanceGroupManager() *schema.Resource {
 					},
 				},
 			},
+			"resource_policies": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Description: `Resource policies for this managed instance group.`,
+				MaxItems:    1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"workload_policy": {
+							Type:             schema.TypeString,
+							Optional:         true,
+							DiffSuppressFunc: tpgresource.CompareSelfLinkRelativePaths,
+							Description:      `The URL of the workload policy that is specified for this managed instance group. It can be a full or partial URL.`,
+						},
+					},
+				},
+			},
 			"target_size_policy": {
 				Type:        schema.TypeList,
 				Optional:    true,
@@ -958,6 +976,9 @@ func ResourceComputeRegionInstanceGroupManager() *schema.Resource {
 					},
 				},
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -1004,13 +1025,14 @@ func resourceComputeRegionInstanceGroupManagerCreate(d *schema.ResourceData, met
 		AllInstancesConfig:          expandAllInstancesConfig(nil, d.Get("all_instances_config").([]interface{})),
 		DistributionPolicy:          expandDistributionPolicyForCreate(d),
 		StatefulPolicy:              expandStatefulPolicy(d),
+		ResourcePolicies:            expandResourcePolicies(d.Get("resource_policies").([]interface{})),
 		TargetSizePolicy:            expandTargetSizePolicy(d.Get("target_size_policy").([]interface{})),
 		Params:                      expandInstanceGroupManagerParams(d),
 		// Force send TargetSize to allow size of 0.
 		ForceSendFields: []string{"TargetSize"},
 	}
 
-	op, err := config.NewComputeClient(userAgent).RegionInstanceGroupManagers.Insert(project, region, manager).Do()
+	op, err := NewClient(config, userAgent).RegionInstanceGroupManagers.Insert(project, region, manager).Do()
 
 	if err != nil {
 		return fmt.Errorf("Error creating RegionInstanceGroupManager: %s", err)
@@ -1074,7 +1096,7 @@ func getRegionalManager(d *schema.ResourceData, meta interface{}) (*compute.Inst
 	}
 
 	name := d.Get("name").(string)
-	manager, err := config.NewComputeClient(userAgent).RegionInstanceGroupManagers.Get(project, region, name).Do()
+	manager, err := NewClient(config, userAgent).RegionInstanceGroupManagers.Get(project, region, name).Do()
 	if err != nil {
 		return nil, transport_tpg.HandleNotFoundError(err, d, fmt.Sprintf("Region Instance Manager %q", name))
 	}
@@ -1216,16 +1238,27 @@ func resourceComputeRegionInstanceGroupManagerRead(d *schema.ResourceData, meta 
 			return fmt.Errorf("Error setting all_instances_config in state: %s", err.Error())
 		}
 	}
-	if err = d.Set("stateful_disk", flattenStatefulPolicy(manager.StatefulPolicy)); err != nil {
+	var statefulPolicyMap map[string]interface{}
+	if manager.StatefulPolicy != nil {
+		spMap, err := tpgresource.ConvertToMap(manager.StatefulPolicy)
+		if err != nil {
+			return fmt.Errorf("Error converting stateful policy: %s", err)
+		}
+		statefulPolicyMap = spMap
+	}
+	if err = d.Set("stateful_disk", flattenStatefulPolicy(statefulPolicyMap)); err != nil {
 		return fmt.Errorf("Error setting stateful_disk in state: %s", err.Error())
 	}
 	if err = d.Set("status", flattenStatus(manager.Status)); err != nil {
 		return fmt.Errorf("Error setting status in state: %s", err.Error())
 	}
-	if err = d.Set("stateful_internal_ip", flattenStatefulPolicyStatefulInternalIps(d, manager.StatefulPolicy)); err != nil {
+	if err = d.Set("resource_policies", flattenResourcePolicies(manager.ResourcePolicies)); err != nil {
+		return fmt.Errorf("Error setting resource_policies in state: %s", err.Error())
+	}
+	if err = d.Set("stateful_internal_ip", flattenStatefulPolicyStatefulInternalIps(d, statefulPolicyMap)); err != nil {
 		return fmt.Errorf("Error setting stateful_internal_ip in state: %s", err.Error())
 	}
-	if err = d.Set("stateful_external_ip", flattenStatefulPolicyStatefulExternalIps(d, manager.StatefulPolicy)); err != nil {
+	if err = d.Set("stateful_external_ip", flattenStatefulPolicyStatefulExternalIps(d, statefulPolicyMap)); err != nil {
 		return fmt.Errorf("Error setting stateful_external_ip in state: %s", err.Error())
 	}
 	if err = d.Set("target_size_policy", flattenTargetSizePolicy(manager.TargetSizePolicy)); err != nil {
@@ -1238,10 +1271,19 @@ func resourceComputeRegionInstanceGroupManagerRead(d *schema.ResourceData, meta 
 		}
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func resourceComputeRegionInstanceGroupManagerUpdate(d *schema.ResourceData, meta interface{}) error {
+
+	if tpgresource.DeletionPolicyPreUpdate(d, ResourceComputeRegionInstanceGroupManager) {
+		return ResourceComputeRegionInstanceGroupManager().Read(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -1351,8 +1393,13 @@ func resourceComputeRegionInstanceGroupManagerUpdate(d *schema.ResourceData, met
 		change = true
 	}
 
+	if d.HasChange("resource_policies") {
+		updatedManager.ResourcePolicies = expandResourcePolicies(d.Get("resource_policies").([]interface{}))
+		change = true
+	}
+
 	if change {
-		op, err := config.NewComputeClient(userAgent).RegionInstanceGroupManagers.Patch(project, region, d.Get("name").(string), updatedManager).Do()
+		op, err := NewClient(config, userAgent).RegionInstanceGroupManagers.Patch(project, region, d.Get("name").(string), updatedManager).Do()
 		if err != nil {
 			return fmt.Errorf("Error updating region managed group instances: %s", err)
 		}
@@ -1372,7 +1419,7 @@ func resourceComputeRegionInstanceGroupManagerUpdate(d *schema.ResourceData, met
 			NamedPorts: namedPorts,
 		}
 
-		op, err := config.NewComputeClient(userAgent).RegionInstanceGroups.SetNamedPorts(
+		op, err := NewClient(config, userAgent).RegionInstanceGroups.SetNamedPorts(
 			project, region, d.Get("name").(string), setNamedPorts).Do()
 
 		if err != nil {
@@ -1389,7 +1436,7 @@ func resourceComputeRegionInstanceGroupManagerUpdate(d *schema.ResourceData, met
 	if d.HasChange("target_size") && !targetSizePatchUpdate {
 		d.Partial(true)
 		targetSize := int64(d.Get("target_size").(int))
-		op, err := config.NewComputeClient(userAgent).RegionInstanceGroupManagers.Resize(
+		op, err := NewClient(config, userAgent).RegionInstanceGroupManagers.Resize(
 			project, region, d.Get("name").(string), targetSize).Do()
 
 		if err != nil {
@@ -1415,6 +1462,13 @@ func resourceComputeRegionInstanceGroupManagerUpdate(d *schema.ResourceData, met
 }
 
 func resourceComputeRegionInstanceGroupManagerDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -1434,7 +1488,7 @@ func resourceComputeRegionInstanceGroupManagerDelete(d *schema.ResourceData, met
 
 	name := d.Get("name").(string)
 
-	op, err := config.NewComputeClient(userAgent).RegionInstanceGroupManagers.Delete(project, region, name).Do()
+	op, err := NewClient(config, userAgent).RegionInstanceGroupManagers.Delete(project, region, name).Do()
 
 	if err != nil {
 		return fmt.Errorf("Error deleting region instance group manager: %s", err)

@@ -115,6 +115,7 @@ func ResourcePubsubSchema() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -168,6 +169,18 @@ error indicating that the limit has been reached require manually
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -200,7 +213,7 @@ func resourcePubsubSchemaCreate(d *schema.ResourceData, meta interface{}) error 
 		obj["name"] = nameProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/schemas?schemaId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/schemas?schemaId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -266,8 +279,7 @@ func resourcePubsubSchemaPollRead(d *schema.ResourceData, meta interface{}) tran
 	return func() (map[string]interface{}, error) {
 		config := meta.(*transport_tpg.Config)
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/schemas/{{name}}")
-
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/schemas/{{name}}")
 		if err != nil {
 			return nil, err
 		}
@@ -311,7 +323,7 @@ func resourcePubsubSchemaRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/schemas/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/schemas/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -344,18 +356,26 @@ func resourcePubsubSchemaRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading PubsubSchema %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Schema: %s", err)
 	}
 
-	if err := d.Set("type", flattenPubsubSchemaType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Schema: %s", err)
-	}
-	if err := d.Set("definition", flattenPubsubSchemaDefinition(res["definition"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Schema: %s", err)
-	}
-	if err := d.Set("name", flattenPubsubSchemaName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Schema: %s", err)
+	err = ResourcePubsubSchemaFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -380,6 +400,19 @@ func resourcePubsubSchemaRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourcePubsubSchemaUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourcePubsubSchema().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourcePubsubSchemaRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -434,7 +467,7 @@ func resourcePubsubSchemaUpdate(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/schemas/{{name}}:commit")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/schemas/{{name}}:commit")
 	if err != nil {
 		return err
 	}
@@ -468,6 +501,13 @@ func resourcePubsubSchemaUpdate(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourcePubsubSchemaDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy PubsubSchema without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Schema %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -481,8 +521,7 @@ func resourcePubsubSchemaDelete(d *schema.ResourceData, meta interface{}) error 
 		return fmt.Errorf("Error fetching project for Schema: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/schemas/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/schemas/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -573,4 +612,20 @@ func resourcePubsubSchemaUpdateEncoder(d *schema.ResourceData, meta interface{},
 	obj["name"] = d.Id()
 	newObj["schema"] = obj
 	return newObj, nil
+}
+
+func ResourcePubsubSchemaFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("type", flattenPubsubSchemaType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Schema: %s", err)
+	}
+	if err = d.Set("definition", flattenPubsubSchemaDefinition(res["definition"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Schema: %s", err)
+	}
+	if err = d.Set("name", flattenPubsubSchemaName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Schema: %s", err)
+	}
+
+	return nil
 }

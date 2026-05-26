@@ -125,6 +125,7 @@ func ResourceBeyondcorpAppGateway() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -244,6 +245,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -282,7 +295,7 @@ func resourceBeyondcorpAppGatewayCreate(d *schema.ResourceData, meta interface{}
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BeyondcorpBasePath}}projects/{{project}}/locations/{{region}}/appGateways?app_gateway_id={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/appGateways?app_gateway_id={{name}}")
 	if err != nil {
 		return err
 	}
@@ -366,7 +379,7 @@ func resourceBeyondcorpAppGatewayRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BeyondcorpBasePath}}projects/{{project}}/locations/{{region}}/appGateways/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/appGateways/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -399,36 +412,26 @@ func resourceBeyondcorpAppGatewayRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading BeyondcorpAppGateway %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading AppGateway: %s", err)
 	}
 
-	if err := d.Set("type", flattenBeyondcorpAppGatewayType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppGateway: %s", err)
-	}
-	if err := d.Set("host_type", flattenBeyondcorpAppGatewayHostType(res["hostType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppGateway: %s", err)
-	}
-	if err := d.Set("display_name", flattenBeyondcorpAppGatewayDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppGateway: %s", err)
-	}
-	if err := d.Set("labels", flattenBeyondcorpAppGatewayLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppGateway: %s", err)
-	}
-	if err := d.Set("state", flattenBeyondcorpAppGatewayState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppGateway: %s", err)
-	}
-	if err := d.Set("uri", flattenBeyondcorpAppGatewayUri(res["uri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppGateway: %s", err)
-	}
-	if err := d.Set("allocated_connections", flattenBeyondcorpAppGatewayAllocatedConnections(res["allocatedConnections"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppGateway: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenBeyondcorpAppGatewayTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppGateway: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenBeyondcorpAppGatewayEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppGateway: %s", err)
+	err = ResourceBeyondcorpAppGatewayFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -459,11 +462,18 @@ func resourceBeyondcorpAppGatewayRead(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceBeyondcorpAppGatewayUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceBeyondcorpAppGatewayRead(d, meta)
 }
 
 func resourceBeyondcorpAppGatewayDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BeyondcorpAppGateway without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing AppGateway %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -477,8 +487,7 @@ func resourceBeyondcorpAppGatewayDelete(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error fetching project for AppGateway: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{BeyondcorpBasePath}}projects/{{project}}/locations/{{region}}/appGateways/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/appGateways/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -758,4 +767,38 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 
 func ResourceBeyondcorpAppGatewayUpgradeV0(_ context.Context, rawState map[string]interface{}, meta interface{}) (map[string]interface{}, error) {
 	return tpgresource.TerraformLabelsStateUpgrade(rawState)
+}
+
+func ResourceBeyondcorpAppGatewayFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("type", flattenBeyondcorpAppGatewayType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppGateway: %s", err)
+	}
+	if err = d.Set("host_type", flattenBeyondcorpAppGatewayHostType(res["hostType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppGateway: %s", err)
+	}
+	if err = d.Set("display_name", flattenBeyondcorpAppGatewayDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppGateway: %s", err)
+	}
+	if err = d.Set("labels", flattenBeyondcorpAppGatewayLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppGateway: %s", err)
+	}
+	if err = d.Set("state", flattenBeyondcorpAppGatewayState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppGateway: %s", err)
+	}
+	if err = d.Set("uri", flattenBeyondcorpAppGatewayUri(res["uri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppGateway: %s", err)
+	}
+	if err = d.Set("allocated_connections", flattenBeyondcorpAppGatewayAllocatedConnections(res["allocatedConnections"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppGateway: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenBeyondcorpAppGatewayTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppGateway: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenBeyondcorpAppGatewayEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppGateway: %s", err)
+	}
+
+	return nil
 }

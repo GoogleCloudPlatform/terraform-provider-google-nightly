@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/ces"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dialogflow"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = dialogflow.Product
 )
 
 func TestAccDialogflowConversationProfile_dialogflowConversationProfileBasicExample(t *testing.T) {
@@ -172,7 +176,7 @@ func TestAccDialogflowConversationProfile_dialogflowConversationProfileBetaBidiE
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDialogflowConversationProfileDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -197,16 +201,22 @@ func TestAccDialogflowConversationProfile_dialogflowConversationProfileBetaBidiE
 func testAccDialogflowConversationProfile_dialogflowConversationProfileBetaBidiExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_dialogflow_conversation_profile" "bidi_profile" {
+  provider = google-beta
   display_name = "%{profile_name}"
-  location     = "global"
+  location     = "europe-west1"
   language_code = "en-US"
   use_bidi_streaming = true
   automated_agent_config {
     agent = google_ces_app.ces_app_for_agent.id
   }
+  sip_config {
+    allow_virtual_agent_interaction = true
+    create_conversation_on_the_fly = true
+  }
 }
 
 resource "google_ces_app" "ces_app_for_agent" {
+  provider = google-beta
   app_id = "%{app_id}"
   location = "us"
   display_name = "my-app"
@@ -228,8 +238,7 @@ func testAccCheckDialogflowConversationProfileDestroyProducer(t *testing.T) func
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DialogflowBasePath}}{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, fmt.Sprintf("%s%s", transport_tpg.BaseUrl(dialogflow.Product, config), "{{name}}"))
 			if err != nil {
 				return err
 			}
@@ -238,6 +247,19 @@ func testAccCheckDialogflowConversationProfileDestroyProducer(t *testing.T) func
 
 			if config.BillingProject != "" {
 				billingProject = config.BillingProject
+			}
+
+			location := rs.Primary.Attributes["location"]
+			universeDomain := config.UniverseDomain
+
+			if universeDomain != "" && universeDomain != "googleapis.com" {
+				url = strings.Replace(url, "googleapis.com", universeDomain, 1)
+			}
+
+			if strings.HasPrefix(url, "https://dialogflow") {
+				if location != "" && location != "global" {
+					url = strings.Replace(url, "https://dialogflow", fmt.Sprintf("https://%s-dialogflow", location), 1)
+				}
 			}
 
 			_, err = transport_tpg.SendRequest(transport_tpg.SendRequestOptions{

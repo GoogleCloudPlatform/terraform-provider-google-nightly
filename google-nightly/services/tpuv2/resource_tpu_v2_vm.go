@@ -163,6 +163,7 @@ func ResourceTpuV2Vm() *schema.Resource {
 			acceleratorTypeCustomizeDiff,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -593,6 +594,18 @@ runtime clients of the node reach out to the 0th entry in this map first.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -697,7 +710,7 @@ func resourceTpuV2VmCreate(d *schema.ResourceData, meta interface{}) error {
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{TpuV2BasePath}}projects/{{project}}/locations/{{zone}}/nodes?nodeId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{zone}}/nodes?nodeId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -781,7 +794,7 @@ func resourceTpuV2VmRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{TpuV2BasePath}}projects/{{project}}/locations/{{zone}}/nodes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{zone}}/nodes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -814,84 +827,26 @@ func resourceTpuV2VmRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading TpuV2Vm %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Vm: %s", err)
 	}
 
-	if err := d.Set("name", flattenTpuV2VmName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("runtime_version", flattenTpuV2VmRuntimeVersion(res["runtimeVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("accelerator_type", flattenTpuV2VmAcceleratorType(res["acceleratorType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("description", flattenTpuV2VmDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("cidr_block", flattenTpuV2VmCidrBlock(res["cidrBlock"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("network_config", flattenTpuV2VmNetworkConfig(res["networkConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("network_configs", flattenTpuV2VmNetworkConfigs(res["networkConfigs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("service_account", flattenTpuV2VmServiceAccount(res["serviceAccount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("scheduling_config", flattenTpuV2VmSchedulingConfig(res["schedulingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("data_disks", flattenTpuV2VmDataDisks(res["dataDisks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("shielded_instance_config", flattenTpuV2VmShieldedInstanceConfig(res["shieldedInstanceConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("accelerator_config", flattenTpuV2VmAcceleratorConfig(res["acceleratorConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("labels", flattenTpuV2VmLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("metadata", flattenTpuV2VmMetadata(res["metadata"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("tags", flattenTpuV2VmTags(res["tags"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("state", flattenTpuV2VmState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("health", flattenTpuV2VmHealth(res["health"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("health_description", flattenTpuV2VmHealthDescription(res["healthDescription"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("api_version", flattenTpuV2VmApiVersion(res["apiVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("queued_resource", flattenTpuV2VmQueuedResource(res["queuedResource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("multislice_node", flattenTpuV2VmMultisliceNode(res["multisliceNode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("network_endpoints", flattenTpuV2VmNetworkEndpoints(res["networkEndpoints"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("symptoms", flattenTpuV2VmSymptoms(res["symptoms"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenTpuV2VmTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenTpuV2VmEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Vm: %s", err)
+	err = ResourceTpuV2VmFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -922,6 +877,19 @@ func resourceTpuV2VmRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceTpuV2VmUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceTpuV2Vm().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceTpuV2VmRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -988,7 +956,7 @@ func resourceTpuV2VmUpdate(d *schema.ResourceData, meta interface{}) error {
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{TpuV2BasePath}}projects/{{project}}/locations/{{zone}}/nodes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{zone}}/nodes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1060,6 +1028,13 @@ func resourceTpuV2VmUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceTpuV2VmDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy TpuV2Vm without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Vm %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1073,8 +1048,7 @@ func resourceTpuV2VmDelete(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("Error fetching project for Vm: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{TpuV2BasePath}}projects/{{project}}/locations/{{zone}}/nodes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{zone}}/nodes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1923,4 +1897,86 @@ func expandTpuV2VmEffectiveLabels(v interface{}, d tpgresource.TerraformResource
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceTpuV2VmFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenTpuV2VmName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("runtime_version", flattenTpuV2VmRuntimeVersion(res["runtimeVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("accelerator_type", flattenTpuV2VmAcceleratorType(res["acceleratorType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("description", flattenTpuV2VmDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("cidr_block", flattenTpuV2VmCidrBlock(res["cidrBlock"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("network_config", flattenTpuV2VmNetworkConfig(res["networkConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("network_configs", flattenTpuV2VmNetworkConfigs(res["networkConfigs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("service_account", flattenTpuV2VmServiceAccount(res["serviceAccount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("scheduling_config", flattenTpuV2VmSchedulingConfig(res["schedulingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("data_disks", flattenTpuV2VmDataDisks(res["dataDisks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("shielded_instance_config", flattenTpuV2VmShieldedInstanceConfig(res["shieldedInstanceConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("accelerator_config", flattenTpuV2VmAcceleratorConfig(res["acceleratorConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("labels", flattenTpuV2VmLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("metadata", flattenTpuV2VmMetadata(res["metadata"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("tags", flattenTpuV2VmTags(res["tags"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("state", flattenTpuV2VmState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("health", flattenTpuV2VmHealth(res["health"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("health_description", flattenTpuV2VmHealthDescription(res["healthDescription"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("api_version", flattenTpuV2VmApiVersion(res["apiVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("queued_resource", flattenTpuV2VmQueuedResource(res["queuedResource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("multislice_node", flattenTpuV2VmMultisliceNode(res["multisliceNode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("network_endpoints", flattenTpuV2VmNetworkEndpoints(res["networkEndpoints"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("symptoms", flattenTpuV2VmSymptoms(res["symptoms"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenTpuV2VmTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenTpuV2VmEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Vm: %s", err)
+	}
+
+	return nil
 }

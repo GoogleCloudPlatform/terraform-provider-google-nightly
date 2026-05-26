@@ -115,6 +115,7 @@ func ResourceLookerInstance() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DEFAULT"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -679,20 +680,17 @@ accurate to nanoseconds.`,
 				Description: `The time the instance was updated in RFC3339 UTC "Zulu" format,
 accurate to nanoseconds.`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `Policy to determine if the cluster should be deleted forcefully.
-If setting deletion_policy = "FORCE", the Looker instance will be deleted regardless
-of its nested resources. If set to "DEFAULT", Looker instances that still have
-nested resources will return an error. Possible values: DEFAULT, FORCE`,
-				Default: "DEFAULT",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/looker_instance.html.markdown for specifics`,
 			},
 		},
 		UseJSONNumber: true,
@@ -822,7 +820,7 @@ func resourceLookerInstanceCreate(d *schema.ResourceData, meta interface{}) erro
 		obj["customDomain"] = customDomainProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LookerBasePath}}projects/{{project}}/locations/{{region}}/instances?instanceId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/instances?instanceId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -907,7 +905,7 @@ func resourceLookerInstanceRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LookerBasePath}}projects/{{project}}/locations/{{region}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -943,88 +941,24 @@ func resourceLookerInstanceRead(d *schema.ResourceData, meta interface{}) error 
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Instance: %s", err)
 	}
 
-	if err := d.Set("admin_settings", flattenLookerInstanceAdminSettings(res["adminSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("consumer_network", flattenLookerInstanceConsumerNetwork(res["consumerNetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("controlled_egress_config", flattenLookerInstanceControlledEgressConfig(res["controlledEgressConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("controlled_egress_enabled", flattenLookerInstanceControlledEgressEnabled(res["controlledEgressEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("create_time", flattenLookerInstanceCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("deny_maintenance_period", flattenLookerInstanceDenyMaintenancePeriod(res["denyMaintenancePeriod"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("egress_public_ip", flattenLookerInstanceEgressPublicIp(res["egressPublicIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("encryption_config", flattenLookerInstanceEncryptionConfig(res["encryptionConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("fips_enabled", flattenLookerInstanceFipsEnabled(res["fipsEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("gemini_enabled", flattenLookerInstanceGeminiEnabled(res["geminiEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("ingress_private_ip", flattenLookerInstanceIngressPrivateIp(res["ingressPrivateIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("ingress_public_ip", flattenLookerInstanceIngressPublicIp(res["ingressPublicIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("looker_version", flattenLookerInstanceLookerVersion(res["lookerVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("looker_uri", flattenLookerInstanceLookerUri(res["lookerUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("maintenance_window", flattenLookerInstanceMaintenanceWindow(res["maintenanceWindow"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("periodic_export_config", flattenLookerInstancePeriodicExportConfig(res["periodicExportConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("platform_edition", flattenLookerInstancePlatformEdition(res["platformEdition"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("private_ip_enabled", flattenLookerInstancePrivateIpEnabled(res["privateIpEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("psc_config", flattenLookerInstancePscConfig(res["pscConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("psc_enabled", flattenLookerInstancePscEnabled(res["pscEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("public_ip_enabled", flattenLookerInstancePublicIpEnabled(res["publicIpEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("reserved_range", flattenLookerInstanceReservedRange(res["reservedRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("update_time", flattenLookerInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("user_metadata", flattenLookerInstanceUserMetadata(res["userMetadata"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
-	}
-	if err := d.Set("custom_domain", flattenLookerInstanceCustomDomain(res["customDomain"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Instance: %s", err)
+	err = ResourceLookerInstanceFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1055,6 +989,19 @@ func resourceLookerInstanceRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceLookerInstanceUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceLookerInstance().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceLookerInstanceRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1199,7 +1146,7 @@ func resourceLookerInstanceUpdate(d *schema.ResourceData, meta interface{}) erro
 		obj["customDomain"] = customDomainProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LookerBasePath}}projects/{{project}}/locations/{{region}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1326,6 +1273,13 @@ func resourceLookerInstanceUpdate(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceLookerInstanceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy LookerInstance without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Instance %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1339,8 +1293,7 @@ func resourceLookerInstanceDelete(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("Error fetching project for Instance: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{LookerBasePath}}projects/{{project}}/locations/{{region}}/instances/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/instances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1405,9 +1358,6 @@ func resourceLookerInstanceImport(d *schema.ResourceData, meta interface{}) ([]*
 	d.SetId(id)
 
 	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -2899,4 +2849,86 @@ func expandLookerInstanceCustomDomainDomain(v interface{}, d tpgresource.Terrafo
 
 func expandLookerInstanceCustomDomainState(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceLookerInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("admin_settings", flattenLookerInstanceAdminSettings(res["adminSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("consumer_network", flattenLookerInstanceConsumerNetwork(res["consumerNetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("controlled_egress_config", flattenLookerInstanceControlledEgressConfig(res["controlledEgressConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("controlled_egress_enabled", flattenLookerInstanceControlledEgressEnabled(res["controlledEgressEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("create_time", flattenLookerInstanceCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("deny_maintenance_period", flattenLookerInstanceDenyMaintenancePeriod(res["denyMaintenancePeriod"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("egress_public_ip", flattenLookerInstanceEgressPublicIp(res["egressPublicIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("encryption_config", flattenLookerInstanceEncryptionConfig(res["encryptionConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("fips_enabled", flattenLookerInstanceFipsEnabled(res["fipsEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("gemini_enabled", flattenLookerInstanceGeminiEnabled(res["geminiEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("ingress_private_ip", flattenLookerInstanceIngressPrivateIp(res["ingressPrivateIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("ingress_public_ip", flattenLookerInstanceIngressPublicIp(res["ingressPublicIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("looker_version", flattenLookerInstanceLookerVersion(res["lookerVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("looker_uri", flattenLookerInstanceLookerUri(res["lookerUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("maintenance_window", flattenLookerInstanceMaintenanceWindow(res["maintenanceWindow"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("periodic_export_config", flattenLookerInstancePeriodicExportConfig(res["periodicExportConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("platform_edition", flattenLookerInstancePlatformEdition(res["platformEdition"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("private_ip_enabled", flattenLookerInstancePrivateIpEnabled(res["privateIpEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("psc_config", flattenLookerInstancePscConfig(res["pscConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("psc_enabled", flattenLookerInstancePscEnabled(res["pscEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("public_ip_enabled", flattenLookerInstancePublicIpEnabled(res["publicIpEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("reserved_range", flattenLookerInstanceReservedRange(res["reservedRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("update_time", flattenLookerInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("user_metadata", flattenLookerInstanceUserMetadata(res["userMetadata"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+	if err = d.Set("custom_domain", flattenLookerInstanceCustomDomain(res["customDomain"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Instance: %s", err)
+	}
+
+	return nil
 }

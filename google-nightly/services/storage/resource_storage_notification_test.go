@@ -24,6 +24,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
 	tpgstorage "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -136,7 +137,7 @@ func testAccStorageNotificationDestroyProducer(t *testing.T) func(s *terraform.S
 				return err
 			}
 
-			_, err = config.NewStorageClient(config.UserAgent).Notifications.Get(bucket, notificationID).Do()
+			_, err = tpgstorage.NewClient(config, config.UserAgent).Notifications.Get(bucket, notificationID).Do()
 			if err == nil {
 				return fmt.Errorf("Notification configuration still exists")
 			}
@@ -164,7 +165,7 @@ func testAccCheckStorageNotificationExists(t *testing.T, resource string, notifi
 			return err
 		}
 
-		found, err := config.NewStorageClient(config.UserAgent).Notifications.Get(bucket, notificationID).Do()
+		found, err := tpgstorage.NewClient(config, config.UserAgent).Notifications.Get(bucket, notificationID).Do()
 		if err != nil {
 			return err
 		}
@@ -227,10 +228,11 @@ resource "google_pubsub_topic_iam_binding" "binding" {
 }
 
 resource "google_storage_notification" "notification" {
-  bucket         = google_storage_bucket.bucket.name
-  payload_format = "JSON_API_V1"
-  topic          = google_pubsub_topic.topic.id
-  depends_on     = [google_pubsub_topic_iam_binding.binding]
+  bucket            = google_storage_bucket.bucket.name
+  payload_format    = "JSON_API_V1"
+  topic             = google_pubsub_topic.topic.id
+  depends_on        = [google_pubsub_topic_iam_binding.binding]
+  custom_attributes = {}
 }
 
 resource "google_storage_notification" "notification_with_prefix" {

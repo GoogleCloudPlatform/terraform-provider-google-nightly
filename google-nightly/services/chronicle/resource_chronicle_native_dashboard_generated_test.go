@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/chronicle"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = chronicle.Product
 )
 
 func TestAccChronicleNativeDashboard_chronicleNativedashboardBasicExample(t *testing.T) {
@@ -64,7 +66,7 @@ func TestAccChronicleNativeDashboard_chronicleNativedashboardBasicExample(t *tes
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckChronicleNativeDashboardDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -89,7 +91,6 @@ func TestAccChronicleNativeDashboard_chronicleNativedashboardBasicExample(t *tes
 func testAccChronicleNativeDashboard_chronicleNativedashboardBasicExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_chronicle_native_dashboard" "my_basic_dashboard" {
-  provider     = google-beta
   location     = "us"
   instance     = "%{chronicle_id}"
   display_name = "%{dashboard_name}"
@@ -123,8 +124,7 @@ func testAccCheckChronicleNativeDashboardDestroyProducer(t *testing.T) func(s *t
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards/{{dashboard_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(chronicle.Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards/{{dashboard_id}}")
 			if err != nil {
 				return err
 			}

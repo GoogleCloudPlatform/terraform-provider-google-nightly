@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/integrations"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = integrations.Product
 )
 
 func TestAccIntegrationsClient_integrationsClientBasicExample(t *testing.T) {
@@ -94,7 +98,7 @@ resource "google_integrations_client" "example" {
 func TestAccIntegrationsClient_integrationsClientFullExample(t *testing.T) {
 	acctest.SkipIfVcr(t)
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-integrations.iam.gserviceaccount.com",
 			Role:   "roles/cloudkmskacls.serviceAgent",
@@ -106,7 +110,7 @@ func TestAccIntegrationsClient_integrationsClientFullExample(t *testing.T) {
 	context := map[string]interface{}{
 		"crypto_key_name": "tftest-shared-key-1",
 		"key_ring_name":   "tftest-shared-keyring-1",
-		"kms_key":         acctest.BootstrapKMSKeyInLocation(t, "us-east1"),
+		"kms_key":         kms.BootstrapKMSKeyInLocation(t, "us-east1"),
 		"random_suffix":   randomSuffix,
 	}
 
@@ -229,8 +233,7 @@ func testAccCheckIntegrationsClientDestroyProducer(t *testing.T) func(s *terrafo
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{IntegrationsBasePath}}projects/{{project}}/locations/{{location}}/clients")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(integrations.Product, config)+"projects/{{project}}/locations/{{location}}/clients")
 			if err != nil {
 				return err
 			}

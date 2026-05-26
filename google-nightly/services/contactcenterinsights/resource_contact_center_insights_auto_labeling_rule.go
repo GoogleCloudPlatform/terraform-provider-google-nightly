@@ -115,6 +115,7 @@ func ResourceContactCenterInsightsAutoLabelingRule() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -228,6 +229,18 @@ projects/{project}/locations/{location}/autoLabelingRules/{auto_labeling_rule}`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -278,7 +291,7 @@ func resourceContactCenterInsightsAutoLabelingRuleCreate(d *schema.ResourceData,
 		obj["conditions"] = conditionsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ContactCenterInsightsBasePath}}projects/{{project}}/locations/{{location}}/autoLabelingRules?autoLabelingRuleId={{auto_labeling_rule_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/autoLabelingRules?autoLabelingRuleId={{auto_labeling_rule_id}}")
 	if err != nil {
 		return err
 	}
@@ -358,7 +371,7 @@ func resourceContactCenterInsightsAutoLabelingRuleRead(d *schema.ResourceData, m
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ContactCenterInsightsBasePath}}projects/{{project}}/locations/{{location}}/autoLabelingRules/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/autoLabelingRules/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -391,36 +404,26 @@ func resourceContactCenterInsightsAutoLabelingRuleRead(d *schema.ResourceData, m
 
 	log.Printf("[DEBUG] Finished reading ContactCenterInsightsAutoLabelingRule %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
 	}
 
-	if err := d.Set("active", flattenContactCenterInsightsAutoLabelingRuleActive(res["active"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
-	}
-	if err := d.Set("create_time", flattenContactCenterInsightsAutoLabelingRuleCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
-	}
-	if err := d.Set("display_name", flattenContactCenterInsightsAutoLabelingRuleDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
-	}
-	if err := d.Set("description", flattenContactCenterInsightsAutoLabelingRuleDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
-	}
-	if err := d.Set("name", flattenContactCenterInsightsAutoLabelingRuleName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
-	}
-	if err := d.Set("label_key_type", flattenContactCenterInsightsAutoLabelingRuleLabelKeyType(res["labelKeyType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
-	}
-	if err := d.Set("label_key", flattenContactCenterInsightsAutoLabelingRuleLabelKey(res["labelKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
-	}
-	if err := d.Set("conditions", flattenContactCenterInsightsAutoLabelingRuleConditions(res["conditions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
-	}
-	if err := d.Set("update_time", flattenContactCenterInsightsAutoLabelingRuleUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	err = ResourceContactCenterInsightsAutoLabelingRuleFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -451,6 +454,19 @@ func resourceContactCenterInsightsAutoLabelingRuleRead(d *schema.ResourceData, m
 }
 
 func resourceContactCenterInsightsAutoLabelingRuleUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceContactCenterInsightsAutoLabelingRule().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceContactCenterInsightsAutoLabelingRuleRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -523,7 +539,7 @@ func resourceContactCenterInsightsAutoLabelingRuleUpdate(d *schema.ResourceData,
 		obj["conditions"] = conditionsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ContactCenterInsightsBasePath}}projects/{{project}}/locations/{{location}}/autoLabelingRules/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/autoLabelingRules/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -592,6 +608,13 @@ func resourceContactCenterInsightsAutoLabelingRuleUpdate(d *schema.ResourceData,
 }
 
 func resourceContactCenterInsightsAutoLabelingRuleDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ContactCenterInsightsAutoLabelingRule without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing AutoLabelingRule %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -605,8 +628,7 @@ func resourceContactCenterInsightsAutoLabelingRuleDelete(d *schema.ResourceData,
 		return fmt.Errorf("Error fetching project for AutoLabelingRule: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ContactCenterInsightsBasePath}}projects/{{project}}/locations/{{location}}/autoLabelingRules/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/autoLabelingRules/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -786,5 +808,39 @@ func resourceContactCenterInsightsAutoLabelingRulePostCreateSetComputedFields(d 
 	if err := d.Set("name", flattenContactCenterInsightsAutoLabelingRuleName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceContactCenterInsightsAutoLabelingRuleFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("active", flattenContactCenterInsightsAutoLabelingRuleActive(res["active"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	}
+	if err = d.Set("create_time", flattenContactCenterInsightsAutoLabelingRuleCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	}
+	if err = d.Set("display_name", flattenContactCenterInsightsAutoLabelingRuleDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	}
+	if err = d.Set("description", flattenContactCenterInsightsAutoLabelingRuleDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	}
+	if err = d.Set("name", flattenContactCenterInsightsAutoLabelingRuleName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	}
+	if err = d.Set("label_key_type", flattenContactCenterInsightsAutoLabelingRuleLabelKeyType(res["labelKeyType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	}
+	if err = d.Set("label_key", flattenContactCenterInsightsAutoLabelingRuleLabelKey(res["labelKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	}
+	if err = d.Set("conditions", flattenContactCenterInsightsAutoLabelingRuleConditions(res["conditions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	}
+	if err = d.Set("update_time", flattenContactCenterInsightsAutoLabelingRuleUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AutoLabelingRule: %s", err)
+	}
+
 	return nil
 }

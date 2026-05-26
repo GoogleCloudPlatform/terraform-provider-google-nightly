@@ -20,7 +20,10 @@ import (
 	"fmt"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/container"
 	tpgdns "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dns"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicedirectory"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"testing"
@@ -286,13 +289,13 @@ func testAccCheckManagedZoneCreateRRs(t *testing.T, suffix string, project strin
 			},
 		}
 
-		chg, err := config.NewDnsClient(config.UserAgent).Changes.Create(project, zone, chg).Do()
+		chg, err := tpgdns.NewClient(config, config.UserAgent).Changes.Create(project, zone, chg).Do()
 		if err != nil {
 			return fmt.Errorf("Error creating DNS RecordSet: %s", err)
 		}
 
 		w := &tpgdns.DnsChangeWaiter{
-			Service:     config.NewDnsClient(config.UserAgent),
+			Service:     tpgdns.NewClient(config, config.UserAgent),
 			Change:      chg,
 			Project:     project,
 			ManagedZone: zone,

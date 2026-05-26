@@ -23,6 +23,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebase"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebaseappcheck"
 )
 
 func TestAccFirebaseAppCheckDebugToken_firebaseAppCheckDebugTokenUpdate(t *testing.T) {

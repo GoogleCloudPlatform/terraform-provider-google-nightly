@@ -20,19 +20,19 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
-
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
-
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/modelarmorglobal"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 )
 
 func TestAccModelArmorGlobalFloorsetting_update(t *testing.T) {
 	t.Parallel()
 
 	context := map[string]interface{}{
-		"project_id": acctest.BootstrapProject(t, "tf-boot-magf-", envvar.GetTestBillingAccountFromEnv(t), []string{"modelarmor.googleapis.com"}).ProjectId,
+		"project_id": resourcemanager.BootstrapProject(t, "tf-boot-magf-", envvar.GetTestBillingAccountFromEnv(t), []string{"modelarmor.googleapis.com"}).ProjectId,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{

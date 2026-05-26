@@ -135,6 +135,7 @@ func ResourceComputeInterconnectAttachment() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -588,6 +589,18 @@ Google and the customer, going to and from this network and region.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -746,7 +759,7 @@ func resourceComputeInterconnectAttachmentCreate(d *schema.ResourceData, meta in
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/interconnectAttachments")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/interconnectAttachments")
 	if err != nil {
 		return err
 	}
@@ -894,7 +907,7 @@ func resourceComputeInterconnectAttachmentRead(d *schema.ResourceData, meta inte
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/interconnectAttachments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/interconnectAttachments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -927,114 +940,26 @@ func resourceComputeInterconnectAttachmentRead(d *schema.ResourceData, meta inte
 
 	log.Printf("[DEBUG] Finished reading ComputeInterconnectAttachment %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
 	}
 
-	if err := d.Set("admin_enabled", flattenComputeInterconnectAttachmentAdminEnabled(res["adminEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("cloud_router_ip_address", flattenComputeInterconnectAttachmentCloudRouterIpAddress(res["cloudRouterIpAddress"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("customer_router_ip_address", flattenComputeInterconnectAttachmentCustomerRouterIpAddress(res["customerRouterIpAddress"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("interconnect", flattenComputeInterconnectAttachmentInterconnect(res["interconnect"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("description", flattenComputeInterconnectAttachmentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("mtu", flattenComputeInterconnectAttachmentMtu(res["mtu"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("bandwidth", flattenComputeInterconnectAttachmentBandwidth(res["bandwidth"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("edge_availability_domain", flattenComputeInterconnectAttachmentEdgeAvailabilityDomain(res["edgeAvailabilityDomain"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("pairing_key", flattenComputeInterconnectAttachmentPairingKey(res["pairingKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("partner_asn", flattenComputeInterconnectAttachmentPartnerAsn(res["partnerAsn"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("private_interconnect_info", flattenComputeInterconnectAttachmentPrivateInterconnectInfo(res["privateInterconnectInfo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("type", flattenComputeInterconnectAttachmentType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("state", flattenComputeInterconnectAttachmentState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("google_reference_id", flattenComputeInterconnectAttachmentGoogleReferenceId(res["googleReferenceId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("router", flattenComputeInterconnectAttachmentRouter(res["router"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeInterconnectAttachmentCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("name", flattenComputeInterconnectAttachmentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("vlan_tag8021q", flattenComputeInterconnectAttachmentVlanTag8021q(res["vlanTag8021q"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("ipsec_internal_addresses", flattenComputeInterconnectAttachmentIpsecInternalAddresses(res["ipsecInternalAddresses"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("encryption", flattenComputeInterconnectAttachmentEncryption(res["encryption"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("stack_type", flattenComputeInterconnectAttachmentStackType(res["stackType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("cloud_router_ipv6_address", flattenComputeInterconnectAttachmentCloudRouterIpv6Address(res["cloudRouterIpv6Address"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("customer_router_ipv6_address", flattenComputeInterconnectAttachmentCustomerRouterIpv6Address(res["customerRouterIpv6Address"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("labels", flattenComputeInterconnectAttachmentLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("label_fingerprint", flattenComputeInterconnectAttachmentLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("candidate_cloud_router_ip_address", flattenComputeInterconnectAttachmentCandidateCloudRouterIpAddress(res["candidateCloudRouterIpAddress"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("candidate_customer_router_ip_address", flattenComputeInterconnectAttachmentCandidateCustomerRouterIpAddress(res["candidateCustomerRouterIpAddress"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("candidate_cloud_router_ipv6_address", flattenComputeInterconnectAttachmentCandidateCloudRouterIpv6Address(res["candidateCloudRouterIpv6Address"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("candidate_customer_router_ipv6_address", flattenComputeInterconnectAttachmentCandidateCustomerRouterIpv6Address(res["candidateCustomerRouterIpv6Address"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("attachment_group", flattenComputeInterconnectAttachmentAttachmentGroup(res["attachmentGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("l2_forwarding", flattenComputeInterconnectAttachmentL2Forwarding(res["l2Forwarding"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenComputeInterconnectAttachmentTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenComputeInterconnectAttachmentEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("region", flattenComputeInterconnectAttachmentRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	err = ResourceComputeInterconnectAttachmentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1065,6 +990,19 @@ func resourceComputeInterconnectAttachmentRead(d *schema.ResourceData, meta inte
 }
 
 func resourceComputeInterconnectAttachmentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeInterconnectAttachment().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeInterconnectAttachmentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1143,7 +1081,7 @@ func resourceComputeInterconnectAttachmentUpdate(d *schema.ResourceData, meta in
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/interconnectAttachments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/interconnectAttachments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1198,7 +1136,7 @@ func resourceComputeInterconnectAttachmentUpdate(d *schema.ResourceData, meta in
 			obj["labels"] = labelsProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/interconnectAttachments/{{name}}/setLabels")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/interconnectAttachments/{{name}}/setLabels")
 		if err != nil {
 			return err
 		}
@@ -1240,6 +1178,13 @@ func resourceComputeInterconnectAttachmentUpdate(d *schema.ResourceData, meta in
 }
 
 func resourceComputeInterconnectAttachmentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeInterconnectAttachment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing InterconnectAttachment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1253,8 +1198,7 @@ func resourceComputeInterconnectAttachmentDelete(d *schema.ResourceData, meta in
 		return fmt.Errorf("Error fetching project for InterconnectAttachment: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/interconnectAttachments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/interconnectAttachments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1931,4 +1875,115 @@ func expandComputeInterconnectAttachmentRegion(v interface{}, d tpgresource.Terr
 		return nil, fmt.Errorf("Invalid value for region: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeInterconnectAttachmentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("admin_enabled", flattenComputeInterconnectAttachmentAdminEnabled(res["adminEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("cloud_router_ip_address", flattenComputeInterconnectAttachmentCloudRouterIpAddress(res["cloudRouterIpAddress"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("customer_router_ip_address", flattenComputeInterconnectAttachmentCustomerRouterIpAddress(res["customerRouterIpAddress"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("interconnect", flattenComputeInterconnectAttachmentInterconnect(res["interconnect"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("description", flattenComputeInterconnectAttachmentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("mtu", flattenComputeInterconnectAttachmentMtu(res["mtu"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("bandwidth", flattenComputeInterconnectAttachmentBandwidth(res["bandwidth"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("edge_availability_domain", flattenComputeInterconnectAttachmentEdgeAvailabilityDomain(res["edgeAvailabilityDomain"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("pairing_key", flattenComputeInterconnectAttachmentPairingKey(res["pairingKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("partner_asn", flattenComputeInterconnectAttachmentPartnerAsn(res["partnerAsn"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("private_interconnect_info", flattenComputeInterconnectAttachmentPrivateInterconnectInfo(res["privateInterconnectInfo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("type", flattenComputeInterconnectAttachmentType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("state", flattenComputeInterconnectAttachmentState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("google_reference_id", flattenComputeInterconnectAttachmentGoogleReferenceId(res["googleReferenceId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("router", flattenComputeInterconnectAttachmentRouter(res["router"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeInterconnectAttachmentCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("name", flattenComputeInterconnectAttachmentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("vlan_tag8021q", flattenComputeInterconnectAttachmentVlanTag8021q(res["vlanTag8021q"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("ipsec_internal_addresses", flattenComputeInterconnectAttachmentIpsecInternalAddresses(res["ipsecInternalAddresses"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("encryption", flattenComputeInterconnectAttachmentEncryption(res["encryption"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("stack_type", flattenComputeInterconnectAttachmentStackType(res["stackType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("cloud_router_ipv6_address", flattenComputeInterconnectAttachmentCloudRouterIpv6Address(res["cloudRouterIpv6Address"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("customer_router_ipv6_address", flattenComputeInterconnectAttachmentCustomerRouterIpv6Address(res["customerRouterIpv6Address"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("labels", flattenComputeInterconnectAttachmentLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("label_fingerprint", flattenComputeInterconnectAttachmentLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("candidate_cloud_router_ip_address", flattenComputeInterconnectAttachmentCandidateCloudRouterIpAddress(res["candidateCloudRouterIpAddress"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("candidate_customer_router_ip_address", flattenComputeInterconnectAttachmentCandidateCustomerRouterIpAddress(res["candidateCustomerRouterIpAddress"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("candidate_cloud_router_ipv6_address", flattenComputeInterconnectAttachmentCandidateCloudRouterIpv6Address(res["candidateCloudRouterIpv6Address"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("candidate_customer_router_ipv6_address", flattenComputeInterconnectAttachmentCandidateCustomerRouterIpv6Address(res["candidateCustomerRouterIpv6Address"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("attachment_group", flattenComputeInterconnectAttachmentAttachmentGroup(res["attachmentGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("l2_forwarding", flattenComputeInterconnectAttachmentL2Forwarding(res["l2Forwarding"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenComputeInterconnectAttachmentTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenComputeInterconnectAttachmentEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("region", flattenComputeInterconnectAttachmentRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading InterconnectAttachment: %s", err)
+	}
+	return nil
 }

@@ -198,7 +198,7 @@ func resourceAppEngineServiceNetworkSettingsCreate(d *schema.ResourceData, meta 
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AppEngineBasePath}}apps/{{project}}/services/{{service}}?updateMask=networkSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"apps/{{project}}/services/{{service}}?updateMask=networkSettings")
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,7 @@ func resourceAppEngineServiceNetworkSettingsRead(d *schema.ResourceData, meta in
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AppEngineBasePath}}apps/{{project}}/services/{{service}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"apps/{{project}}/services/{{service}}")
 	if err != nil {
 		return err
 	}
@@ -314,11 +314,9 @@ func resourceAppEngineServiceNetworkSettingsRead(d *schema.ResourceData, meta in
 		return fmt.Errorf("Error reading ServiceNetworkSettings: %s", err)
 	}
 
-	if err := d.Set("service", flattenAppEngineServiceNetworkSettingsService(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServiceNetworkSettings: %s", err)
-	}
-	if err := d.Set("network_settings", flattenAppEngineServiceNetworkSettingsNetworkSettings(res["networkSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServiceNetworkSettings: %s", err)
+	err = ResourceAppEngineServiceNetworkSettingsFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -343,6 +341,7 @@ func resourceAppEngineServiceNetworkSettingsRead(d *schema.ResourceData, meta in
 }
 
 func resourceAppEngineServiceNetworkSettingsUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -393,7 +392,7 @@ func resourceAppEngineServiceNetworkSettingsUpdate(d *schema.ResourceData, meta 
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AppEngineBasePath}}apps/{{project}}/services/{{service}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"apps/{{project}}/services/{{service}}")
 	if err != nil {
 		return err
 	}
@@ -530,4 +529,17 @@ func expandAppEngineServiceNetworkSettingsNetworkSettings(v interface{}, d tpgre
 
 func expandAppEngineServiceNetworkSettingsNetworkSettingsIngressTrafficAllowed(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceAppEngineServiceNetworkSettingsFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("service", flattenAppEngineServiceNetworkSettingsService(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServiceNetworkSettings: %s", err)
+	}
+	if err = d.Set("network_settings", flattenAppEngineServiceNetworkSettingsNetworkSettings(res["networkSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServiceNetworkSettings: %s", err)
+	}
+
+	return nil
 }

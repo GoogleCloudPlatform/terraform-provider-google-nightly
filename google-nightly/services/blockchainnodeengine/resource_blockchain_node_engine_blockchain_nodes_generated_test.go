@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/blockchainnodeengine"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = blockchainnodeengine.Product
 )
 
 func TestAccBlockchainNodeEngineBlockchainNodes_blockchainNodesBasicExample(t *testing.T) {
@@ -241,8 +243,7 @@ func testAccCheckBlockchainNodeEngineBlockchainNodesDestroyProducer(t *testing.T
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{BlockchainNodeEngineBasePath}}projects/{{project}}/locations/{{location}}/blockchainNodes/{{blockchain_node_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(blockchainnodeengine.Product, config)+"projects/{{project}}/locations/{{location}}/blockchainNodes/{{blockchain_node_id}}")
 			if err != nil {
 				return err
 			}

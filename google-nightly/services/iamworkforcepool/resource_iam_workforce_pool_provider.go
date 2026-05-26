@@ -653,6 +653,19 @@ Format: 'locations/{location}/workforcePools/{workforcePoolId}/providers/{provid
   deleted after approximately 30 days. You can restore a soft-deleted provider using
   [providers.undelete](https://cloud.google.com/iam/docs/reference/rest/v1/locations.workforcePools.providers/undelete#google.iam.admin.v1.WorkforcePools.UndeleteWorkforcePoolProvider).`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -733,7 +746,7 @@ func resourceIAMWorkforcePoolWorkforcePoolProviderCreate(d *schema.ResourceData,
 		obj["detailedAuditLogging"] = detailedAuditLoggingProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAMWorkforcePoolBasePath}}locations/{{location}}/workforcePools/{{workforce_pool_id}}/providers?workforcePoolProviderId={{provider_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/{{location}}/workforcePools/{{workforce_pool_id}}/providers?workforcePoolProviderId={{provider_id}}")
 	if err != nil {
 		return err
 	}
@@ -858,7 +871,7 @@ func resourceIAMWorkforcePoolWorkforcePoolProviderRead(d *schema.ResourceData, m
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAMWorkforcePoolBasePath}}locations/{{location}}/workforcePools/{{workforce_pool_id}}/providers/{{provider_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/{{location}}/workforcePools/{{workforce_pool_id}}/providers/{{provider_id}}")
 	if err != nil {
 		return err
 	}
@@ -897,44 +910,23 @@ func resourceIAMWorkforcePoolWorkforcePoolProviderRead(d *schema.ResourceData, m
 		return nil
 	}
 
-	if err := d.Set("name", flattenIAMWorkforcePoolWorkforcePoolProviderName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("display_name", flattenIAMWorkforcePoolWorkforcePoolProviderDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("description", flattenIAMWorkforcePoolWorkforcePoolProviderDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("state", flattenIAMWorkforcePoolWorkforcePoolProviderState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("disabled", flattenIAMWorkforcePoolWorkforcePoolProviderDisabled(res["disabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("attribute_mapping", flattenIAMWorkforcePoolWorkforcePoolProviderAttributeMapping(res["attributeMapping"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("attribute_condition", flattenIAMWorkforcePoolWorkforcePoolProviderAttributeCondition(res["attributeCondition"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("saml", flattenIAMWorkforcePoolWorkforcePoolProviderSaml(res["saml"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("oidc", flattenIAMWorkforcePoolWorkforcePoolProviderOidc(res["oidc"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("extra_attributes_oauth2_client", flattenIAMWorkforcePoolWorkforcePoolProviderExtraAttributesOauth2Client(res["extraAttributesOauth2Client"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("extended_attributes_oauth2_client", flattenIAMWorkforcePoolWorkforcePoolProviderExtendedAttributesOauth2Client(res["extendedAttributesOauth2Client"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("scim_usage", flattenIAMWorkforcePoolWorkforcePoolProviderScimUsage(res["scimUsage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
-	}
-	if err := d.Set("detailed_audit_logging", flattenIAMWorkforcePoolWorkforcePoolProviderDetailedAuditLogging(res["detailedAuditLogging"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+
+	err = ResourceIAMWorkforcePoolWorkforcePoolProviderFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -965,6 +957,19 @@ func resourceIAMWorkforcePoolWorkforcePoolProviderRead(d *schema.ResourceData, m
 }
 
 func resourceIAMWorkforcePoolWorkforcePoolProviderUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceIAMWorkforcePoolWorkforcePoolProvider().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceIAMWorkforcePoolWorkforcePoolProviderRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1061,7 +1066,7 @@ func resourceIAMWorkforcePoolWorkforcePoolProviderUpdate(d *schema.ResourceData,
 		obj["detailedAuditLogging"] = detailedAuditLoggingProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAMWorkforcePoolBasePath}}locations/{{location}}/workforcePools/{{workforce_pool_id}}/providers/{{provider_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/{{location}}/workforcePools/{{workforce_pool_id}}/providers/{{provider_id}}")
 	if err != nil {
 		return err
 	}
@@ -1199,6 +1204,13 @@ func resourceIAMWorkforcePoolWorkforcePoolProviderUpdate(d *schema.ResourceData,
 }
 
 func resourceIAMWorkforcePoolWorkforcePoolProviderDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy IAMWorkforcePoolWorkforcePoolProvider without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing WorkforcePoolProvider %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1207,7 +1219,7 @@ func resourceIAMWorkforcePoolWorkforcePoolProviderDelete(d *schema.ResourceData,
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{IAMWorkforcePoolBasePath}}locations/{{location}}/workforcePools/{{workforce_pool_id}}/providers/{{provider_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/{{location}}/workforcePools/{{workforce_pool_id}}/providers/{{provider_id}}")
 	if err != nil {
 		return err
 	}
@@ -2105,4 +2117,50 @@ func resourceIAMWorkforcePoolWorkforcePoolProviderDecoder(d *schema.ResourceData
 	}
 
 	return res, nil
+}
+
+func ResourceIAMWorkforcePoolWorkforcePoolProviderFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenIAMWorkforcePoolWorkforcePoolProviderName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("display_name", flattenIAMWorkforcePoolWorkforcePoolProviderDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("description", flattenIAMWorkforcePoolWorkforcePoolProviderDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("state", flattenIAMWorkforcePoolWorkforcePoolProviderState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("disabled", flattenIAMWorkforcePoolWorkforcePoolProviderDisabled(res["disabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("attribute_mapping", flattenIAMWorkforcePoolWorkforcePoolProviderAttributeMapping(res["attributeMapping"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("attribute_condition", flattenIAMWorkforcePoolWorkforcePoolProviderAttributeCondition(res["attributeCondition"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("saml", flattenIAMWorkforcePoolWorkforcePoolProviderSaml(res["saml"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("oidc", flattenIAMWorkforcePoolWorkforcePoolProviderOidc(res["oidc"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("extra_attributes_oauth2_client", flattenIAMWorkforcePoolWorkforcePoolProviderExtraAttributesOauth2Client(res["extraAttributesOauth2Client"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("extended_attributes_oauth2_client", flattenIAMWorkforcePoolWorkforcePoolProviderExtendedAttributesOauth2Client(res["extendedAttributesOauth2Client"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("scim_usage", flattenIAMWorkforcePoolWorkforcePoolProviderScimUsage(res["scimUsage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+	if err = d.Set("detailed_audit_logging", flattenIAMWorkforcePoolWorkforcePoolProviderDetailedAuditLogging(res["detailedAuditLogging"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WorkforcePoolProvider: %s", err)
+	}
+
+	return nil
 }

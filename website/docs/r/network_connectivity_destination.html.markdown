@@ -66,6 +66,10 @@ resource "google_network_connectivity_destination" "example" {
 The following arguments are supported:
 
 
+* `name` -
+  (Required)
+  The name of the destination.
+
 * `ip_prefix` -
   (Required)
   The IP prefix that represents your workload on another CSP.
@@ -83,10 +87,6 @@ The following arguments are supported:
   (Required)
   The location of the destination.
 
-* `name` -
-  (Required)
-  The name of the destination.
-
 
 * `labels` -
   (Optional)
@@ -102,6 +102,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_endpoints"></a>The `endpoints` block supports:
@@ -204,9 +210,9 @@ In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hash
 ```tf
 import {
   identity = {
+    name = "<-required value->"
     multicloudDataTransferConfig = "<-required value->"
     location = "<-required value->"
-    name = "<-required value->"
     project = "<-optional value->"
   }
   to = google_network_connectivity_destination.default

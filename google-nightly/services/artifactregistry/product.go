@@ -22,11 +22,15 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 )
 
-const ProductName = "artifactregistry"
+var Product = registry.Product{
+	Name:                 "artifactregistry",
+	BaseUrl:              "https://artifactregistry.googleapis.com/v1/",
+	RepUrl:               "https://artifactregistry.{{location}}.rep.googleapis.com/v1/",
+	RepByDefault:         false,
+	CustomEndpointField:  "artifact_registry_custom_endpoint",
+	CustomEndpointEnvVar: "GOOGLE_ARTIFACT_REGISTRY_CUSTOM_ENDPOINT",
+}
 
 func init() {
-	registry.Product{
-		Name:    "artifactregistry",
-		BaseUrl: "https://artifactregistry.googleapis.com/v1/",
-	}.Register()
+	Product.Register()
 }

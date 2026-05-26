@@ -30,6 +30,14 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudrun"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/eventarc"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firestore"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workflows"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +56,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = eventarc.Product
 )
 
 func TestAccEventarcTrigger_eventarcTriggerWithCloudRunDestinationExample(t *testing.T) {
@@ -145,7 +154,7 @@ func TestAccEventarcTrigger_eventarcTriggerWithHttpDestinationExample(t *testing
 	context := map[string]interface{}{
 		"project_id":              envvar.GetTestProjectFromEnv(),
 		"service_account":         envvar.GetTestServiceAccountFromEnv(t),
-		"network_attachment_name": acctest.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-trigger-na", acctest.BootstrapSubnet(t, "tf-bootstrap-eventarc-trigger-subnet", acctest.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-trigger-network"))),
+		"network_attachment_name": compute.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-trigger-na", compute.BootstrapSubnet(t, "tf-bootstrap-eventarc-trigger-subnet", compute.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-trigger-network"))),
 		"trigger_name":            "tf-test-some-trigger" + randomSuffix,
 		"random_suffix":           randomSuffix,
 	}
@@ -192,7 +201,7 @@ resource "google_eventarc_trigger" "primary" {
 
 func TestAccEventarcTrigger_eventarcTriggerWithChannelCmekExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-eventarc.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -205,7 +214,7 @@ func TestAccEventarcTrigger_eventarcTriggerWithChannelCmekExample(t *testing.T) 
 		"project_id":      envvar.GetTestProjectFromEnv(),
 		"service_account": envvar.GetTestServiceAccountFromEnv(t),
 		"channel_name":    "tf-test-some-channel" + randomSuffix,
-		"key_name":        acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-eventarc-trigger-key").CryptoKey.Name,
+		"key_name":        kms.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-eventarc-trigger-key").CryptoKey.Name,
 		"service_name":    "tf-test-some-service" + randomSuffix,
 		"trigger_name":    "tf-test-some-trigger" + randomSuffix,
 		"random_suffix":   randomSuffix,
@@ -565,8 +574,7 @@ func testAccCheckEventarcTriggerDestroyProducer(t *testing.T) func(s *terraform.
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/triggers/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(eventarc.Product, config)+"projects/{{project}}/locations/{{location}}/triggers/{{name}}")
 			if err != nil {
 				return err
 			}

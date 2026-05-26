@@ -18,8 +18,12 @@ package compute_test
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"testing"
+
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
@@ -179,13 +183,19 @@ func testAccCheckComputeUrlMapExists(t *testing.T, n string) resource.TestCheckF
 		config := acctest.GoogleProviderConfig(t)
 		name := rs.Primary.Attributes["name"]
 
-		found, err := config.NewComputeClient(config.UserAgent).UrlMaps.Get(
-			config.Project, name).Do()
+		url := fmt.Sprintf("%sprojects/%s/global/urlMaps/%s", transport_tpg.BaseUrl(tpgcompute.Product, config), config.Project, name)
+		found, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+			Config:    config,
+			Method:    "GET",
+			Project:   config.Project,
+			RawURL:    url,
+			UserAgent: config.UserAgent,
+		})
 		if err != nil {
 			return err
 		}
 
-		if found.Name != name {
+		if found["name"] != name {
 			return fmt.Errorf("Url map not found")
 		}
 		return nil
@@ -449,7 +459,7 @@ func TestAccComputeUrlMap_cachePolicyMultiLevelUpdate(t *testing.T) {
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckComputeUrlMapDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -2158,7 +2168,6 @@ resource "google_compute_url_map" "url_map" {
 func testAccComputeUrlMap_cachePolicyMultiLevel(suffix string) string {
 	return fmt.Sprintf(`
 resource "google_compute_url_map" "urlmap" {
-  provider = google-beta
   name     = "urlmap-test-%s"
   
   default_service = google_compute_backend_service.default.id
@@ -2367,7 +2376,6 @@ resource "google_compute_url_map" "urlmap" {
 }
 
 resource "google_compute_backend_service" "default" {
-  provider = google-beta
   name     = "backend-test-%s"
   
   protocol              = "HTTP"
@@ -2377,7 +2385,6 @@ resource "google_compute_backend_service" "default" {
 }
 
 resource "google_compute_health_check" "default" {
-  provider = google-beta
   name     = "hc-test-%s"
   http_health_check {
     port = 80
@@ -2389,7 +2396,6 @@ resource "google_compute_health_check" "default" {
 func testAccComputeUrlMap_cachePolicyMultiLevelUpdate(suffix string) string {
 	return fmt.Sprintf(`
 resource "google_compute_url_map" "urlmap" {
-  provider = google-beta
   name     = "urlmap-test-%s"
   
   default_service = google_compute_backend_service.default.id
@@ -2513,7 +2519,6 @@ resource "google_compute_url_map" "urlmap" {
 }
 
 resource "google_compute_backend_service" "default" {
-  provider = google-beta
   name     = "backend-test-%s"
   
   protocol              = "HTTP"
@@ -2523,7 +2528,6 @@ resource "google_compute_backend_service" "default" {
 }
 
 resource "google_compute_health_check" "default" {
-  provider = google-beta
   name     = "hc-test-%s"
   http_health_check {
     port = 80

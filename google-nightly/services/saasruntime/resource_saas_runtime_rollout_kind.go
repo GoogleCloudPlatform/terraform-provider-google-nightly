@@ -117,6 +117,7 @@ func ResourceSaasRuntimeRolloutKind() *schema.Resource {
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -292,6 +293,18 @@ Changes to a resource made by the service should refresh this value.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -348,7 +361,7 @@ func resourceSaasRuntimeRolloutKindCreate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SaasRuntimeBasePath}}projects/{{project}}/locations/{{location}}/rolloutKinds?rolloutKindId={{rollout_kind_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/rolloutKinds?rolloutKindId={{rollout_kind_id}}")
 	if err != nil {
 		return err
 	}
@@ -422,7 +435,7 @@ func resourceSaasRuntimeRolloutKindRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SaasRuntimeBasePath}}projects/{{project}}/locations/{{location}}/rolloutKinds/{{rollout_kind_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/rolloutKinds/{{rollout_kind_id}}")
 	if err != nil {
 		return err
 	}
@@ -455,51 +468,26 @@ func resourceSaasRuntimeRolloutKindRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading SaasRuntimeRolloutKind %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading RolloutKind: %s", err)
 	}
 
-	if err := d.Set("annotations", flattenSaasRuntimeRolloutKindAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("create_time", flattenSaasRuntimeRolloutKindCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("error_budget", flattenSaasRuntimeRolloutKindErrorBudget(res["errorBudget"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("labels", flattenSaasRuntimeRolloutKindLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("name", flattenSaasRuntimeRolloutKindName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("rollout_orchestration_strategy", flattenSaasRuntimeRolloutKindRolloutOrchestrationStrategy(res["rolloutOrchestrationStrategy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("uid", flattenSaasRuntimeRolloutKindUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("unit_filter", flattenSaasRuntimeRolloutKindUnitFilter(res["unitFilter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("unit_kind", flattenSaasRuntimeRolloutKindUnitKind(res["unitKind"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("update_time", flattenSaasRuntimeRolloutKindUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("update_unit_kind_strategy", flattenSaasRuntimeRolloutKindUpdateUnitKindStrategy(res["updateUnitKindStrategy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenSaasRuntimeRolloutKindEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenSaasRuntimeRolloutKindTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenSaasRuntimeRolloutKindEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	err = ResourceSaasRuntimeRolloutKindFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -530,6 +518,19 @@ func resourceSaasRuntimeRolloutKindRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceSaasRuntimeRolloutKindUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSaasRuntimeRolloutKind().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSaasRuntimeRolloutKindRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -602,7 +603,7 @@ func resourceSaasRuntimeRolloutKindUpdate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SaasRuntimeBasePath}}projects/{{project}}/locations/{{location}}/rolloutKinds/{{rollout_kind_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/rolloutKinds/{{rollout_kind_id}}")
 	if err != nil {
 		return err
 	}
@@ -671,6 +672,13 @@ func resourceSaasRuntimeRolloutKindUpdate(d *schema.ResourceData, meta interface
 }
 
 func resourceSaasRuntimeRolloutKindDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SaasRuntimeRolloutKind without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RolloutKind %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -684,8 +692,7 @@ func resourceSaasRuntimeRolloutKindDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for RolloutKind: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SaasRuntimeBasePath}}projects/{{project}}/locations/{{location}}/rolloutKinds/{{rollout_kind_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/rolloutKinds/{{rollout_kind_id}}")
 	if err != nil {
 		return err
 	}
@@ -945,4 +952,53 @@ func expandSaasRuntimeRolloutKindEffectiveLabels(v interface{}, d tpgresource.Te
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceSaasRuntimeRolloutKindFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("annotations", flattenSaasRuntimeRolloutKindAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("create_time", flattenSaasRuntimeRolloutKindCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("error_budget", flattenSaasRuntimeRolloutKindErrorBudget(res["errorBudget"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("labels", flattenSaasRuntimeRolloutKindLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("name", flattenSaasRuntimeRolloutKindName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("rollout_orchestration_strategy", flattenSaasRuntimeRolloutKindRolloutOrchestrationStrategy(res["rolloutOrchestrationStrategy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("uid", flattenSaasRuntimeRolloutKindUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("unit_filter", flattenSaasRuntimeRolloutKindUnitFilter(res["unitFilter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("unit_kind", flattenSaasRuntimeRolloutKindUnitKind(res["unitKind"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("update_time", flattenSaasRuntimeRolloutKindUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("update_unit_kind_strategy", flattenSaasRuntimeRolloutKindUpdateUnitKindStrategy(res["updateUnitKindStrategy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenSaasRuntimeRolloutKindEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenSaasRuntimeRolloutKindTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenSaasRuntimeRolloutKindEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RolloutKind: %s", err)
+	}
+
+	return nil
 }

@@ -115,6 +115,7 @@ func ResourceOSConfigV2PolicyOrchestratorForFolder() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -1749,6 +1750,19 @@ orchestrator.`,
 				Computed:    true,
 				Description: `Timestamp when the policy orchestrator resource was last modified.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1800,7 +1814,7 @@ func resourceOSConfigV2PolicyOrchestratorForFolderCreate(d *schema.ResourceData,
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OSConfigV2BasePath}}folders/{{folder_id}}/locations/global/policyOrchestrators?policyOrchestratorId={{policy_orchestrator_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder_id}}/locations/global/policyOrchestrators?policyOrchestratorId={{policy_orchestrator_id}}")
 	if err != nil {
 		return err
 	}
@@ -1873,7 +1887,7 @@ func resourceOSConfigV2PolicyOrchestratorForFolderRead(d *schema.ResourceData, m
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OSConfigV2BasePath}}folders/{{folder_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}")
 	if err != nil {
 		return err
 	}
@@ -1900,47 +1914,23 @@ func resourceOSConfigV2PolicyOrchestratorForFolderRead(d *schema.ResourceData, m
 
 	log.Printf("[DEBUG] Finished reading OSConfigV2PolicyOrchestratorForFolder %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenOSConfigV2PolicyOrchestratorForFolderName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("description", flattenOSConfigV2PolicyOrchestratorForFolderDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("etag", flattenOSConfigV2PolicyOrchestratorForFolderEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("reconciling", flattenOSConfigV2PolicyOrchestratorForFolderReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("action", flattenOSConfigV2PolicyOrchestratorForFolderAction(res["action"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("orchestrated_resource", flattenOSConfigV2PolicyOrchestratorForFolderOrchestratedResource(res["orchestratedResource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("orchestration_state", flattenOSConfigV2PolicyOrchestratorForFolderOrchestrationState(res["orchestrationState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("update_time", flattenOSConfigV2PolicyOrchestratorForFolderUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("state", flattenOSConfigV2PolicyOrchestratorForFolderState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("orchestration_scope", flattenOSConfigV2PolicyOrchestratorForFolderOrchestrationScope(res["orchestrationScope"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("create_time", flattenOSConfigV2PolicyOrchestratorForFolderCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("labels", flattenOSConfigV2PolicyOrchestratorForFolderLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenOSConfigV2PolicyOrchestratorForFolderTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenOSConfigV2PolicyOrchestratorForFolderEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+
+	err = ResourceOSConfigV2PolicyOrchestratorForFolderFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1965,6 +1955,18 @@ func resourceOSConfigV2PolicyOrchestratorForFolderRead(d *schema.ResourceData, m
 }
 
 func resourceOSConfigV2PolicyOrchestratorForFolderUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceOSConfigV2PolicyOrchestratorForFolder().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceOSConfigV2PolicyOrchestratorForFolderRead(d, meta)
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -2027,7 +2029,7 @@ func resourceOSConfigV2PolicyOrchestratorForFolderUpdate(d *schema.ResourceData,
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OSConfigV2BasePath}}folders/{{folder_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}")
 	if err != nil {
 		return err
 	}
@@ -2103,6 +2105,13 @@ func resourceOSConfigV2PolicyOrchestratorForFolderUpdate(d *schema.ResourceData,
 }
 
 func resourceOSConfigV2PolicyOrchestratorForFolderDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy OSConfigV2PolicyOrchestratorForFolder without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PolicyOrchestratorForFolder %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -2112,7 +2121,7 @@ func resourceOSConfigV2PolicyOrchestratorForFolderDelete(d *schema.ResourceData,
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OSConfigV2BasePath}}folders/{{folder_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder_id}}/locations/global/policyOrchestrators/{{policy_orchestrator_id}}")
 	if err != nil {
 		return err
 	}
@@ -6175,4 +6184,53 @@ func expandOSConfigV2PolicyOrchestratorForFolderEffectiveLabels(v interface{}, d
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceOSConfigV2PolicyOrchestratorForFolderFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenOSConfigV2PolicyOrchestratorForFolderName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("description", flattenOSConfigV2PolicyOrchestratorForFolderDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("etag", flattenOSConfigV2PolicyOrchestratorForFolderEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("reconciling", flattenOSConfigV2PolicyOrchestratorForFolderReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("action", flattenOSConfigV2PolicyOrchestratorForFolderAction(res["action"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("orchestrated_resource", flattenOSConfigV2PolicyOrchestratorForFolderOrchestratedResource(res["orchestratedResource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("orchestration_state", flattenOSConfigV2PolicyOrchestratorForFolderOrchestrationState(res["orchestrationState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("update_time", flattenOSConfigV2PolicyOrchestratorForFolderUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("state", flattenOSConfigV2PolicyOrchestratorForFolderState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("orchestration_scope", flattenOSConfigV2PolicyOrchestratorForFolderOrchestrationScope(res["orchestrationScope"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("create_time", flattenOSConfigV2PolicyOrchestratorForFolderCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("labels", flattenOSConfigV2PolicyOrchestratorForFolderLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenOSConfigV2PolicyOrchestratorForFolderTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenOSConfigV2PolicyOrchestratorForFolderEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PolicyOrchestratorForFolder: %s", err)
+	}
+
+	return nil
 }

@@ -141,6 +141,7 @@ func ResourceDataLossPreventionStoredInfoType() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			storedInfoTypeCustomizeDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -364,6 +365,19 @@ characters. Can be empty to allow the system to generate one.`,
 				Computed:    true,
 				Description: `The resource name of the info type. Set by the server.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -413,7 +427,7 @@ func resourceDataLossPreventionStoredInfoTypeCreate(d *schema.ResourceData, meta
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataLossPreventionBasePath}}{{parent}}/storedInfoTypes")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/storedInfoTypes")
 	if err != nil {
 		return err
 	}
@@ -484,8 +498,7 @@ func resourceDataLossPreventionStoredInfoTypePollRead(d *schema.ResourceData, me
 	return func() (map[string]interface{}, error) {
 		config := meta.(*transport_tpg.Config)
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{DataLossPreventionBasePath}}{{parent}}/storedInfoTypes/{{name}}")
-
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/storedInfoTypes/{{name}}")
 		if err != nil {
 			return nil, err
 		}
@@ -531,7 +544,7 @@ func resourceDataLossPreventionStoredInfoTypeRead(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataLossPreventionBasePath}}{{parent}}/storedInfoTypes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/storedInfoTypes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -570,23 +583,23 @@ func resourceDataLossPreventionStoredInfoTypeRead(d *schema.ResourceData, meta i
 		return nil
 	}
 
-	if err := d.Set("name", flattenDataLossPreventionStoredInfoTypeName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoredInfoType: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("description", flattenDataLossPreventionStoredInfoTypeDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoredInfoType: %s", err)
-	}
-	if err := d.Set("display_name", flattenDataLossPreventionStoredInfoTypeDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoredInfoType: %s", err)
-	}
-	if err := d.Set("regex", flattenDataLossPreventionStoredInfoTypeRegex(res["regex"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoredInfoType: %s", err)
-	}
-	if err := d.Set("dictionary", flattenDataLossPreventionStoredInfoTypeDictionary(res["dictionary"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoredInfoType: %s", err)
-	}
-	if err := d.Set("large_custom_dictionary", flattenDataLossPreventionStoredInfoTypeLargeCustomDictionary(res["largeCustomDictionary"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoredInfoType: %s", err)
+
+	err = ResourceDataLossPreventionStoredInfoTypeFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -611,6 +624,19 @@ func resourceDataLossPreventionStoredInfoTypeRead(d *schema.ResourceData, meta i
 }
 
 func resourceDataLossPreventionStoredInfoTypeUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDataLossPreventionStoredInfoType().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDataLossPreventionStoredInfoTypeRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -671,7 +697,7 @@ func resourceDataLossPreventionStoredInfoTypeUpdate(d *schema.ResourceData, meta
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataLossPreventionBasePath}}{{parent}}/storedInfoTypes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/storedInfoTypes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -736,6 +762,13 @@ func resourceDataLossPreventionStoredInfoTypeUpdate(d *schema.ResourceData, meta
 }
 
 func resourceDataLossPreventionStoredInfoTypeDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DataLossPreventionStoredInfoType without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing StoredInfoType %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -744,7 +777,7 @@ func resourceDataLossPreventionStoredInfoTypeDelete(d *schema.ResourceData, meta
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataLossPreventionBasePath}}{{parent}}/storedInfoTypes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/storedInfoTypes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1375,5 +1408,30 @@ func resourceDataLossPreventionStoredInfoTypePostCreateSetComputedFields(d *sche
 	if err := d.Set("name", flattenDataLossPreventionStoredInfoTypeName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceDataLossPreventionStoredInfoTypeFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDataLossPreventionStoredInfoTypeName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoredInfoType: %s", err)
+	}
+	if err = d.Set("description", flattenDataLossPreventionStoredInfoTypeDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoredInfoType: %s", err)
+	}
+	if err = d.Set("display_name", flattenDataLossPreventionStoredInfoTypeDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoredInfoType: %s", err)
+	}
+	if err = d.Set("regex", flattenDataLossPreventionStoredInfoTypeRegex(res["regex"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoredInfoType: %s", err)
+	}
+	if err = d.Set("dictionary", flattenDataLossPreventionStoredInfoTypeDictionary(res["dictionary"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoredInfoType: %s", err)
+	}
+	if err = d.Set("large_custom_dictionary", flattenDataLossPreventionStoredInfoTypeLargeCustomDictionary(res["largeCustomDictionary"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoredInfoType: %s", err)
+	}
+
 	return nil
 }

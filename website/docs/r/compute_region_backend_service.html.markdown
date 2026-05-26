@@ -88,47 +88,6 @@ resource "google_compute_region_backend_service" "default" {
 }
 ```
 <div class = "oics-button" style="float: right; margin: 0 0 -15px">
-  <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=region_backend_service_cache&open_in_editor=main.tf" target="_blank">
-    <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
-  </a>
-</div>
-## Example Usage - Region Backend Service Cache
-
-
-```hcl
-resource "google_compute_region_backend_service" "default" {
-  provider = google-beta
-
-  name                            = "region-service"
-  region                          = "us-central1"
-  health_checks                   = [google_compute_region_health_check.default.id]
-  enable_cdn  = true
-  cdn_policy {
-    cache_mode = "CACHE_ALL_STATIC"
-    default_ttl = 3600
-    client_ttl  = 7200
-    max_ttl     = 10800
-    negative_caching = true
-    signed_url_cache_max_age_sec = 7200
-  }
-
-  load_balancing_scheme = "EXTERNAL"
-  protocol              = "HTTP"
-
-}
-
-resource "google_compute_region_health_check" "default" {
-  provider = google-beta
-
-  name               = "rbs-health-check"
-  region             = "us-central1"
-
-  http_health_check {
-    port = 80
-  }
-}
-```
-<div class = "oics-button" style="float: right; margin: 0 0 -15px">
   <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=region_backend_service_ilb_round_robin&open_in_editor=main.tf" target="_blank">
     <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
   </a>
@@ -377,7 +336,6 @@ resource "google_compute_subnetwork" "default" {
 
 ```hcl
 resource "google_compute_region_backend_service" "default" {
-  provider                        = google-beta
   name                            = "region-service"
   region                          = "us-central1"
   health_checks                   = [google_compute_region_health_check.health_check.id]
@@ -389,12 +347,11 @@ resource "google_compute_region_backend_service" "default" {
     tracking_mode                                = "PER_SESSION"
     connection_persistence_on_unhealthy_backends = "NEVER_PERSIST"
     idle_timeout_sec                             = 60
-    enable_strong_affinity                       = true
+    enable_strong_affinity                       = false
   }
 }
 
 resource "google_compute_region_health_check" "health_check" {
-  provider           = google-beta
   name               = "rbs-health-check"
   region             = "us-central1"
 
@@ -958,7 +915,7 @@ The following arguments are supported:
   Structure is [documented below](#nested_strong_session_affinity_cookie).
 
 * `connection_tracking_policy` -
-  (Optional, [Beta](../guides/provider_versions.html.markdown))
+  (Optional)
   Connection Tracking configuration for this BackendService.
   This is available only for Layer 4 Internal Load Balancing and
   Network Load Balancing.
@@ -1025,6 +982,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_backend"></a>The `backend` block supports:

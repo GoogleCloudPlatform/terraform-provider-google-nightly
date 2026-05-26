@@ -48,6 +48,7 @@ func ResourceComposerUserWorkloadsSecret() *schema.Resource {
 		},
 
 		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 			tpgresource.DefaultProviderProject,
 			tpgresource.DefaultProviderRegion,
 		),
@@ -88,6 +89,9 @@ func ResourceComposerUserWorkloadsSecret() *schema.Resource {
 				Sensitive:   true,
 				Description: `A map of the secret data.`,
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 	}
 }
@@ -110,7 +114,7 @@ func resourceComposerUserWorkloadsSecretCreate(d *schema.ResourceData, meta inte
 	}
 
 	log.Printf("[DEBUG] Creating new UserWorkloadsSecret %q", secretName.ParentName())
-	resp, err := config.NewComposerClient(userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Create(secretName.ParentName(), secret).Do()
+	resp, err := NewClient(config, userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Create(secretName.ParentName(), secret).Do()
 	if err != nil {
 		return fmt.Errorf("Error creating UserWorkloadsSecret: %s", err)
 	}
@@ -139,7 +143,7 @@ func resourceComposerUserWorkloadsSecretRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	res, err := config.NewComposerClient(userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Get(secretName.ResourceName()).Do()
+	res, err := NewClient(config, userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Get(secretName.ResourceName()).Do()
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, fmt.Sprintf("UserWorkloadsSecret %q", d.Id()))
 	}
@@ -156,10 +160,20 @@ func resourceComposerUserWorkloadsSecretRead(d *schema.ResourceData, meta interf
 	if err := d.Set("name", tpgresource.GetResourceNameFromSelfLink(res.Name)); err != nil {
 		return fmt.Errorf("Error setting UserWorkloadsSecret Name: %s", err)
 	}
+
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func resourceComposerUserWorkloadsSecretUpdate(d *schema.ResourceData, meta interface{}) error {
+
+	if tpgresource.DeletionPolicyPreUpdate(d, ResourceComposerUserWorkloadsSecret) {
+		return ResourceComposerUserWorkloadsSecret().Read(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -180,7 +194,7 @@ func resourceComposerUserWorkloadsSecretUpdate(d *schema.ResourceData, meta inte
 		secretJson, _ := secret.MarshalJSON()
 		log.Printf("[DEBUG] Updating UserWorkloadsSecret %q: %s", d.Id(), string(secretJson))
 
-		resp, err := config.NewComposerClient(userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Update(secretName.ResourceName(), secret).Do()
+		resp, err := NewClient(config, userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Update(secretName.ResourceName(), secret).Do()
 		if err != nil {
 			return err
 		}
@@ -193,6 +207,13 @@ func resourceComposerUserWorkloadsSecretUpdate(d *schema.ResourceData, meta inte
 }
 
 func resourceComposerUserWorkloadsSecretDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -205,7 +226,7 @@ func resourceComposerUserWorkloadsSecretDelete(d *schema.ResourceData, meta inte
 	}
 
 	log.Printf("[DEBUG] Deleting UserWorkloadsSecret %q", d.Id())
-	_, err = config.NewComposerClient(userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Delete(secretName.ResourceName()).Do()
+	_, err = NewClient(config, userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Delete(secretName.ResourceName()).Do()
 	if err != nil {
 		return err
 	}
@@ -233,7 +254,7 @@ func resourceComposerUserWorkloadsSecretImport(d *schema.ResourceData, meta inte
 		return nil, err
 	}
 
-	res, err := config.NewComposerClient(userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Get(id).Do()
+	res, err := NewClient(config, userAgent).Projects.Locations.Environments.UserWorkloadsSecrets.Get(id).Do()
 	if err != nil {
 		return nil, err
 	}

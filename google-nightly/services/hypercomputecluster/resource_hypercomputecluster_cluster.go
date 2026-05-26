@@ -125,6 +125,7 @@ func ResourceHypercomputeclusterCluster() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -441,9 +442,10 @@ cluster over SSH.`,
 										Elem: &schema.Resource{
 											Schema: map[string]*schema.Schema{
 												"count": {
-													Type:        schema.TypeString,
-													Required:    true,
-													Description: `Number of login node instances to create.`,
+													Type:             schema.TypeString,
+													Required:         true,
+													DiffSuppressFunc: tpgresource.EmptyOrDefaultStringSuppress("0"),
+													Description:      `Number of login node instances to create.`,
 												},
 												"machine_type": {
 													Type:     schema.TypeString,
@@ -625,8 +627,9 @@ to be run on each VM instance in the nodeset. Max 256KB.`,
 													},
 												},
 												"max_dynamic_node_count": {
-													Type:     schema.TypeString,
-													Optional: true,
+													Type:             schema.TypeString,
+													Optional:         true,
+													DiffSuppressFunc: tpgresource.EmptyOrDefaultStringSuppress("0"),
 													Description: `Controls how many additional nodes a cluster can bring online to handle
 workloads. Set this value to enable dynamic node creation and limit the
 number of additional nodes the cluster can bring online. Leave empty if you
@@ -634,8 +637,9 @@ do not want the cluster to create nodes dynamically, and instead rely only
 on static nodes.`,
 												},
 												"static_node_count": {
-													Type:     schema.TypeString,
-													Optional: true,
+													Type:             schema.TypeString,
+													Optional:         true,
+													DiffSuppressFunc: tpgresource.EmptyOrDefaultStringSuppress("0"),
 													Description: `Number of nodes to be statically created for this nodeset. The cluster will
 attempt to ensure that at least this many nodes exist at all times.`,
 												},
@@ -826,6 +830,14 @@ created.`,
 																Required:    true,
 																Description: `Enables Auto-class feature.`,
 															},
+															"terminal_storage_class": {
+																Type:     schema.TypeString,
+																Optional: true,
+																Description: `Terminal storage class of the autoclass bucket
+Possible values:
+NEARLINE
+ARCHIVE`,
+															},
 														},
 													},
 												},
@@ -958,6 +970,15 @@ only contain letters and numbers.`,
 													Optional:    true,
 													Description: `Description of the Managed Lustre instance. Maximum of 2048 characters.`,
 												},
+												"per_unit_storage_throughput": {
+													Type:     schema.TypeString,
+													Optional: true,
+													ForceNew: true,
+													Description: `Throughput of the instance in MB/s/TiB. Valid values are 125, 250,
+500, 1000. See [Performance tiers and maximum storage
+capacities](https://cloud.google.com/managed-lustre/docs/create-instance#performance-tiers)
+for more information.`,
+												},
 											},
 										},
 									},
@@ -1056,6 +1077,18 @@ state.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1106,7 +1139,7 @@ func resourceHypercomputeclusterClusterCreate(d *schema.ResourceData, meta inter
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HypercomputeclusterBasePath}}projects/{{project}}/locations/{{location}}/clusters?clusterId={{cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clusters?clusterId={{cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -1190,7 +1223,7 @@ func resourceHypercomputeclusterClusterRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HypercomputeclusterBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -1223,45 +1256,26 @@ func resourceHypercomputeclusterClusterRead(d *schema.ResourceData, meta interfa
 
 	log.Printf("[DEBUG] Finished reading HypercomputeclusterCluster %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Cluster: %s", err)
 	}
 
-	if err := d.Set("compute_resources", flattenHypercomputeclusterClusterComputeResources(res["computeResources"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("create_time", flattenHypercomputeclusterClusterCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("description", flattenHypercomputeclusterClusterDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("labels", flattenHypercomputeclusterClusterLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("name", flattenHypercomputeclusterClusterName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("network_resources", flattenHypercomputeclusterClusterNetworkResources(res["networkResources"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("orchestrator", flattenHypercomputeclusterClusterOrchestrator(res["orchestrator"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("reconciling", flattenHypercomputeclusterClusterReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("storage_resources", flattenHypercomputeclusterClusterStorageResources(res["storageResources"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("update_time", flattenHypercomputeclusterClusterUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenHypercomputeclusterClusterTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenHypercomputeclusterClusterEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
+	err = ResourceHypercomputeclusterClusterFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1292,6 +1306,19 @@ func resourceHypercomputeclusterClusterRead(d *schema.ResourceData, meta interfa
 }
 
 func resourceHypercomputeclusterClusterUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceHypercomputeclusterCluster().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceHypercomputeclusterClusterRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1364,7 +1391,7 @@ func resourceHypercomputeclusterClusterUpdate(d *schema.ResourceData, meta inter
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HypercomputeclusterBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -1440,6 +1467,13 @@ func resourceHypercomputeclusterClusterUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceHypercomputeclusterClusterDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy HypercomputeclusterCluster without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Cluster %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1453,8 +1487,7 @@ func resourceHypercomputeclusterClusterDelete(d *schema.ResourceData, meta inter
 		return fmt.Errorf("Error fetching project for Cluster: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{HypercomputeclusterBasePath}}projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/clusters/{{cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -2237,9 +2270,15 @@ func flattenHypercomputeclusterClusterStorageResourcesConfigNewBucketAutoclass(v
 	transformed := make(map[string]interface{})
 	transformed["enabled"] =
 		flattenHypercomputeclusterClusterStorageResourcesConfigNewBucketAutoclassEnabled(original["enabled"], d, config)
+	transformed["terminal_storage_class"] =
+		flattenHypercomputeclusterClusterStorageResourcesConfigNewBucketAutoclassTerminalStorageClass(original["terminalStorageClass"], d, config)
 	return []interface{}{transformed}
 }
 func flattenHypercomputeclusterClusterStorageResourcesConfigNewBucketAutoclassEnabled(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenHypercomputeclusterClusterStorageResourcesConfigNewBucketAutoclassTerminalStorageClass(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -2349,6 +2388,8 @@ func flattenHypercomputeclusterClusterStorageResourcesConfigNewLustre(v interfac
 		flattenHypercomputeclusterClusterStorageResourcesConfigNewLustreFilesystem(original["filesystem"], d, config)
 	transformed["lustre"] =
 		flattenHypercomputeclusterClusterStorageResourcesConfigNewLustreLustre(original["lustre"], d, config)
+	transformed["per_unit_storage_throughput"] =
+		flattenHypercomputeclusterClusterStorageResourcesConfigNewLustrePerUnitStorageThroughput(original["perUnitStorageThroughput"], d, config)
 	return []interface{}{transformed}
 }
 func flattenHypercomputeclusterClusterStorageResourcesConfigNewLustreCapacityGb(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -2364,6 +2405,10 @@ func flattenHypercomputeclusterClusterStorageResourcesConfigNewLustreFilesystem(
 }
 
 func flattenHypercomputeclusterClusterStorageResourcesConfigNewLustreLustre(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenHypercomputeclusterClusterStorageResourcesConfigNewLustrePerUnitStorageThroughput(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -3657,10 +3702,21 @@ func expandHypercomputeclusterClusterStorageResourcesConfigNewBucketAutoclass(v 
 		transformed["enabled"] = transformedEnabled
 	}
 
+	transformedTerminalStorageClass, err := expandHypercomputeclusterClusterStorageResourcesConfigNewBucketAutoclassTerminalStorageClass(original["terminal_storage_class"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedTerminalStorageClass); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["terminalStorageClass"] = transformedTerminalStorageClass
+	}
+
 	return transformed, nil
 }
 
 func expandHypercomputeclusterClusterStorageResourcesConfigNewBucketAutoclassEnabled(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandHypercomputeclusterClusterStorageResourcesConfigNewBucketAutoclassTerminalStorageClass(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -3844,6 +3900,13 @@ func expandHypercomputeclusterClusterStorageResourcesConfigNewLustre(v interface
 		transformed["lustre"] = transformedLustre
 	}
 
+	transformedPerUnitStorageThroughput, err := expandHypercomputeclusterClusterStorageResourcesConfigNewLustrePerUnitStorageThroughput(original["per_unit_storage_throughput"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedPerUnitStorageThroughput); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["perUnitStorageThroughput"] = transformedPerUnitStorageThroughput
+	}
+
 	return transformed, nil
 }
 
@@ -3860,6 +3923,10 @@ func expandHypercomputeclusterClusterStorageResourcesConfigNewLustreFilesystem(v
 }
 
 func expandHypercomputeclusterClusterStorageResourcesConfigNewLustreLustre(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandHypercomputeclusterClusterStorageResourcesConfigNewLustrePerUnitStorageThroughput(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -3924,4 +3991,47 @@ func expandHypercomputeclusterClusterEffectiveLabels(v interface{}, d tpgresourc
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceHypercomputeclusterClusterFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("compute_resources", flattenHypercomputeclusterClusterComputeResources(res["computeResources"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("create_time", flattenHypercomputeclusterClusterCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("description", flattenHypercomputeclusterClusterDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("labels", flattenHypercomputeclusterClusterLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("name", flattenHypercomputeclusterClusterName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("network_resources", flattenHypercomputeclusterClusterNetworkResources(res["networkResources"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("orchestrator", flattenHypercomputeclusterClusterOrchestrator(res["orchestrator"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("reconciling", flattenHypercomputeclusterClusterReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("storage_resources", flattenHypercomputeclusterClusterStorageResources(res["storageResources"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("update_time", flattenHypercomputeclusterClusterUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenHypercomputeclusterClusterTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenHypercomputeclusterClusterEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+
+	return nil
 }

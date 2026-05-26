@@ -197,7 +197,7 @@ func resourceFirebaseAppCheckRecaptchaEnterpriseConfigCreate(d *schema.ResourceD
 		obj["siteKey"] = siteKeyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppCheckBasePath}}projects/{{project}}/apps/{{app_id}}/recaptchaEnterpriseConfig?updateMask=tokenTtl,siteKey")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/apps/{{app_id}}/recaptchaEnterpriseConfig?updateMask=tokenTtl,siteKey")
 	if err != nil {
 		return err
 	}
@@ -266,7 +266,7 @@ func resourceFirebaseAppCheckRecaptchaEnterpriseConfigRead(d *schema.ResourceDat
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppCheckBasePath}}projects/{{project}}/apps/{{app_id}}/recaptchaEnterpriseConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/apps/{{app_id}}/recaptchaEnterpriseConfig")
 	if err != nil {
 		return err
 	}
@@ -303,14 +303,9 @@ func resourceFirebaseAppCheckRecaptchaEnterpriseConfigRead(d *schema.ResourceDat
 		return fmt.Errorf("Error reading RecaptchaEnterpriseConfig: %s", err)
 	}
 
-	if err := d.Set("name", flattenFirebaseAppCheckRecaptchaEnterpriseConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RecaptchaEnterpriseConfig: %s", err)
-	}
-	if err := d.Set("token_ttl", flattenFirebaseAppCheckRecaptchaEnterpriseConfigTokenTtl(res["tokenTtl"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RecaptchaEnterpriseConfig: %s", err)
-	}
-	if err := d.Set("site_key", flattenFirebaseAppCheckRecaptchaEnterpriseConfigSiteKey(res["siteKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RecaptchaEnterpriseConfig: %s", err)
+	err = ResourceFirebaseAppCheckRecaptchaEnterpriseConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -335,6 +330,7 @@ func resourceFirebaseAppCheckRecaptchaEnterpriseConfigRead(d *schema.ResourceDat
 }
 
 func resourceFirebaseAppCheckRecaptchaEnterpriseConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -378,7 +374,7 @@ func resourceFirebaseAppCheckRecaptchaEnterpriseConfigUpdate(d *schema.ResourceD
 		obj["siteKey"] = siteKeyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppCheckBasePath}}projects/{{project}}/apps/{{app_id}}/recaptchaEnterpriseConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/apps/{{app_id}}/recaptchaEnterpriseConfig")
 	if err != nil {
 		return err
 	}
@@ -477,4 +473,20 @@ func expandFirebaseAppCheckRecaptchaEnterpriseConfigTokenTtl(v interface{}, d tp
 
 func expandFirebaseAppCheckRecaptchaEnterpriseConfigSiteKey(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceFirebaseAppCheckRecaptchaEnterpriseConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenFirebaseAppCheckRecaptchaEnterpriseConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RecaptchaEnterpriseConfig: %s", err)
+	}
+	if err = d.Set("token_ttl", flattenFirebaseAppCheckRecaptchaEnterpriseConfigTokenTtl(res["tokenTtl"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RecaptchaEnterpriseConfig: %s", err)
+	}
+	if err = d.Set("site_key", flattenFirebaseAppCheckRecaptchaEnterpriseConfigSiteKey(res["siteKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RecaptchaEnterpriseConfig: %s", err)
+	}
+
+	return nil
 }

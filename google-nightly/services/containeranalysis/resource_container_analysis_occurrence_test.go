@@ -23,6 +23,9 @@ import (
 	"testing"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/binaryauthorization"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/containeranalysis"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -50,11 +53,11 @@ func getTestOccurrenceAttestationPayload(t *testing.T) string {
 
 func getSignedTestOccurrenceAttestationPayload(
 	t *testing.T, config *transport_tpg.Config,
-	signingKey acctest.BootstrappedKMS, rawPayload string) string {
+	signingKey kms.BootstrappedKMS, rawPayload string) string {
 	pbytes := []byte(rawPayload)
 	ssum := sha512.Sum512(pbytes)
 	hashed := base64.StdEncoding.EncodeToString(ssum[:])
-	signed, err := config.NewKmsClient(config.UserAgent).Projects.Locations.KeyRings.CryptoKeys.
+	signed, err := kms.NewClient(config, config.UserAgent).Projects.Locations.KeyRings.CryptoKeys.
 		CryptoKeyVersions.AsymmetricSign(
 		fmt.Sprintf("%s/cryptoKeyVersions/1", signingKey.CryptoKey.Name),
 		&cloudkms.AsymmetricSignRequest{
@@ -73,12 +76,12 @@ func TestAccContainerAnalysisOccurrence_basic(t *testing.T) {
 	t.Parallel()
 	randSuffix := acctest.RandString(t, 10)
 
-	config := acctest.BootstrapConfig(t)
+	config := transport_tpg.BootstrapConfig(t)
 	if config == nil {
 		return
 	}
 
-	signKey := acctest.BootstrapKMSKeyWithPurpose(t, "ASYMMETRIC_SIGN")
+	signKey := kms.BootstrapKMSKeyWithPurpose(t, "ASYMMETRIC_SIGN")
 	payload := getTestOccurrenceAttestationPayload(t)
 	signed := getSignedTestOccurrenceAttestationPayload(t, config, signKey, payload)
 	params := map[string]interface{}{
@@ -111,16 +114,16 @@ func TestAccContainerAnalysisOccurrence_multipleSignatures(t *testing.T) {
 	t.Parallel()
 	randSuffix := acctest.RandString(t, 10)
 
-	config := acctest.BootstrapConfig(t)
+	config := transport_tpg.BootstrapConfig(t)
 	if config == nil {
 		return
 	}
 
 	payload := getTestOccurrenceAttestationPayload(t)
-	key1 := acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ASYMMETRIC_SIGN", "global", "tf-bootstrap-binauthz-key1")
+	key1 := kms.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ASYMMETRIC_SIGN", "global", "tf-bootstrap-binauthz-key1")
 	signature1 := getSignedTestOccurrenceAttestationPayload(t, config, key1, payload)
 
-	key2 := acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ASYMMETRIC_SIGN", "global", "tf-bootstrap-binauthz-key2")
+	key2 := kms.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ASYMMETRIC_SIGN", "global", "tf-bootstrap-binauthz-key2")
 	signature2 := getSignedTestOccurrenceAttestationPayload(t, config, key2, payload)
 
 	paramsMultipleSignatures := map[string]interface{}{

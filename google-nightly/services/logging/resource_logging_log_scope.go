@@ -182,6 +182,19 @@ func ResourceLoggingLogScope() *schema.Resource {
 				Computed:    true,
 				Description: `Output only. The last update timestamp of the log scopes.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -219,7 +232,7 @@ func resourceLoggingLogScopeCreate(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}{{parent}}/locations/{{location}}/logScopes?logScopeId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/logScopes?logScopeId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -287,7 +300,7 @@ func resourceLoggingLogScopeRead(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}{{parent}}/locations/{{location}}/logScopes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/logScopes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -314,17 +327,23 @@ func resourceLoggingLogScopeRead(d *schema.ResourceData, meta interface{}) error
 
 	log.Printf("[DEBUG] Finished reading LoggingLogScope %q: %#v", d.Id(), res)
 
-	if err := d.Set("resource_names", flattenLoggingLogScopeResourceNames(res["resourceNames"], d, config)); err != nil {
-		return fmt.Errorf("Error reading LogScope: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("description", flattenLoggingLogScopeDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading LogScope: %s", err)
-	}
-	if err := d.Set("create_time", flattenLoggingLogScopeCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading LogScope: %s", err)
-	}
-	if err := d.Set("update_time", flattenLoggingLogScopeUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading LogScope: %s", err)
+
+	err = ResourceLoggingLogScopeFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -355,6 +374,19 @@ func resourceLoggingLogScopeRead(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceLoggingLogScopeUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceLoggingLogScope().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceLoggingLogScopeRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -402,7 +434,7 @@ func resourceLoggingLogScopeUpdate(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}{{parent}}/locations/{{location}}/logScopes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/logScopes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -455,6 +487,13 @@ func resourceLoggingLogScopeUpdate(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceLoggingLogScopeDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy LoggingLogScope without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing LogScope %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -463,7 +502,7 @@ func resourceLoggingLogScopeDelete(d *schema.ResourceData, meta interface{}) err
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}{{parent}}/locations/{{location}}/logScopes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/logScopes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -563,4 +602,23 @@ func resourceLoggingLogScopeEncoder(d *schema.ResourceData, meta interface{}, ob
 	d.Set("location", location)
 	d.Set("name", name)
 	return obj, nil
+}
+
+func ResourceLoggingLogScopeFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("resource_names", flattenLoggingLogScopeResourceNames(res["resourceNames"], d, config)); err != nil {
+		return fmt.Errorf("Error reading LogScope: %s", err)
+	}
+	if err = d.Set("description", flattenLoggingLogScopeDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading LogScope: %s", err)
+	}
+	if err = d.Set("create_time", flattenLoggingLogScopeCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading LogScope: %s", err)
+	}
+	if err = d.Set("update_time", flattenLoggingLogScopeUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading LogScope: %s", err)
+	}
+
+	return nil
 }

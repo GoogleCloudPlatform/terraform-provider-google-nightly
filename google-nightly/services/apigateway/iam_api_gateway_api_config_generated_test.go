@@ -29,6 +29,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/apigateway"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 )
 
@@ -89,7 +90,6 @@ func TestAccApiGatewayApiConfigIamMemberGenerated(t *testing.T) {
 		},
 	})
 }
-
 func TestAccApiGatewayApiConfigIamPolicyGenerated(t *testing.T) {
 	t.Parallel()
 

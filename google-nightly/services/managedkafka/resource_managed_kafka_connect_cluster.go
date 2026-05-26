@@ -116,6 +116,7 @@ func ResourceManagedKafkaConnectCluster() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -279,6 +280,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -317,7 +330,7 @@ func resourceManagedKafkaConnectClusterCreate(d *schema.ResourceData, meta inter
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ManagedKafkaBasePath}}projects/{{project}}/locations/{{location}}/connectClusters?connectClusterId={{connect_cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectClusters?connectClusterId={{connect_cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -401,7 +414,7 @@ func resourceManagedKafkaConnectClusterRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ManagedKafkaBasePath}}projects/{{project}}/locations/{{location}}/connectClusters/{{connect_cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectClusters/{{connect_cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -434,39 +447,26 @@ func resourceManagedKafkaConnectClusterRead(d *schema.ResourceData, meta interfa
 
 	log.Printf("[DEBUG] Finished reading ManagedKafkaConnectCluster %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading ConnectCluster: %s", err)
 	}
 
-	if err := d.Set("name", flattenManagedKafkaConnectClusterName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
-	}
-	if err := d.Set("kafka_cluster", flattenManagedKafkaConnectClusterKafkaCluster(res["kafkaCluster"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
-	}
-	if err := d.Set("create_time", flattenManagedKafkaConnectClusterCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
-	}
-	if err := d.Set("update_time", flattenManagedKafkaConnectClusterUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
-	}
-	if err := d.Set("labels", flattenManagedKafkaConnectClusterLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
-	}
-	if err := d.Set("capacity_config", flattenManagedKafkaConnectClusterCapacityConfig(res["capacityConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
-	}
-	if err := d.Set("gcp_config", flattenManagedKafkaConnectClusterGcpConfig(res["gcpConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
-	}
-	if err := d.Set("state", flattenManagedKafkaConnectClusterState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenManagedKafkaConnectClusterTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenManagedKafkaConnectClusterEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	err = ResourceManagedKafkaConnectClusterFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -497,6 +497,19 @@ func resourceManagedKafkaConnectClusterRead(d *schema.ResourceData, meta interfa
 }
 
 func resourceManagedKafkaConnectClusterUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceManagedKafkaConnectCluster().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceManagedKafkaConnectClusterRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -557,7 +570,7 @@ func resourceManagedKafkaConnectClusterUpdate(d *schema.ResourceData, meta inter
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ManagedKafkaBasePath}}projects/{{project}}/locations/{{location}}/connectClusters/{{connect_cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectClusters/{{connect_cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -625,6 +638,13 @@ func resourceManagedKafkaConnectClusterUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceManagedKafkaConnectClusterDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ManagedKafkaConnectCluster without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ConnectCluster %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -638,8 +658,7 @@ func resourceManagedKafkaConnectClusterDelete(d *schema.ResourceData, meta inter
 		return fmt.Errorf("Error fetching project for ConnectCluster: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ManagedKafkaBasePath}}projects/{{project}}/locations/{{location}}/connectClusters/{{connect_cluster_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/connectClusters/{{connect_cluster_id}}")
 	if err != nil {
 		return err
 	}
@@ -980,4 +999,41 @@ func expandManagedKafkaConnectClusterEffectiveLabels(v interface{}, d tpgresourc
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceManagedKafkaConnectClusterFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenManagedKafkaConnectClusterName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+	if err = d.Set("kafka_cluster", flattenManagedKafkaConnectClusterKafkaCluster(res["kafkaCluster"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+	if err = d.Set("create_time", flattenManagedKafkaConnectClusterCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+	if err = d.Set("update_time", flattenManagedKafkaConnectClusterUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+	if err = d.Set("labels", flattenManagedKafkaConnectClusterLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+	if err = d.Set("capacity_config", flattenManagedKafkaConnectClusterCapacityConfig(res["capacityConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+	if err = d.Set("gcp_config", flattenManagedKafkaConnectClusterGcpConfig(res["gcpConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+	if err = d.Set("state", flattenManagedKafkaConnectClusterState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenManagedKafkaConnectClusterTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenManagedKafkaConnectClusterEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ConnectCluster: %s", err)
+	}
+
+	return nil
 }

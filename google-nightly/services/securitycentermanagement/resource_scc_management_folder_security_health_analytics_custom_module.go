@@ -334,6 +334,19 @@ The id {securityHealthAnalyticsCustomModule} is server-generated and is not user
 A timestamp in RFC3339 UTC "Zulu" format, with nanosecond resolution and
 up to nine fractional digits. Examples: "2014-10-02T15:01:23Z" and "2014-10-02T15:01:23.045123456Z".`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -373,7 +386,7 @@ func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleCr
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterManagementBasePath}}folders/{{folder}}/locations/{{location}}/securityHealthAnalyticsCustomModules")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/locations/{{location}}/securityHealthAnalyticsCustomModules")
 	if err != nil {
 		return err
 	}
@@ -447,7 +460,7 @@ func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleRe
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterManagementBasePath}}folders/{{folder}}/locations/{{location}}/securityHealthAnalyticsCustomModules/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/locations/{{location}}/securityHealthAnalyticsCustomModules/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -474,26 +487,23 @@ func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleRe
 
 	log.Printf("[DEBUG] Finished reading SecurityCenterManagementFolderSecurityHealthAnalyticsCustomModule %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("display_name", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
-	}
-	if err := d.Set("enablement_state", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleEnablementState(res["enablementState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
-	}
-	if err := d.Set("update_time", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
-	}
-	if err := d.Set("last_editor", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleLastEditor(res["lastEditor"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
-	}
-	if err := d.Set("ancestor_module", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleAncestorModule(res["ancestorModule"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
-	}
-	if err := d.Set("custom_config", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleCustomConfig(res["customConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
+
+	err = ResourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -524,6 +534,19 @@ func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleRe
 }
 
 func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModule().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -573,7 +596,7 @@ func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleUp
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterManagementBasePath}}folders/{{folder}}/locations/{{location}}/securityHealthAnalyticsCustomModules/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/locations/{{location}}/securityHealthAnalyticsCustomModules/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -626,6 +649,13 @@ func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleUp
 }
 
 func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecurityCenterManagementFolderSecurityHealthAnalyticsCustomModule without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing FolderSecurityHealthAnalyticsCustomModule %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -640,8 +670,7 @@ func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleDe
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterManagementBasePath}}folders/{{folder}}/locations/{{location}}/securityHealthAnalyticsCustomModules/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/locations/{{location}}/securityHealthAnalyticsCustomModules/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1162,5 +1191,33 @@ func resourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModulePo
 	if err := d.Set("name", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
+	}
+	if err = d.Set("display_name", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
+	}
+	if err = d.Set("enablement_state", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleEnablementState(res["enablementState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
+	}
+	if err = d.Set("update_time", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
+	}
+	if err = d.Set("last_editor", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleLastEditor(res["lastEditor"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
+	}
+	if err = d.Set("ancestor_module", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleAncestorModule(res["ancestorModule"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
+	}
+	if err = d.Set("custom_config", flattenSecurityCenterManagementFolderSecurityHealthAnalyticsCustomModuleCustomConfig(res["customConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderSecurityHealthAnalyticsCustomModule: %s", err)
+	}
+
 	return nil
 }

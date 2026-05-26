@@ -52,6 +52,7 @@ resource "google_compute_region_autoscaler" "foobar" {
     max_replicas    = 5
     min_replicas    = 1
     cooldown_period = 60
+    stabilization_period = 300
 
     cpu_utilization {
       target = 0.5
@@ -152,6 +153,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_autoscaling_policy"></a>The `autoscaling_policy` block supports:
@@ -181,6 +188,14 @@ The following arguments are supported:
   numerous factors. We recommend that you test how long an
   instance may take to initialize. To do this, create an instance
   and time the startup process.
+
+* `stabilization_period` -
+  (Optional)
+  The number of seconds that the autoscaler waits for load stabilization
+  before making scale-in decisions.
+  This might appear as a delay in scaling in but it is an important mechanism
+  for your application to not have fluctuating size due to short term load
+  fluctuations.
 
 * `mode` -
   (Optional)

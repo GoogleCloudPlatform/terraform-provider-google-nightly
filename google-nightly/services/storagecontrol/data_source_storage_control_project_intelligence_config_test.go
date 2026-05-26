@@ -22,6 +22,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storagecontrol"
 )
 
 func TestAccDataSourceGoogleStorageControlProjectIntelligenceConfig_basic(t *testing.T) {
@@ -29,7 +31,7 @@ func TestAccDataSourceGoogleStorageControlProjectIntelligenceConfig_basic(t *tes
 
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
-		"project":       acctest.BootstrapProject(t, "tf-boot-stor-int-", envvar.GetTestBillingAccountFromEnv(t), []string{"storage.googleapis.com"}).ProjectId,
+		"project":       resourcemanager.BootstrapProject(t, "tf-boot-stor-int-", envvar.GetTestBillingAccountFromEnv(t), []string{"storage.googleapis.com"}).ProjectId,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{

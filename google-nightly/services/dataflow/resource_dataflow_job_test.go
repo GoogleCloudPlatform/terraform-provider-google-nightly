@@ -28,10 +28,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	compute_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataflow"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	dataflowapi "google.golang.org/api/dataflow/v1b3"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 
 	compute "google.golang.org/api/compute/v0.beta"
@@ -404,7 +409,7 @@ func TestAccDataflowJob_withKmsKey(t *testing.T) {
 	bucket := "tf-test-dataflow-gcs-" + randStr
 	job := "tf-test-dataflow-job-" + randStr
 
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@compute-system.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -603,7 +608,7 @@ func testAccCheckDataflowJobDestroyProducer(t *testing.T) func(s *terraform.Stat
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-			job, err := config.NewDataflowClient(config.UserAgent).Projects.Jobs.Get(config.Project, rs.Primary.ID).Do()
+			job, err := dataflow.NewClient(config, config.UserAgent).Projects.Jobs.Get(config.Project, rs.Primary.ID).Do()
 			if job != nil {
 				var ok bool
 				skipWait, err := strconv.ParseBool(rs.Primary.Attributes["skip_wait_on_job_termination"])
@@ -633,7 +638,7 @@ func testAccCheckDataflowJobRegionDestroyProducer(t *testing.T) func(s *terrafor
 				continue
 			}
 			config := acctest.GoogleProviderConfig(t)
-			job, err := config.NewDataflowClient(config.UserAgent).Projects.Locations.Jobs.Get(config.Project, "us-central1", rs.Primary.ID).Do()
+			job, err := dataflow.NewClient(config, config.UserAgent).Projects.Locations.Jobs.Get(config.Project, "us-central1", rs.Primary.ID).Do()
 			if job != nil {
 				var ok bool
 				skipWait, err := strconv.ParseBool(rs.Primary.Attributes["skip_wait_on_job_termination"])
@@ -679,7 +684,7 @@ func testAccDataflowGetJob(t *testing.T, s *terraform.State, resource string) (*
 	config := acctest.GoogleProviderConfig(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	job, err := config.NewDataflowClient(config.UserAgent).Projects.Locations.Jobs.Get(config.Project, region, rs.Primary.ID).Context(ctx).View("JOB_VIEW_ALL").Do()
+	job, err := dataflow.NewClient(config, config.UserAgent).Projects.Locations.Jobs.Get(config.Project, region, rs.Primary.ID).Context(ctx).View("JOB_VIEW_ALL").Do()
 	if err != nil {
 		return nil, fmt.Errorf("could not get Dataflow Job 'projects/%s/regions/%s/jobs/%s': %w", config.Project, config.Region, rs.Primary.ID, err)
 	}
@@ -793,7 +798,7 @@ func testAccDataflowJobGetGeneratedInstanceTemplate(t *testing.T, s *terraform.S
 	var instanceTemplate *compute.InstanceTemplate
 
 	err := resource.Retry(1*time.Minute, func() *resource.RetryError {
-		instanceTemplates, rerr := config.NewComputeClient(config.UserAgent).RegionInstanceTemplates.
+		instanceTemplates, rerr := compute_tpg.NewClient(config, config.UserAgent).RegionInstanceTemplates.
 			List(config.Project, config.Region).
 			Filter(filter).
 			MaxResults(2).
@@ -830,7 +835,7 @@ func testAccRegionalDataflowJobExists(t *testing.T, res, region string) resource
 			return fmt.Errorf("No ID is set")
 		}
 		config := acctest.GoogleProviderConfig(t)
-		_, err := config.NewDataflowClient(config.UserAgent).Projects.Locations.Jobs.Get(config.Project, region, rs.Primary.ID).Do()
+		_, err := dataflow.NewClient(config, config.UserAgent).Projects.Locations.Jobs.Get(config.Project, region, rs.Primary.ID).Do()
 		if err != nil {
 			return fmt.Errorf("Job does not exist")
 		}

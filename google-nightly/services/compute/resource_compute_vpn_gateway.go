@@ -100,6 +100,7 @@ func ResourceComputeVpnGateway() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceComputeVpnGatewayCreate,
 		Read:   resourceComputeVpnGatewayRead,
+		Update: resourceComputeVpnGatewayUpdate,
 		Delete: resourceComputeVpnGatewayDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +114,7 @@ func ResourceComputeVpnGateway() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -212,6 +214,18 @@ and values are in the format tagValues/456.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -256,7 +270,7 @@ func resourceComputeVpnGatewayCreate(d *schema.ResourceData, meta interface{}) e
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetVpnGateways")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetVpnGateways")
 	if err != nil {
 		return err
 	}
@@ -340,7 +354,7 @@ func resourceComputeVpnGatewayRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetVpnGateways/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetVpnGateways/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -373,30 +387,26 @@ func resourceComputeVpnGatewayRead(d *schema.ResourceData, meta interface{}) err
 
 	log.Printf("[DEBUG] Finished reading ComputeVpnGateway %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading VpnGateway: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeVpnGatewayCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VpnGateway: %s", err)
-	}
-	if err := d.Set("description", flattenComputeVpnGatewayDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VpnGateway: %s", err)
-	}
-	if err := d.Set("name", flattenComputeVpnGatewayName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VpnGateway: %s", err)
-	}
-	if err := d.Set("gateway_id", flattenComputeVpnGatewayGatewayId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VpnGateway: %s", err)
-	}
-	if err := d.Set("network", flattenComputeVpnGatewayNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VpnGateway: %s", err)
-	}
-	if err := d.Set("region", flattenComputeVpnGatewayRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading VpnGateway: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading VpnGateway: %s", err)
+	err = ResourceComputeVpnGatewayFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -426,7 +436,19 @@ func resourceComputeVpnGatewayRead(d *schema.ResourceData, meta interface{}) err
 	return nil
 }
 
+func resourceComputeVpnGatewayUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceComputeVpnGatewayRead(d, meta)
+}
+
 func resourceComputeVpnGatewayDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeVpnGateway without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing VpnGateway %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -440,8 +462,7 @@ func resourceComputeVpnGatewayDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for VpnGateway: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/targetVpnGateways/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/targetVpnGateways/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -601,4 +622,31 @@ func expandComputeVpnGatewayRegion(v interface{}, d tpgresource.TerraformResourc
 		return nil, fmt.Errorf("Invalid value for region: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeVpnGatewayFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeVpnGatewayCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VpnGateway: %s", err)
+	}
+	if err = d.Set("description", flattenComputeVpnGatewayDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VpnGateway: %s", err)
+	}
+	if err = d.Set("name", flattenComputeVpnGatewayName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VpnGateway: %s", err)
+	}
+	if err = d.Set("gateway_id", flattenComputeVpnGatewayGatewayId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VpnGateway: %s", err)
+	}
+	if err = d.Set("network", flattenComputeVpnGatewayNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VpnGateway: %s", err)
+	}
+	if err = d.Set("region", flattenComputeVpnGatewayRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading VpnGateway: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading VpnGateway: %s", err)
+	}
+	return nil
 }

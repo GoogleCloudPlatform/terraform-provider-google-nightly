@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/beyondcorp"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = beyondcorp.Product
 )
 
 func TestAccBeyondcorpSecurityGatewayApplication_beyondcorpSecurityGatewayApplicationBasicExample(t *testing.T) {
@@ -323,8 +325,7 @@ func testAccCheckBeyondcorpSecurityGatewayApplicationDestroyProducer(t *testing.
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{BeyondcorpBasePath}}projects/{{project}}/locations/global/securityGateways/{{security_gateway_id}}/applications/{{application_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(beyondcorp.Product, config)+"projects/{{project}}/locations/global/securityGateways/{{security_gateway_id}}/applications/{{application_id}}")
 			if err != nil {
 				return err
 			}

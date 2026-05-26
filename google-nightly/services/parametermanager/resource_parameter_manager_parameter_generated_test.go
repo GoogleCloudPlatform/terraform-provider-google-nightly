@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/parametermanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = parametermanager.Product
 )
 
 func TestAccParameterManagerParameter_parameterConfigBasicExample(t *testing.T) {
@@ -187,7 +191,7 @@ resource "google_parameter_manager_parameter" "parameter-with-labels" {
 
 func TestAccParameterManagerParameter_parameterWithKmsKeyExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-pm.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -197,7 +201,7 @@ func TestAccParameterManagerParameter_parameterWithKmsKeyExample(t *testing.T) {
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"kms_key":       acctest.BootstrapKMSKey(t).CryptoKey.Name,
+		"kms_key":       kms.BootstrapKMSKey(t).CryptoKey.Name,
 		"parameter_id":  "parameter" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
@@ -248,8 +252,7 @@ func testAccCheckParameterManagerParameterDestroyProducer(t *testing.T) func(s *
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ParameterManagerBasePath}}projects/{{project}}/locations/global/parameters/{{parameter_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(parametermanager.Product, config)+"projects/{{project}}/locations/global/parameters/{{parameter_id}}")
 			if err != nil {
 				return err
 			}
