@@ -204,6 +204,19 @@ or projects/{project}/locations/global/muteConfigs/{configId}`,
 updated. This field is set by the server and will be ignored if
 provided on config creation or update.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -236,7 +249,7 @@ func resourceSecurityCenterV2FolderMuteConfigCreate(d *schema.ResourceData, meta
 		obj["type"] = typeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterV2BasePath}}folders/{{folder}}/locations/{{location}}/muteConfigs?muteConfigId={{mute_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/locations/{{location}}/muteConfigs?muteConfigId={{mute_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -304,7 +317,7 @@ func resourceSecurityCenterV2FolderMuteConfigRead(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterV2BasePath}}folders/{{folder}}/locations/{{location}}/muteConfigs/{{mute_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/locations/{{location}}/muteConfigs/{{mute_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -331,26 +344,23 @@ func resourceSecurityCenterV2FolderMuteConfigRead(d *schema.ResourceData, meta i
 
 	log.Printf("[DEBUG] Finished reading SecurityCenterV2FolderMuteConfig %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenSecurityCenterV2FolderMuteConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("description", flattenSecurityCenterV2FolderMuteConfigDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
-	}
-	if err := d.Set("filter", flattenSecurityCenterV2FolderMuteConfigFilter(res["filter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecurityCenterV2FolderMuteConfigCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
-	}
-	if err := d.Set("update_time", flattenSecurityCenterV2FolderMuteConfigUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
-	}
-	if err := d.Set("most_recent_editor", flattenSecurityCenterV2FolderMuteConfigMostRecentEditor(res["mostRecentEditor"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
-	}
-	if err := d.Set("type", flattenSecurityCenterV2FolderMuteConfigType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
+
+	err = ResourceSecurityCenterV2FolderMuteConfigFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -381,6 +391,19 @@ func resourceSecurityCenterV2FolderMuteConfigRead(d *schema.ResourceData, meta i
 }
 
 func resourceSecurityCenterV2FolderMuteConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecurityCenterV2FolderMuteConfig().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecurityCenterV2FolderMuteConfigRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -429,7 +452,7 @@ func resourceSecurityCenterV2FolderMuteConfigUpdate(d *schema.ResourceData, meta
 		obj["type"] = typeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterV2BasePath}}folders/{{folder}}/locations/{{location}}/muteConfigs/{{mute_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/locations/{{location}}/muteConfigs/{{mute_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -486,6 +509,13 @@ func resourceSecurityCenterV2FolderMuteConfigUpdate(d *schema.ResourceData, meta
 }
 
 func resourceSecurityCenterV2FolderMuteConfigDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecurityCenterV2FolderMuteConfig without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing FolderMuteConfig %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -494,7 +524,7 @@ func resourceSecurityCenterV2FolderMuteConfigDelete(d *schema.ResourceData, meta
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterV2BasePath}}folders/{{folder}}/locations/{{location}}/muteConfigs/{{mute_config_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"folders/{{folder}}/locations/{{location}}/muteConfigs/{{mute_config_id}}")
 	if err != nil {
 		return err
 	}
@@ -584,4 +614,32 @@ func expandSecurityCenterV2FolderMuteConfigFilter(v interface{}, d tpgresource.T
 
 func expandSecurityCenterV2FolderMuteConfigType(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceSecurityCenterV2FolderMuteConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecurityCenterV2FolderMuteConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
+	}
+	if err = d.Set("description", flattenSecurityCenterV2FolderMuteConfigDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
+	}
+	if err = d.Set("filter", flattenSecurityCenterV2FolderMuteConfigFilter(res["filter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecurityCenterV2FolderMuteConfigCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
+	}
+	if err = d.Set("update_time", flattenSecurityCenterV2FolderMuteConfigUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
+	}
+	if err = d.Set("most_recent_editor", flattenSecurityCenterV2FolderMuteConfigMostRecentEditor(res["mostRecentEditor"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
+	}
+	if err = d.Set("type", flattenSecurityCenterV2FolderMuteConfigType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FolderMuteConfig: %s", err)
+	}
+
+	return nil
 }

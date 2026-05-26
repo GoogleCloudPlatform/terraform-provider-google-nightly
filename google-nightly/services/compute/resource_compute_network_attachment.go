@@ -115,6 +115,7 @@ func ResourceComputeNetworkAttachment() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Schema: map[string]*schema.Schema{
@@ -246,6 +247,18 @@ Because it is required that all the subnetworks must be from the same network, i
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -308,7 +321,7 @@ func resourceComputeNetworkAttachmentCreate(d *schema.ResourceData, meta interfa
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/networkAttachments")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/networkAttachments")
 	if err != nil {
 		return err
 	}
@@ -371,7 +384,7 @@ func resourceComputeNetworkAttachmentRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/networkAttachments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/networkAttachments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -404,60 +417,45 @@ func resourceComputeNetworkAttachmentRead(d *schema.ResourceData, meta interface
 
 	log.Printf("[DEBUG] Finished reading ComputeNetworkAttachment %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
 	}
 
-	if err := d.Set("kind", flattenComputeNetworkAttachmentKind(res["kind"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("id", flattenComputeNetworkAttachmentId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeNetworkAttachmentCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("description", flattenComputeNetworkAttachmentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("self_link", flattenComputeNetworkAttachmentSelfLink(res["selfLink"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("self_link_with_id", flattenComputeNetworkAttachmentSelfLinkWithId(res["selfLinkWithId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("connection_preference", flattenComputeNetworkAttachmentConnectionPreference(res["connectionPreference"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("connection_endpoints", flattenComputeNetworkAttachmentConnectionEndpoints(res["connectionEndpoints"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("subnetworks", flattenComputeNetworkAttachmentSubnetworks(res["subnetworks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("producer_reject_lists", flattenComputeNetworkAttachmentProducerRejectLists(res["producerRejectLists"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("producer_accept_lists", flattenComputeNetworkAttachmentProducerAcceptLists(res["producerAcceptLists"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("fingerprint", flattenComputeNetworkAttachmentFingerprint(res["fingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("network", flattenComputeNetworkAttachmentNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("name", flattenComputeNetworkAttachmentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
-	}
-	if err := d.Set("region", flattenComputeNetworkAttachmentRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	err = ResourceComputeNetworkAttachmentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceComputeNetworkAttachmentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeNetworkAttachment().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeNetworkAttachmentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -504,7 +502,7 @@ func resourceComputeNetworkAttachmentUpdate(d *schema.ResourceData, meta interfa
 		obj["fingerprint"] = fingerprintProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/networkAttachments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/networkAttachments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -546,6 +544,13 @@ func resourceComputeNetworkAttachmentUpdate(d *schema.ResourceData, meta interfa
 }
 
 func resourceComputeNetworkAttachmentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeNetworkAttachment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing NetworkAttachment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -559,8 +564,7 @@ func resourceComputeNetworkAttachmentDelete(d *schema.ResourceData, meta interfa
 		return fmt.Errorf("Error fetching project for NetworkAttachment: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/networkAttachments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/networkAttachments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -772,4 +776,56 @@ func expandComputeNetworkAttachmentRegion(v interface{}, d tpgresource.Terraform
 		return nil, fmt.Errorf("Invalid value for region: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeNetworkAttachmentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("kind", flattenComputeNetworkAttachmentKind(res["kind"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("id", flattenComputeNetworkAttachmentId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeNetworkAttachmentCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("description", flattenComputeNetworkAttachmentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("self_link", flattenComputeNetworkAttachmentSelfLink(res["selfLink"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("self_link_with_id", flattenComputeNetworkAttachmentSelfLinkWithId(res["selfLinkWithId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("connection_preference", flattenComputeNetworkAttachmentConnectionPreference(res["connectionPreference"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("connection_endpoints", flattenComputeNetworkAttachmentConnectionEndpoints(res["connectionEndpoints"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("subnetworks", flattenComputeNetworkAttachmentSubnetworks(res["subnetworks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("producer_reject_lists", flattenComputeNetworkAttachmentProducerRejectLists(res["producerRejectLists"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("producer_accept_lists", flattenComputeNetworkAttachmentProducerAcceptLists(res["producerAcceptLists"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("fingerprint", flattenComputeNetworkAttachmentFingerprint(res["fingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("network", flattenComputeNetworkAttachmentNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("name", flattenComputeNetworkAttachmentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+	if err = d.Set("region", flattenComputeNetworkAttachmentRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NetworkAttachment: %s", err)
+	}
+
+	return nil
 }

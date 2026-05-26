@@ -116,6 +116,7 @@ func ResourceDataplexDataProductDataAsset() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -224,6 +225,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -256,7 +269,7 @@ func resourceDataplexDataProductDataAssetCreate(d *schema.ResourceData, meta int
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/dataProducts/{{data_product_id}}/dataAssets?dataAssetId={{data_asset_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataProducts/{{data_product_id}}/dataAssets?dataAssetId={{data_asset_id}}")
 	if err != nil {
 		return err
 	}
@@ -345,7 +358,7 @@ func resourceDataplexDataProductDataAssetRead(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/dataProducts/{{data_product_id}}/dataAssets/{{data_asset_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataProducts/{{data_product_id}}/dataAssets/{{data_asset_id}}")
 	if err != nil {
 		return err
 	}
@@ -378,27 +391,26 @@ func resourceDataplexDataProductDataAssetRead(d *schema.ResourceData, meta inter
 
 	log.Printf("[DEBUG] Finished reading DataplexDataProductDataAsset %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
 	}
 
-	if err := d.Set("uid", flattenDataplexDataProductDataAssetUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
-	}
-	if err := d.Set("resource", flattenDataplexDataProductDataAssetResource(res["resource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
-	}
-	if err := d.Set("labels", flattenDataplexDataProductDataAssetLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
-	}
-	if err := d.Set("access_group_configs", flattenDataplexDataProductDataAssetAccessGroupConfigs(res["accessGroupConfigs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDataplexDataProductDataAssetTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDataplexDataProductDataAssetEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
+	err = ResourceDataplexDataProductDataAssetFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -435,6 +447,19 @@ func resourceDataplexDataProductDataAssetRead(d *schema.ResourceData, meta inter
 }
 
 func resourceDataplexDataProductDataAssetUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDataplexDataProductDataAsset().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDataplexDataProductDataAssetRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -488,7 +513,7 @@ func resourceDataplexDataProductDataAssetUpdate(d *schema.ResourceData, meta int
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/dataProducts/{{data_product_id}}/dataAssets/{{data_asset_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataProducts/{{data_product_id}}/dataAssets/{{data_asset_id}}")
 	if err != nil {
 		return err
 	}
@@ -548,6 +573,13 @@ func resourceDataplexDataProductDataAssetUpdate(d *schema.ResourceData, meta int
 }
 
 func resourceDataplexDataProductDataAssetDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DataplexDataProductDataAsset without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DataProductDataAsset %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -561,8 +593,7 @@ func resourceDataplexDataProductDataAssetDelete(d *schema.ResourceData, meta int
 		return fmt.Errorf("Error fetching project for DataProductDataAsset: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/dataProducts/{{data_product_id}}/dataAssets/{{data_asset_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataProducts/{{data_product_id}}/dataAssets/{{data_asset_id}}")
 	if err != nil {
 		return err
 	}
@@ -726,4 +757,29 @@ func expandDataplexDataProductDataAssetEffectiveLabels(v interface{}, d tpgresou
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceDataplexDataProductDataAssetFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("uid", flattenDataplexDataProductDataAssetUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
+	}
+	if err = d.Set("resource", flattenDataplexDataProductDataAssetResource(res["resource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
+	}
+	if err = d.Set("labels", flattenDataplexDataProductDataAssetLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
+	}
+	if err = d.Set("access_group_configs", flattenDataplexDataProductDataAssetAccessGroupConfigs(res["accessGroupConfigs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDataplexDataProductDataAssetTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDataplexDataProductDataAssetEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataProductDataAsset: %s", err)
+	}
+
+	return nil
 }

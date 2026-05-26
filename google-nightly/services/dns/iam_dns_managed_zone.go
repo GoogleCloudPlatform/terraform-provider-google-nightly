@@ -52,7 +52,7 @@ func init() {
 		Name:        "google_dns_managed_zone_iam_member",
 		ProductName: "DNS",
 		Type:        registry.SchemaTypeIAMResource,
-		Schema:      tpgiamresource.ResourceIamMember(DNSManagedZoneIamSchema, DNSManagedZoneIamUpdaterProducer, DNSManagedZoneIdParseFunc),
+		Schema:      tpgiamresource.ResourceIamMember(DNSManagedZoneIamSchema, DNSManagedZoneIamUpdaterProducer, DNSManagedZoneIdParseFunc, tpgiamresource.IamWithParentResourceIdentity(DNSManagedZoneIamParentParentResourceIdentityParser)),
 	}.Register()
 	registry.Schema{
 		Name:        "google_dns_managed_zone_iam_policy",
@@ -172,6 +172,10 @@ func (u *DNSManagedZoneIamUpdater) GetResourceIamPolicy() (*cloudresourcemanager
 		return nil, err
 	}
 	var obj map[string]interface{}
+	url, err = transport_tpg.AddQueryParams(url, map[string]string{"options.requestedPolicyVersion": fmt.Sprintf("%d", tpgiamresource.IamPolicyVersion)})
+	if err != nil {
+		return nil, err
+	}
 
 	userAgent, err := tpgresource.GenerateUserAgentString(u.d, u.Config.UserAgent)
 	if err != nil {
@@ -207,6 +211,8 @@ func (u *DNSManagedZoneIamUpdater) SetResourceIamPolicy(policy *cloudresourceman
 
 	obj := make(map[string]interface{})
 	obj["policy"] = json
+	// Core APIs require the mask to acknowledge policy version 3 (conditions)
+	obj["updateMask"] = "bindings,etag,version"
 
 	url, err := u.qualifyManagedZoneUrl("setIamPolicy")
 	if err != nil {
@@ -249,6 +255,16 @@ func (u *DNSManagedZoneIamUpdater) qualifyManagedZoneUrl(methodIdentifier string
 
 func (u *DNSManagedZoneIamUpdater) GetResourceId() string {
 	return fmt.Sprintf("projects/%s/managedZones/%s", u.project, u.managedZone)
+}
+
+func DNSManagedZoneIamParentParentResourceIdentityParser(d *schema.ResourceData, identity *schema.IdentityData, transportConfig *transport_tpg.Config) (string, error) {
+	return tpgiamresource.ParseIamResourceIdentity(d, identity, transportConfig, tpgiamresource.IamResourceIdentityConfig{
+		Params: []tpgiamresource.IamIdentityParam{
+			{Key: "project", IdentityKey: "project"},
+			{Key: "managedZone", IdentityKey: "managed_zone"},
+		},
+		UriFormat: "projects/%s/managedZones/%s",
+	})
 }
 
 func (u *DNSManagedZoneIamUpdater) GetMutexKey() string {

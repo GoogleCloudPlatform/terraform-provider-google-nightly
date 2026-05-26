@@ -115,6 +115,7 @@ func ResourceHealthcareFhirStore() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -533,6 +534,19 @@ The Cloud Healthcare API does not currently enforce all of the rules in a Struct
  and default labels configured on the provider.`,
 				Elem: &schema.Schema{Type: schema.TypeString},
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -637,7 +651,7 @@ func resourceHealthcareFhirStoreCreate(d *schema.ResourceData, meta interface{})
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/fhirStores?fhirStoreId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/fhirStores?fhirStoreId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -700,7 +714,7 @@ func resourceHealthcareFhirStoreRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/fhirStores/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/fhirStores/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -739,56 +753,23 @@ func resourceHealthcareFhirStoreRead(d *schema.ResourceData, meta interface{}) e
 		return nil
 	}
 
-	if err := d.Set("name", flattenHealthcareFhirStoreName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("version", flattenHealthcareFhirStoreVersion(res["version"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("consent_config", flattenHealthcareFhirStoreConsentConfig(res["consentConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("validation_config", flattenHealthcareFhirStoreValidationConfig(res["validationConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("complex_data_type_reference_parsing", flattenHealthcareFhirStoreComplexDataTypeReferenceParsing(res["complexDataTypeReferenceParsing"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("enable_update_create", flattenHealthcareFhirStoreEnableUpdateCreate(res["enableUpdateCreate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("disable_referential_integrity", flattenHealthcareFhirStoreDisableReferentialIntegrity(res["disableReferentialIntegrity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("disable_resource_versioning", flattenHealthcareFhirStoreDisableResourceVersioning(res["disableResourceVersioning"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("enable_history_import", flattenHealthcareFhirStoreEnableHistoryImport(res["enableHistoryImport"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("enable_history_modifications", flattenHealthcareFhirStoreEnableHistoryModifications(res["enableHistoryModifications"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("labels", flattenHealthcareFhirStoreLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("notification_config", flattenHealthcareFhirStoreNotificationConfig(res["notificationConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("stream_configs", flattenHealthcareFhirStoreStreamConfigs(res["streamConfigs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("default_search_handling_strict", flattenHealthcareFhirStoreDefaultSearchHandlingStrict(res["defaultSearchHandlingStrict"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("notification_configs", flattenHealthcareFhirStoreNotificationConfigs(res["notificationConfigs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenHealthcareFhirStoreTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenHealthcareFhirStoreEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FhirStore: %s", err)
+
+	err = ResourceHealthcareFhirStoreFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -813,6 +794,19 @@ func resourceHealthcareFhirStoreRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceHealthcareFhirStoreUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceHealthcareFhirStore().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceHealthcareFhirStoreRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -898,7 +892,7 @@ func resourceHealthcareFhirStoreUpdate(d *schema.ResourceData, meta interface{})
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/fhirStores/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/fhirStores/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -983,6 +977,13 @@ func resourceHealthcareFhirStoreUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceHealthcareFhirStoreDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy HealthcareFhirStore without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing FhirStore %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -991,7 +992,7 @@ func resourceHealthcareFhirStoreDelete(d *schema.ResourceData, meta interface{})
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{HealthcareBasePath}}{{dataset}}/fhirStores/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{dataset}}/fhirStores/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1842,4 +1843,62 @@ func resourceHealthcareFhirStoreDecoder(d *schema.ResourceData, meta interface{}
 	}
 	res["name"] = d.Get("name").(string)
 	return res, nil
+}
+
+func ResourceHealthcareFhirStoreFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenHealthcareFhirStoreName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("version", flattenHealthcareFhirStoreVersion(res["version"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("consent_config", flattenHealthcareFhirStoreConsentConfig(res["consentConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("validation_config", flattenHealthcareFhirStoreValidationConfig(res["validationConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("complex_data_type_reference_parsing", flattenHealthcareFhirStoreComplexDataTypeReferenceParsing(res["complexDataTypeReferenceParsing"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("enable_update_create", flattenHealthcareFhirStoreEnableUpdateCreate(res["enableUpdateCreate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("disable_referential_integrity", flattenHealthcareFhirStoreDisableReferentialIntegrity(res["disableReferentialIntegrity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("disable_resource_versioning", flattenHealthcareFhirStoreDisableResourceVersioning(res["disableResourceVersioning"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("enable_history_import", flattenHealthcareFhirStoreEnableHistoryImport(res["enableHistoryImport"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("enable_history_modifications", flattenHealthcareFhirStoreEnableHistoryModifications(res["enableHistoryModifications"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("labels", flattenHealthcareFhirStoreLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("notification_config", flattenHealthcareFhirStoreNotificationConfig(res["notificationConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("stream_configs", flattenHealthcareFhirStoreStreamConfigs(res["streamConfigs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("default_search_handling_strict", flattenHealthcareFhirStoreDefaultSearchHandlingStrict(res["defaultSearchHandlingStrict"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("notification_configs", flattenHealthcareFhirStoreNotificationConfigs(res["notificationConfigs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenHealthcareFhirStoreTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenHealthcareFhirStoreEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FhirStore: %s", err)
+	}
+
+	return nil
 }

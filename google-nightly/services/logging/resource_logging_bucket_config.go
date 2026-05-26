@@ -128,6 +128,9 @@ For example: jsonPayload.request.status`,
 			},
 		},
 	},
+	//UDP schema start
+	"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+	//UDP schema end
 }
 
 type loggingBucketConfigIDFunc func(d *schema.ResourceData, config *transport_tpg.Config) (string, error)
@@ -146,6 +149,7 @@ func ResourceLoggingBucketConfig(parentType string, parentSpecificSchema map[str
 		Schema:        tpgresource.MergeSchemas(loggingBucketConfigSchema, parentSpecificSchema),
 		UseJSONNumber: true,
 		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 			tpgresource.DefaultProviderProject,
 		),
 	}
@@ -209,7 +213,7 @@ func resourceLoggingBucketConfigAcquireOrCreate(parentType string, iDFunc loggin
 			//logging bucket can be created only at the project level, in future api may allow for folder, org and other parent resources
 
 			log.Printf("[DEBUG] Fetching logging bucket config: %#v", id)
-			url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("{{LoggingBasePath}}%s", id))
+			url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf(transport_tpg.BaseUrl(Product, config)+"%s", id))
 			if err != nil {
 				return err
 			}
@@ -248,7 +252,7 @@ func resourceLoggingBucketConfigCreate(d *schema.ResourceData, meta interface{},
 	obj["cmekSettings"] = expandCmekSettings(d.Get("cmek_settings"))
 	obj["indexConfigs"] = expandIndexConfigs(d.Get("index_configs"))
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}projects/{{project}}/locations/{{location}}/buckets?bucketId={{bucket_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/buckets?bucketId={{bucket_id}}")
 	if err != nil {
 		return err
 	}
@@ -296,7 +300,7 @@ func resourceLoggingBucketConfigRead(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[DEBUG] Fetching logging bucket config: %#v", d.Id())
 
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("{{LoggingBasePath}}%s", d.Id()))
+	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf(transport_tpg.BaseUrl(Product, config)+"%s", d.Id()))
 	if err != nil {
 		return err
 	}
@@ -335,10 +339,29 @@ func resourceLoggingBucketConfigRead(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error setting index_configs: %s", err)
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func resourceLoggingBucketConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
+	//due to non standard resource function, Universal Deletion Policy pre-update code is included here in entirety
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range loggingBucketConfigSchema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceLoggingBucketConfigRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -347,7 +370,7 @@ func resourceLoggingBucketConfigUpdate(d *schema.ResourceData, meta interface{})
 
 	obj := make(map[string]interface{})
 
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("{{LoggingBasePath}}%s", d.Id()))
+	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf(transport_tpg.BaseUrl(Product, config)+"%s", d.Id()))
 	if err != nil {
 		return err
 	}
@@ -392,6 +415,13 @@ func resourceLoggingBucketConfigUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceLoggingBucketConfigDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	name := d.Get("bucket_id")
 	for _, restrictedName := range []string{"_Required", "_Default"} {
 		if name == restrictedName {
@@ -405,7 +435,7 @@ func resourceLoggingBucketConfigDelete(d *schema.ResourceData, meta interface{})
 	if err != nil {
 		return err
 	}
-	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("{{LoggingBasePath}}%s", d.Id()))
+	url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf(transport_tpg.BaseUrl(Product, config)+"%s", d.Id()))
 	if err != nil {
 		return err
 	}

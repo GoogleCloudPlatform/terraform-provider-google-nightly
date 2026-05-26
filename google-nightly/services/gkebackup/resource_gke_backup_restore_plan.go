@@ -116,6 +116,7 @@ func ResourceGKEBackupRestorePlan() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -153,7 +154,7 @@ as the source for Restores created via this RestorePlan.`,
 				Type:        schema.TypeString,
 				Required:    true,
 				ForceNew:    true,
-				Description: `The source cluster from which Restores will be created via this RestorePlan.`,
+				Description: `The name of the target cluster to which you want to Restore via this RestorePlan.`,
 			},
 			"location": {
 				Type:        schema.TypeString,
@@ -633,6 +634,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -683,7 +696,7 @@ func resourceGKEBackupRestorePlanCreate(d *schema.ResourceData, meta interface{}
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GKEBackupBasePath}}projects/{{project}}/locations/{{location}}/restorePlans?restorePlanId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/restorePlans?restorePlanId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -767,7 +780,7 @@ func resourceGKEBackupRestorePlanRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GKEBackupBasePath}}projects/{{project}}/locations/{{location}}/restorePlans/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/restorePlans/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -800,42 +813,26 @@ func resourceGKEBackupRestorePlanRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading GKEBackupRestorePlan %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading RestorePlan: %s", err)
 	}
 
-	if err := d.Set("name", flattenGKEBackupRestorePlanName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("uid", flattenGKEBackupRestorePlanUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("description", flattenGKEBackupRestorePlanDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("labels", flattenGKEBackupRestorePlanLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("backup_plan", flattenGKEBackupRestorePlanBackupPlan(res["backupPlan"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("cluster", flattenGKEBackupRestorePlanCluster(res["cluster"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("restore_config", flattenGKEBackupRestorePlanRestoreConfig(res["restoreConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("state", flattenGKEBackupRestorePlanState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("state_reason", flattenGKEBackupRestorePlanStateReason(res["stateReason"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenGKEBackupRestorePlanTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenGKEBackupRestorePlanEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	err = ResourceGKEBackupRestorePlanFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -866,6 +863,19 @@ func resourceGKEBackupRestorePlanRead(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceGKEBackupRestorePlanUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceGKEBackupRestorePlan().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceGKEBackupRestorePlanRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -920,7 +930,7 @@ func resourceGKEBackupRestorePlanUpdate(d *schema.ResourceData, meta interface{}
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GKEBackupBasePath}}projects/{{project}}/locations/{{location}}/restorePlans/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/restorePlans/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -984,6 +994,13 @@ func resourceGKEBackupRestorePlanUpdate(d *schema.ResourceData, meta interface{}
 }
 
 func resourceGKEBackupRestorePlanDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy GKEBackupRestorePlan without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RestorePlan %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -997,8 +1014,7 @@ func resourceGKEBackupRestorePlanDelete(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error fetching project for RestorePlan: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{GKEBackupBasePath}}projects/{{project}}/locations/{{location}}/restorePlans/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/restorePlans/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2298,4 +2314,44 @@ func expandGKEBackupRestorePlanEffectiveLabels(v interface{}, d tpgresource.Terr
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceGKEBackupRestorePlanFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenGKEBackupRestorePlanName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("uid", flattenGKEBackupRestorePlanUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("description", flattenGKEBackupRestorePlanDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("labels", flattenGKEBackupRestorePlanLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("backup_plan", flattenGKEBackupRestorePlanBackupPlan(res["backupPlan"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("cluster", flattenGKEBackupRestorePlanCluster(res["cluster"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("restore_config", flattenGKEBackupRestorePlanRestoreConfig(res["restoreConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("state", flattenGKEBackupRestorePlanState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("state_reason", flattenGKEBackupRestorePlanStateReason(res["stateReason"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenGKEBackupRestorePlanTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenGKEBackupRestorePlanEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RestorePlan: %s", err)
+	}
+
+	return nil
 }

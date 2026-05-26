@@ -116,6 +116,7 @@ func ResourceColabRuntimeTemplate() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -442,6 +443,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -534,7 +547,7 @@ func resourceColabRuntimeTemplateCreate(d *schema.ResourceData, meta interface{}
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ColabBasePath}}projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates?notebook_runtime_template_id={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates?notebook_runtime_template_id={{name}}")
 	if err != nil {
 		return err
 	}
@@ -635,7 +648,7 @@ func resourceColabRuntimeTemplateRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ColabBasePath}}projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -668,54 +681,26 @@ func resourceColabRuntimeTemplateRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading ColabRuntimeTemplate %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
 	}
 
-	if err := d.Set("name", flattenColabRuntimeTemplateName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("display_name", flattenColabRuntimeTemplateDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("description", flattenColabRuntimeTemplateDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("machine_spec", flattenColabRuntimeTemplateMachineSpec(res["machineSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("data_persistent_disk_spec", flattenColabRuntimeTemplateDataPersistentDiskSpec(res["dataPersistentDiskSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("network_spec", flattenColabRuntimeTemplateNetworkSpec(res["networkSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("labels", flattenColabRuntimeTemplateLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("idle_shutdown_config", flattenColabRuntimeTemplateIdleShutdownConfig(res["idleShutdownConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("euc_config", flattenColabRuntimeTemplateEucConfig(res["eucConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("shielded_vm_config", flattenColabRuntimeTemplateShieldedVmConfig(res["shieldedVmConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("network_tags", flattenColabRuntimeTemplateNetworkTags(res["networkTags"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("encryption_spec", flattenColabRuntimeTemplateEncryptionSpec(res["encryptionSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("software_config", flattenColabRuntimeTemplateSoftwareConfig(res["softwareConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenColabRuntimeTemplateTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenColabRuntimeTemplateEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	err = ResourceColabRuntimeTemplateFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -746,6 +731,19 @@ func resourceColabRuntimeTemplateRead(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceColabRuntimeTemplateUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceColabRuntimeTemplate().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceColabRuntimeTemplateRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -800,7 +798,7 @@ func resourceColabRuntimeTemplateUpdate(d *schema.ResourceData, meta interface{}
 		obj["softwareConfig"] = softwareConfigProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ColabBasePath}}projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -861,6 +859,13 @@ func resourceColabRuntimeTemplateUpdate(d *schema.ResourceData, meta interface{}
 }
 
 func resourceColabRuntimeTemplateDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ColabRuntimeTemplate without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RuntimeTemplate %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -874,8 +879,7 @@ func resourceColabRuntimeTemplateDelete(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error fetching project for RuntimeTemplate: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ColabBasePath}}projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/notebookRuntimeTemplates/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1653,4 +1657,56 @@ func expandColabRuntimeTemplateEffectiveLabels(v interface{}, d tpgresource.Terr
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceColabRuntimeTemplateFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenColabRuntimeTemplateName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("display_name", flattenColabRuntimeTemplateDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("description", flattenColabRuntimeTemplateDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("machine_spec", flattenColabRuntimeTemplateMachineSpec(res["machineSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("data_persistent_disk_spec", flattenColabRuntimeTemplateDataPersistentDiskSpec(res["dataPersistentDiskSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("network_spec", flattenColabRuntimeTemplateNetworkSpec(res["networkSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("labels", flattenColabRuntimeTemplateLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("idle_shutdown_config", flattenColabRuntimeTemplateIdleShutdownConfig(res["idleShutdownConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("euc_config", flattenColabRuntimeTemplateEucConfig(res["eucConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("shielded_vm_config", flattenColabRuntimeTemplateShieldedVmConfig(res["shieldedVmConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("network_tags", flattenColabRuntimeTemplateNetworkTags(res["networkTags"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("encryption_spec", flattenColabRuntimeTemplateEncryptionSpec(res["encryptionSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("software_config", flattenColabRuntimeTemplateSoftwareConfig(res["softwareConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenColabRuntimeTemplateTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenColabRuntimeTemplateEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RuntimeTemplate: %s", err)
+	}
+
+	return nil
 }

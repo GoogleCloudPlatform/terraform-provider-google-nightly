@@ -26,9 +26,12 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfversion"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vertexai"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 )
 
@@ -50,7 +53,7 @@ func TestAccVertexAIFeaturestoreIamBindingGenerated(t *testing.T) {
 		"billing_account": envvar.GetTestBillingAccountFromEnv(t),
 		"org_id":          envvar.GetTestOrgFromEnv(t),
 
-		"kms_key_name": acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name": kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"name":         "terraform" + randomSuffix,
 		"project":      "tf-test-appeng-flex" + randomSuffix,
 	}
@@ -93,12 +96,15 @@ func TestAccVertexAIFeaturestoreIamMemberGenerated(t *testing.T) {
 		"billing_account": envvar.GetTestBillingAccountFromEnv(t),
 		"org_id":          envvar.GetTestOrgFromEnv(t),
 
-		"kms_key_name": acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name": kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"name":         "terraform" + randomSuffix,
 		"project":      "tf-test-appeng-flex" + randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
+		TerraformVersionChecks: []tfversion.TerraformVersionCheck{
+			tfversion.RequireAbove(tfversion.Version1_12_0), // resource identity min version
+		},
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
 		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		Steps: []resource.TestStep{
@@ -112,10 +118,14 @@ func TestAccVertexAIFeaturestoreIamMemberGenerated(t *testing.T) {
 				ImportState:       true,
 				ImportStateVerify: true,
 			},
+			{
+				ResourceName:    "google_vertex_ai_featurestore_iam_member.foo",
+				ImportState:     true,
+				ImportStateKind: resource.ImportBlockWithResourceIdentity,
+			},
 		},
 	})
 }
-
 func TestAccVertexAIFeaturestoreIamPolicyGenerated(t *testing.T) {
 	t.Parallel()
 
@@ -127,7 +137,7 @@ func TestAccVertexAIFeaturestoreIamPolicyGenerated(t *testing.T) {
 		"billing_account": envvar.GetTestBillingAccountFromEnv(t),
 		"org_id":          envvar.GetTestOrgFromEnv(t),
 
-		"kms_key_name": acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name": kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"name":         "terraform" + randomSuffix,
 		"project":      "tf-test-appeng-flex" + randomSuffix,
 	}

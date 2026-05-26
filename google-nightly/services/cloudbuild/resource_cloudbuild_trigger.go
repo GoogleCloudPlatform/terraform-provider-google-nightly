@@ -167,6 +167,7 @@ func ResourceCloudBuildTrigger() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			stepTimeoutCustomizeDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -1564,6 +1565,18 @@ Only populated on get requests.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1710,7 +1723,7 @@ func resourceCloudBuildTriggerCreate(d *schema.ResourceData, meta interface{}) e
 		obj["developerConnectEventConfig"] = developerConnectEventConfigProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudBuildBasePath}}projects/{{project}}/locations/{{location}}/triggers")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/triggers")
 	if err != nil {
 		return err
 	}
@@ -1794,7 +1807,7 @@ func resourceCloudBuildTriggerRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudBuildBasePath}}projects/{{project}}/locations/{{location}}/triggers/{{trigger_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/triggers/{{trigger_id}}")
 	if err != nil {
 		return err
 	}
@@ -1829,81 +1842,26 @@ func resourceCloudBuildTriggerRead(d *schema.ResourceData, meta interface{}) err
 
 	log.Printf("[DEBUG] Finished reading CloudBuildTrigger %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Trigger: %s", err)
 	}
 
-	if err := d.Set("trigger_id", flattenCloudBuildTriggerTriggerId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("name", flattenCloudBuildTriggerName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("description", flattenCloudBuildTriggerDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("tags", flattenCloudBuildTriggerTags(res["tags"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("disabled", flattenCloudBuildTriggerDisabled(res["disabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("create_time", flattenCloudBuildTriggerCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("substitutions", flattenCloudBuildTriggerSubstitutions(res["substitutions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("service_account", flattenCloudBuildTriggerServiceAccount(res["serviceAccount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("include_build_logs", flattenCloudBuildTriggerIncludeBuildLogs(res["includeBuildLogs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("filename", flattenCloudBuildTriggerFilename(res["filename"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("filter", flattenCloudBuildTriggerFilter(res["filter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("git_file_source", flattenCloudBuildTriggerGitFileSource(res["gitFileSource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("repository_event_config", flattenCloudBuildTriggerRepositoryEventConfig(res["repositoryEventConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("source_to_build", flattenCloudBuildTriggerSourceToBuild(res["sourceToBuild"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("ignored_files", flattenCloudBuildTriggerIgnoredFiles(res["ignoredFiles"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("included_files", flattenCloudBuildTriggerIncludedFiles(res["includedFiles"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("trigger_template", flattenCloudBuildTriggerTriggerTemplate(res["triggerTemplate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("github", flattenCloudBuildTriggerGithub(res["github"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("bitbucket_server_trigger_config", flattenCloudBuildTriggerBitbucketServerTriggerConfig(res["bitbucketServerTriggerConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("pubsub_config", flattenCloudBuildTriggerPubsubConfig(res["pubsubConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("webhook_config", flattenCloudBuildTriggerWebhookConfig(res["webhookConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("approval_config", flattenCloudBuildTriggerApprovalConfig(res["approvalConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("build", flattenCloudBuildTriggerBuild(res["build"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
-	}
-	if err := d.Set("developer_connect_event_config", flattenCloudBuildTriggerDeveloperConnectEventConfig(res["developerConnectEventConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Trigger: %s", err)
+	err = ResourceCloudBuildTriggerFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1934,6 +1892,19 @@ func resourceCloudBuildTriggerRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceCloudBuildTriggerUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCloudBuildTrigger().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCloudBuildTriggerRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -2102,7 +2073,7 @@ func resourceCloudBuildTriggerUpdate(d *schema.ResourceData, meta interface{}) e
 		obj["developerConnectEventConfig"] = developerConnectEventConfigProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudBuildBasePath}}projects/{{project}}/locations/{{location}}/triggers/{{trigger_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/triggers/{{trigger_id}}")
 	if err != nil {
 		return err
 	}
@@ -2137,6 +2108,13 @@ func resourceCloudBuildTriggerUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceCloudBuildTriggerDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CloudBuildTrigger without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Trigger %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -2150,8 +2128,7 @@ func resourceCloudBuildTriggerDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for Trigger: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudBuildBasePath}}projects/{{project}}/locations/{{location}}/triggers/{{trigger_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/triggers/{{trigger_id}}")
 	if err != nil {
 		return err
 	}
@@ -6582,5 +6559,84 @@ func resourceCloudBuildTriggerPostCreateSetComputedFields(d *schema.ResourceData
 	if err := d.Set("trigger_id", flattenCloudBuildTriggerTriggerId(res["id"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "trigger_id": %s`, err)
 	}
+	return nil
+}
+
+func ResourceCloudBuildTriggerFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("trigger_id", flattenCloudBuildTriggerTriggerId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("name", flattenCloudBuildTriggerName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("description", flattenCloudBuildTriggerDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("tags", flattenCloudBuildTriggerTags(res["tags"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("disabled", flattenCloudBuildTriggerDisabled(res["disabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("create_time", flattenCloudBuildTriggerCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("substitutions", flattenCloudBuildTriggerSubstitutions(res["substitutions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("service_account", flattenCloudBuildTriggerServiceAccount(res["serviceAccount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("include_build_logs", flattenCloudBuildTriggerIncludeBuildLogs(res["includeBuildLogs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("filename", flattenCloudBuildTriggerFilename(res["filename"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("filter", flattenCloudBuildTriggerFilter(res["filter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("git_file_source", flattenCloudBuildTriggerGitFileSource(res["gitFileSource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("repository_event_config", flattenCloudBuildTriggerRepositoryEventConfig(res["repositoryEventConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("source_to_build", flattenCloudBuildTriggerSourceToBuild(res["sourceToBuild"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("ignored_files", flattenCloudBuildTriggerIgnoredFiles(res["ignoredFiles"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("included_files", flattenCloudBuildTriggerIncludedFiles(res["includedFiles"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("trigger_template", flattenCloudBuildTriggerTriggerTemplate(res["triggerTemplate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("github", flattenCloudBuildTriggerGithub(res["github"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("bitbucket_server_trigger_config", flattenCloudBuildTriggerBitbucketServerTriggerConfig(res["bitbucketServerTriggerConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("pubsub_config", flattenCloudBuildTriggerPubsubConfig(res["pubsubConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("webhook_config", flattenCloudBuildTriggerWebhookConfig(res["webhookConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("approval_config", flattenCloudBuildTriggerApprovalConfig(res["approvalConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("build", flattenCloudBuildTriggerBuild(res["build"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+	if err = d.Set("developer_connect_event_config", flattenCloudBuildTriggerDeveloperConnectEventConfig(res["developerConnectEventConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Trigger: %s", err)
+	}
+
 	return nil
 }

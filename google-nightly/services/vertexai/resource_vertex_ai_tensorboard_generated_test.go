@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vertexai"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = vertexai.Product
 )
 
 func TestAccVertexAITensorboard_vertexAiTensorboardExample(t *testing.T) {
@@ -105,7 +108,7 @@ func TestAccVertexAITensorboard_vertexAiTensorboardFullExample(t *testing.T) {
 
 	context := map[string]interface{}{
 		"display_name":  "terraform" + randomSuffix,
-		"kms_key_name":  acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name":  kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"random_suffix": randomSuffix,
 	}
 
@@ -170,8 +173,7 @@ func testAccCheckVertexAITensorboardDestroyProducer(t *testing.T) func(s *terraf
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{VertexAIBasePath}}{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(vertexai.Product, config)+"{{name}}")
 			if err != nil {
 				return err
 			}

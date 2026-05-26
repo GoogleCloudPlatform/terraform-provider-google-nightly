@@ -125,6 +125,14 @@ func validateHttpHeaders() schema.SchemaValidateFunc {
 			es = append(es, fmt.Errorf("Cannot set the Content-Length header on %s", k))
 			return
 		}
+		// Warn (don't reject) on Authorization: legitimate use cases exist
+		// when no oidc_token / oauth_token is configured, but combining the
+		// two leads to drift because Cloud Scheduler overwrites the value
+		// server-side. The flattener strips Authorization on read in that
+		// case to keep state consistent.
+		if _, ok := headers["Authorization"]; ok {
+			s = append(s, fmt.Sprintf("Setting the Authorization header on %s is discouraged when http_target.oidc_token or http_target.oauth_token is configured; the API will overwrite it.", k))
+		}
 		r := regexp.MustCompile(`(X-Google-|X-AppEngine-).*`)
 		for key := range headers {
 			if r.MatchString(key) {
@@ -199,6 +207,7 @@ func ResourceCloudSchedulerJob() *schema.Resource {
 			validateAuthHeaders,
 			tpgresource.DefaultProviderProject,
 			tpgresource.DefaultProviderRegion,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -547,6 +556,18 @@ The value of this field must be a time zone name from the tz database.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -626,7 +647,7 @@ func resourceCloudSchedulerJobCreate(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudSchedulerBasePath}}projects/{{project}}/locations/{{region}}/jobs")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/jobs")
 	if err != nil {
 		return err
 	}
@@ -730,7 +751,7 @@ func resourceCloudSchedulerJobRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudSchedulerBasePath}}projects/{{project}}/locations/{{region}}/jobs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/jobs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -763,6 +784,19 @@ func resourceCloudSchedulerJobRead(d *schema.ResourceData, meta interface{}) err
 
 	log.Printf("[DEBUG] Finished reading CloudSchedulerJob %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Job: %s", err)
 	}
@@ -775,38 +809,9 @@ func resourceCloudSchedulerJobRead(d *schema.ResourceData, meta interface{}) err
 		return fmt.Errorf("Error reading Job: %s", err)
 	}
 
-	if err := d.Set("name", flattenCloudSchedulerJobName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("description", flattenCloudSchedulerJobDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("schedule", flattenCloudSchedulerJobSchedule(res["schedule"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("time_zone", flattenCloudSchedulerJobTimeZone(res["timeZone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("state", flattenCloudSchedulerJobState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("paused", flattenCloudSchedulerJobPaused(res["paused"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("attempt_deadline", flattenCloudSchedulerJobAttemptDeadline(res["attemptDeadline"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("retry_config", flattenCloudSchedulerJobRetryConfig(res["retryConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("pubsub_target", flattenCloudSchedulerJobPubsubTarget(res["pubsubTarget"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("app_engine_http_target", flattenCloudSchedulerJobAppEngineHttpTarget(res["appEngineHttpTarget"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
-	}
-	if err := d.Set("http_target", flattenCloudSchedulerJobHttpTarget(res["httpTarget"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Job: %s", err)
+	err = ResourceCloudSchedulerJobFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -837,6 +842,19 @@ func resourceCloudSchedulerJobRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceCloudSchedulerJobUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCloudSchedulerJob().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCloudSchedulerJobRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -932,7 +950,7 @@ func resourceCloudSchedulerJobUpdate(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudSchedulerBasePath}}projects/{{project}}/locations/{{region}}/jobs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/jobs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -999,6 +1017,13 @@ func resourceCloudSchedulerJobUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceCloudSchedulerJobDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CloudSchedulerJob without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Job %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1012,8 +1037,7 @@ func resourceCloudSchedulerJobDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for Job: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudSchedulerBasePath}}projects/{{project}}/locations/{{region}}/jobs/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/jobs/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1285,6 +1309,30 @@ func flattenCloudSchedulerJobAppEngineHttpTargetHeaders(v interface{}, d *schema
 			delete(headers, key)
 		}
 	}
+	// The Cloud Scheduler API injects an `Authorization` header on read whenever
+	// `oidc_token` or `oauth_token` is configured on the http_target, even though
+	// it is not part of the user-supplied `headers` map. Leaving it in state
+	// causes perpetual drift against the configuration. Strip it only when one
+	// of the token blocks is set, so users who legitimately send a literal
+	// `Authorization` header (without token auth) are not affected.
+	//
+	// Note: this template is also used for `app_engine_http_target.headers`,
+	// which has no `oidc_token` / `oauth_token` siblings — the d.Get() lookups
+	// below return zero-valued counts in that case, so the Authorization key is
+	// preserved as-is for App Engine targets.
+	if d != nil {
+		oidcSet := false
+		oauthSet := false
+		if v, ok := d.Get("http_target.0.oidc_token.#").(int); ok && v > 0 {
+			oidcSet = true
+		}
+		if v, ok := d.Get("http_target.0.oauth_token.#").(int); ok && v > 0 {
+			oauthSet = true
+		}
+		if oidcSet || oauthSet {
+			delete(headers, "Authorization")
+		}
+	}
 	return headers
 }
 
@@ -1353,6 +1401,30 @@ func flattenCloudSchedulerJobHttpTargetHeaders(v interface{}, d *schema.Resource
 	for key := range headers {
 		if r.MatchString(key) {
 			delete(headers, key)
+		}
+	}
+	// The Cloud Scheduler API injects an `Authorization` header on read whenever
+	// `oidc_token` or `oauth_token` is configured on the http_target, even though
+	// it is not part of the user-supplied `headers` map. Leaving it in state
+	// causes perpetual drift against the configuration. Strip it only when one
+	// of the token blocks is set, so users who legitimately send a literal
+	// `Authorization` header (without token auth) are not affected.
+	//
+	// Note: this template is also used for `app_engine_http_target.headers`,
+	// which has no `oidc_token` / `oauth_token` siblings — the d.Get() lookups
+	// below return zero-valued counts in that case, so the Authorization key is
+	// preserved as-is for App Engine targets.
+	if d != nil {
+		oidcSet := false
+		oauthSet := false
+		if v, ok := d.Get("http_target.0.oidc_token.#").(int); ok && v > 0 {
+			oidcSet = true
+		}
+		if v, ok := d.Get("http_target.0.oauth_token.#").(int); ok && v > 0 {
+			oauthSet = true
+		}
+		if oidcSet || oauthSet {
+			delete(headers, "Authorization")
 		}
 	}
 	return headers
@@ -1836,4 +1908,44 @@ func resourceCloudSchedulerJobEncoder(d *schema.ResourceData, meta interface{}, 
 func resourceCloudSchedulerJobUpdateEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
 	delete(obj, "paused") // Field doesn't exist in API
 	return obj, nil
+}
+
+func ResourceCloudSchedulerJobFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenCloudSchedulerJobName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("description", flattenCloudSchedulerJobDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("schedule", flattenCloudSchedulerJobSchedule(res["schedule"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("time_zone", flattenCloudSchedulerJobTimeZone(res["timeZone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("state", flattenCloudSchedulerJobState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("paused", flattenCloudSchedulerJobPaused(res["paused"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("attempt_deadline", flattenCloudSchedulerJobAttemptDeadline(res["attemptDeadline"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("retry_config", flattenCloudSchedulerJobRetryConfig(res["retryConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("pubsub_target", flattenCloudSchedulerJobPubsubTarget(res["pubsubTarget"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("app_engine_http_target", flattenCloudSchedulerJobAppEngineHttpTarget(res["appEngineHttpTarget"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+	if err = d.Set("http_target", flattenCloudSchedulerJobHttpTarget(res["httpTarget"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Job: %s", err)
+	}
+
+	return nil
 }

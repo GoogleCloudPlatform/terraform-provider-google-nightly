@@ -115,6 +115,7 @@ func ResourceChronicleNativeDashboard() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -375,6 +376,18 @@ sent on update and delete requests.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -425,7 +438,7 @@ func resourceChronicleNativeDashboardCreate(d *schema.ResourceData, meta interfa
 		obj["type"] = typeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards")
 	if err != nil {
 		return err
 	}
@@ -510,7 +523,7 @@ func resourceChronicleNativeDashboardRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards/{{dashboard_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards/{{dashboard_id}}")
 	if err != nil {
 		return err
 	}
@@ -543,72 +556,26 @@ func resourceChronicleNativeDashboardRead(d *schema.ResourceData, meta interface
 
 	log.Printf("[DEBUG] Finished reading ChronicleNativeDashboard %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading NativeDashboard: %s", err)
 	}
 
-	if err := d.Set("name", flattenChronicleNativeDashboardName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	if err := d.Set("dashboard_id", flattenChronicleNativeDashboardDashboardId(res["dashboardId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	if err := d.Set("access", flattenChronicleNativeDashboardAccess(res["access"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	if err := d.Set("create_time", flattenChronicleNativeDashboardCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	if err := d.Set("create_user_id", flattenChronicleNativeDashboardCreateUserId(res["createUserId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	// Terraform must set the top level schema field, but since this object contains collapsed properties
-	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
-	if flattenedProp := flattenChronicleNativeDashboardDashboardUserData(res["dashboardUserData"], d, config); flattenedProp != nil {
-		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
-			return fmt.Errorf("Error reading NativeDashboard: %s", gerr)
-		}
-		casted := flattenedProp.([]interface{})[0]
-		if casted != nil {
-			for k, v := range casted.(map[string]interface{}) {
-				if err := d.Set(k, v); err != nil {
-					return fmt.Errorf("Error setting %s: %s", k, err)
-				}
-			}
-		}
-	}
-	// Terraform must set the top level schema field, but since this object contains collapsed properties
-	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
-	if flattenedProp := flattenChronicleNativeDashboardDefinition(res["definition"], d, config); flattenedProp != nil {
-		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
-			return fmt.Errorf("Error reading NativeDashboard: %s", gerr)
-		}
-		casted := flattenedProp.([]interface{})[0]
-		if casted != nil {
-			for k, v := range casted.(map[string]interface{}) {
-				if err := d.Set(k, v); err != nil {
-					return fmt.Errorf("Error setting %s: %s", k, err)
-				}
-			}
-		}
-	}
-	if err := d.Set("description", flattenChronicleNativeDashboardDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	if err := d.Set("display_name", flattenChronicleNativeDashboardDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	if err := d.Set("etag", flattenChronicleNativeDashboardEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	if err := d.Set("type", flattenChronicleNativeDashboardType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	if err := d.Set("update_time", flattenChronicleNativeDashboardUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
-	}
-	if err := d.Set("update_user_id", flattenChronicleNativeDashboardUpdateUserId(res["updateUserId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	err = ResourceChronicleNativeDashboardFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -645,6 +612,19 @@ func resourceChronicleNativeDashboardRead(d *schema.ResourceData, meta interface
 }
 
 func resourceChronicleNativeDashboardUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceChronicleNativeDashboard().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceChronicleNativeDashboardRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -722,7 +702,7 @@ func resourceChronicleNativeDashboardUpdate(d *schema.ResourceData, meta interfa
 		obj["type"] = typeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards/{{dashboard_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards/{{dashboard_id}}")
 	if err != nil {
 		return err
 	}
@@ -803,6 +783,13 @@ func resourceChronicleNativeDashboardUpdate(d *schema.ResourceData, meta interfa
 }
 
 func resourceChronicleNativeDashboardDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ChronicleNativeDashboard without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing NativeDashboard %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -816,8 +803,7 @@ func resourceChronicleNativeDashboardDelete(d *schema.ResourceData, meta interfa
 		return fmt.Errorf("Error fetching project for NativeDashboard: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ChronicleBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards/{{dashboard_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/nativeDashboards/{{dashboard_id}}")
 	if err != nil {
 		return err
 	}
@@ -1500,5 +1486,75 @@ func resourceChronicleNativeDashboardPostCreateSetComputedFields(d *schema.Resou
 	if err := d.Set("dashboard_id", flattenChronicleNativeDashboardDashboardId(res["dashboardId"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "dashboard_id": %s`, err)
 	}
+	return nil
+}
+
+func ResourceChronicleNativeDashboardFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenChronicleNativeDashboardName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	if err = d.Set("dashboard_id", flattenChronicleNativeDashboardDashboardId(res["dashboardId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	if err = d.Set("access", flattenChronicleNativeDashboardAccess(res["access"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	if err = d.Set("create_time", flattenChronicleNativeDashboardCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	if err = d.Set("create_user_id", flattenChronicleNativeDashboardCreateUserId(res["createUserId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	// Terraform must set the top level schema field, but since this object contains collapsed properties
+	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
+	if flattenedProp := flattenChronicleNativeDashboardDashboardUserData(res["dashboardUserData"], d, config); flattenedProp != nil {
+		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
+			return fmt.Errorf("Error reading NativeDashboard: %s", gerr)
+		}
+		casted := flattenedProp.([]interface{})[0]
+		if casted != nil {
+			for k, v := range casted.(map[string]interface{}) {
+				if err := d.Set(k, v); err != nil {
+					return fmt.Errorf("Error setting %s: %s", k, err)
+				}
+			}
+		}
+	}
+	// Terraform must set the top level schema field, but since this object contains collapsed properties
+	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
+	if flattenedProp := flattenChronicleNativeDashboardDefinition(res["definition"], d, config); flattenedProp != nil {
+		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
+			return fmt.Errorf("Error reading NativeDashboard: %s", gerr)
+		}
+		casted := flattenedProp.([]interface{})[0]
+		if casted != nil {
+			for k, v := range casted.(map[string]interface{}) {
+				if err := d.Set(k, v); err != nil {
+					return fmt.Errorf("Error setting %s: %s", k, err)
+				}
+			}
+		}
+	}
+	if err = d.Set("description", flattenChronicleNativeDashboardDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	if err = d.Set("display_name", flattenChronicleNativeDashboardDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	if err = d.Set("etag", flattenChronicleNativeDashboardEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	if err = d.Set("type", flattenChronicleNativeDashboardType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	if err = d.Set("update_time", flattenChronicleNativeDashboardUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+	if err = d.Set("update_user_id", flattenChronicleNativeDashboardUpdateUserId(res["updateUserId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading NativeDashboard: %s", err)
+	}
+
 	return nil
 }

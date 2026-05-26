@@ -178,7 +178,7 @@ func resourceKMSOrganizationKajPolicyConfigCreate(d *schema.ResourceData, meta i
 		obj["defaultKeyAccessJustificationPolicy"] = defaultKeyAccessJustificationPolicyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}organizations/{{organization}}/kajPolicyConfig?updateMask=defaultKeyAccessJustificationPolicy")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/kajPolicyConfig?updateMask=defaultKeyAccessJustificationPolicy")
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func resourceKMSOrganizationKajPolicyConfigRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}organizations/{{organization}}/kajPolicyConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/kajPolicyConfig")
 	if err != nil {
 		return err
 	}
@@ -268,8 +268,9 @@ func resourceKMSOrganizationKajPolicyConfigRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading KMSOrganizationKajPolicyConfig %q: %#v", d.Id(), res)
 
-	if err := d.Set("default_key_access_justification_policy", flattenKMSOrganizationKajPolicyConfigDefaultKeyAccessJustificationPolicy(res["defaultKeyAccessJustificationPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationKajPolicyConfig: %s", err)
+	err = ResourceKMSOrganizationKajPolicyConfigFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -288,6 +289,7 @@ func resourceKMSOrganizationKajPolicyConfigRead(d *schema.ResourceData, meta int
 }
 
 func resourceKMSOrganizationKajPolicyConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -314,7 +316,7 @@ func resourceKMSOrganizationKajPolicyConfigUpdate(d *schema.ResourceData, meta i
 		obj["defaultKeyAccessJustificationPolicy"] = defaultKeyAccessJustificationPolicyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{KMSBasePath}}organizations/{{organization}}/kajPolicyConfig?updateMask=defaultKeyAccessJustificationPolicy")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/kajPolicyConfig?updateMask=defaultKeyAccessJustificationPolicy")
 	if err != nil {
 		return err
 	}
@@ -420,4 +422,14 @@ func expandKMSOrganizationKajPolicyConfigDefaultKeyAccessJustificationPolicy(v i
 
 func expandKMSOrganizationKajPolicyConfigDefaultKeyAccessJustificationPolicyAllowedAccessReasons(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceKMSOrganizationKajPolicyConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("default_key_access_justification_policy", flattenKMSOrganizationKajPolicyConfigDefaultKeyAccessJustificationPolicy(res["defaultKeyAccessJustificationPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationKajPolicyConfig: %s", err)
+	}
+
+	return nil
 }

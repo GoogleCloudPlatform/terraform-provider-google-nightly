@@ -31,7 +31,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	tpgdataproc "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataproc"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	"google.golang.org/api/dataproc/v1"
 	"google.golang.org/api/googleapi"
@@ -65,9 +67,9 @@ func TestAccDataprocJob_updatable(t *testing.T) {
 	var job dataproc.Job
 	rnd := acctest.RandString(t, 10)
 	jobId := fmt.Sprintf("tf-test-dproc-update-job-id-%s", rnd)
-	networkName := acctest.BootstrapSharedTestNetwork(t, "dataproc-cluster")
-	subnetworkName := acctest.BootstrapSubnet(t, "dataproc-cluster", networkName)
-	acctest.BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "dataproc-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "dataproc-cluster", networkName)
+	BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -98,9 +100,9 @@ func TestAccDataprocJob_PySpark(t *testing.T) {
 	var job dataproc.Job
 	rnd := acctest.RandString(t, 10)
 	jobId := fmt.Sprintf("tf-test-dproc-custom-job-id-%s", rnd)
-	networkName := acctest.BootstrapSharedTestNetwork(t, "dataproc-cluster")
-	subnetworkName := acctest.BootstrapSubnet(t, "dataproc-cluster", networkName)
-	acctest.BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "dataproc-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "dataproc-cluster", networkName)
+	BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -140,9 +142,9 @@ func TestAccDataprocJob_Spark(t *testing.T) {
 
 	var job dataproc.Job
 	rnd := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedTestNetwork(t, "dataproc-cluster")
-	subnetworkName := acctest.BootstrapSubnet(t, "dataproc-cluster", networkName)
-	acctest.BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "dataproc-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "dataproc-cluster", networkName)
+	BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -176,9 +178,9 @@ func TestAccDataprocJob_Hadoop(t *testing.T) {
 
 	var job dataproc.Job
 	rnd := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedTestNetwork(t, "dataproc-cluster")
-	subnetworkName := acctest.BootstrapSubnet(t, "dataproc-cluster", networkName)
-	acctest.BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "dataproc-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "dataproc-cluster", networkName)
+	BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -212,9 +214,9 @@ func TestAccDataprocJob_Hive(t *testing.T) {
 
 	var job dataproc.Job
 	rnd := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedTestNetwork(t, "dataproc-cluster")
-	subnetworkName := acctest.BootstrapSubnet(t, "dataproc-cluster", networkName)
-	acctest.BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "dataproc-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "dataproc-cluster", networkName)
+	BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -248,9 +250,9 @@ func TestAccDataprocJob_Pig(t *testing.T) {
 
 	var job dataproc.Job
 	rnd := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedTestNetwork(t, "dataproc-cluster")
-	subnetworkName := acctest.BootstrapSubnet(t, "dataproc-cluster", networkName)
-	acctest.BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "dataproc-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "dataproc-cluster", networkName)
+	BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -312,15 +314,15 @@ func testAccDataprocJobSparkSql(t *testing.T, config string) {
 
 func TestAccDataprocJob_SparkSql_QueryList(t *testing.T) {
 	rnd := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedTestNetwork(t, "dataproc-cluster")
-	subnetworkName := acctest.BootstrapSubnet(t, "dataproc-cluster", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "dataproc-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "dataproc-cluster", networkName)
 	testAccDataprocJobSparkSql(t, testAccDataprocJob_SparkSql_QueryList(rnd, subnetworkName))
 }
 
 func TestAccDataprocJob_SparkSql_QueryFile(t *testing.T) {
 	rnd := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedTestNetwork(t, "dataproc-cluster")
-	subnetworkName := acctest.BootstrapSubnet(t, "dataproc-cluster", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "dataproc-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "dataproc-cluster", networkName)
 	testAccDataprocJobSparkSql(t, testAccDataprocJob_SparkSql_QueryFile(rnd, subnetworkName))
 }
 
@@ -329,9 +331,9 @@ func TestAccDataprocJob_Presto(t *testing.T) {
 
 	var job dataproc.Job
 	rnd := acctest.RandString(t, 10)
-	networkName := acctest.BootstrapSharedTestNetwork(t, "dataproc-cluster")
-	subnetworkName := acctest.BootstrapSubnet(t, "dataproc-cluster", networkName)
-	acctest.BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
+	networkName := tpgcompute.BootstrapSharedTestNetwork(t, "dataproc-cluster")
+	subnetworkName := tpgcompute.BootstrapSubnet(t, "dataproc-cluster", networkName)
+	BootstrapFirewallForDataprocSharedNetwork(t, "dataproc-cluster", networkName)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -381,7 +383,7 @@ func testAccCheckDataprocJobDestroyProducer(t *testing.T) func(s *terraform.Stat
 
 			parts := strings.Split(rs.Primary.ID, "/")
 			job_id := parts[len(parts)-1]
-			_, err = config.NewDataprocClient(config.UserAgent).Projects.Regions.Jobs.Get(
+			_, err = tpgdataproc.NewClient(config, config.UserAgent).Projects.Regions.Jobs.Get(
 				project, attributes["region"], job_id).Do()
 			if err != nil {
 				if gerr, ok := err.(*googleapi.Error); ok && gerr.Code == 404 {
@@ -416,7 +418,7 @@ func testAccCheckDataprocJobCompletesSuccessfully(t *testing.T, n string, job *d
 			return waitErr
 		}
 
-		completeJob, err := config.NewDataprocClient(config.UserAgent).Projects.Regions.Jobs.Get(
+		completeJob, err := tpgdataproc.NewClient(config, config.UserAgent).Projects.Regions.Jobs.Get(
 			project, region, job.Reference.JobId).Do()
 		if err != nil {
 			return err
@@ -429,12 +431,12 @@ func testAccCheckDataprocJobCompletesSuccessfully(t *testing.T, n string, job *d
 			if len(u) != 2 {
 				return fmt.Errorf("Job completed in ERROR state but no valid log URI found")
 			}
-			l, err := config.NewStorageClient(config.UserAgent).Objects.List(u[0]).Prefix(u[1]).Do()
+			l, err := storage.NewClient(config, config.UserAgent).Objects.List(u[0]).Prefix(u[1]).Do()
 			if err != nil {
 				return errwrap.Wrapf("Job completed in ERROR state, found error when trying to list logs: {{err}}", err)
 			}
 			for _, item := range l.Items {
-				resp, err := config.NewStorageClient(config.UserAgent).Objects.Get(item.Bucket, item.Name).Download()
+				resp, err := storage.NewClient(config, config.UserAgent).Objects.Get(item.Bucket, item.Name).Download()
 				if err != nil {
 					return errwrap.Wrapf("Job completed in ERROR state, found error when trying to read logs: {{err}}", err)
 				}
@@ -473,7 +475,7 @@ func testAccCheckDataprocJobExists(t *testing.T, n string, job *dataproc.Job) re
 			return err
 		}
 
-		found, err := config.NewDataprocClient(config.UserAgent).Projects.Regions.Jobs.Get(
+		found, err := tpgdataproc.NewClient(config, config.UserAgent).Projects.Regions.Jobs.Get(
 			project, rs.Primary.Attributes["region"], jobId).Do()
 		if err != nil {
 			return err

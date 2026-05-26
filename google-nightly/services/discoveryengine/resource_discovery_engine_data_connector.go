@@ -55,7 +55,7 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
-func DataConnectorEntitiesFieldsDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
+func DataConnectorJsonStructFieldsDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
 	return (old == "" && new == "{}") || (old == "{}" && new == "")
 }
 
@@ -128,6 +128,7 @@ func ResourceDiscoveryEngineDataConnector() *schema.Resource {
 		},
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -178,8 +179,59 @@ INVALID_ARGUMENT error is returned.`,
 				Type:     schema.TypeString,
 				Required: true,
 				ForceNew: true,
-				Description: `The name of the data source.
-Supported values: 'salesforce', 'jira', 'confluence', 'bigquery'.`,
+				Description: `The identifier for the data source.
+This is a partial list of supported connectors. Please refer to the
+[documentation](https://docs.cloud.google.com/gemini/enterprise/docs/connectors/introduction-to-connectors-and-data-stores)
+for the full list of connectors.
+
+Supported first-party connectors include:
+
+*   'bigquery'
+*   'gcp_fhir'
+*   'google_mail'
+*   'google_drive'
+*   'google_calendar'
+*   'google_chat'
+
+Supported third-party connectors include:
+Generally available (GA) connectors:
+
+*   'onedrive'
+*   'outlook'
+*   'confluence'
+*   'jira'
+*   'servicenow'
+*   'sharepoint'
+
+Preview connectors:
+
+*   'asana'
+*   'azure_active_directory'
+*   'box'
+*   'canva'
+*   'confluence_server'
+*   'custom_connector'
+*   'docusign'
+*   'dropbox'
+*   'dynamics365'
+*   'github'
+*   'gitlab'
+*   'hubspot'
+*   'jira_server'
+*   'linear'
+*   'native_cloud_identity'
+*   'notion'
+*   'okta'
+*   'pagerduty'
+*   'peoplesoft'
+*   'salesforce'
+*   'shopify'
+*   'slack'
+*   'snowflake'
+*   'teams'
+*   'trello'
+*   'workday'
+*   'zendesk'`,
 			},
 			"location": {
 				Type:     schema.TypeString,
@@ -300,6 +352,11 @@ used to configure where data is served.`,
 										Description: `The host of the destination, for example
 'https://example.atlassian.net'.`,
 									},
+									"port": {
+										Type:        schema.TypeInt,
+										Optional:    true,
+										Description: `Target port number accepted by the destination.`,
+									},
 								},
 							},
 						},
@@ -307,6 +364,14 @@ used to configure where data is served.`,
 							Type:        schema.TypeString,
 							Optional:    true,
 							Description: `The key of the destination configuration, for example 'url'.`,
+						},
+						"params": {
+							Type:             schema.TypeString,
+							Optional:         true,
+							ValidateFunc:     validation.StringIsJSON,
+							DiffSuppressFunc: DataConnectorJsonStructFieldsDiffSuppress,
+							StateFunc:        func(v interface{}) string { s, _ := structure.NormalizeJsonString(v); return s },
+							Description:      `Additional parameters for this destination config in structured json format.`,
 						},
 					},
 				},
@@ -330,7 +395,7 @@ used to configure where data is served.`,
 							Type:             schema.TypeMap,
 							Computed:         true,
 							Optional:         true,
-							DiffSuppressFunc: DataConnectorEntitiesFieldsDiffSuppress,
+							DiffSuppressFunc: DataConnectorJsonStructFieldsDiffSuppress,
 							Description: `Attributes for indexing.
 Key: Field name.
 Value: The key property to map a field to, such as 'title', and
@@ -345,7 +410,7 @@ Value: The key property to map a field to, such as 'title', and
 							Type:             schema.TypeString,
 							Optional:         true,
 							ValidateFunc:     validation.StringIsJSON,
-							DiffSuppressFunc: DataConnectorEntitiesFieldsDiffSuppress,
+							DiffSuppressFunc: DataConnectorJsonStructFieldsDiffSuppress,
 							StateFunc:        func(v interface{}) string { s, _ := structure.NormalizeJsonString(v); return s },
 							Description:      `The parameters for the entity to facilitate data ingestion.`,
 						},
@@ -523,6 +588,18 @@ This project must be allowlisted by in order for the connector to function.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -633,7 +710,7 @@ func resourceDiscoveryEngineDataConnectorCreate(d *schema.ResourceData, meta int
 		obj["incrementalSyncDisabled"] = incrementalSyncDisabledProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}:setUpDataConnectorV2?collectionId={{collection_id}}&collectionDisplayName={{collection_display_name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}:setUpDataConnectorV2?collectionId={{collection_id}}&collectionDisplayName={{collection_display_name}}")
 	if err != nil {
 		return err
 	}
@@ -717,7 +794,7 @@ func resourceDiscoveryEngineDataConnectorRead(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/dataConnector")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/dataConnector")
 	if err != nil {
 		return err
 	}
@@ -750,81 +827,26 @@ func resourceDiscoveryEngineDataConnectorRead(d *schema.ResourceData, meta inter
 
 	log.Printf("[DEBUG] Finished reading DiscoveryEngineDataConnector %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DataConnector: %s", err)
 	}
 
-	if err := d.Set("name", flattenDiscoveryEngineDataConnectorName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("state", flattenDiscoveryEngineDataConnectorState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("data_source", flattenDiscoveryEngineDataConnectorDataSource(res["dataSource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("data_source_version", flattenDiscoveryEngineDataConnectorDataSourceVersion(res["dataSourceVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("refresh_interval", flattenDiscoveryEngineDataConnectorRefreshInterval(res["refreshInterval"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("entities", flattenDiscoveryEngineDataConnectorEntities(res["entities"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("create_time", flattenDiscoveryEngineDataConnectorCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("latest_pause_time", flattenDiscoveryEngineDataConnectorLatestPauseTime(res["latestPauseTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("last_sync_time", flattenDiscoveryEngineDataConnectorLastSyncTime(res["lastSyncTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("update_time", flattenDiscoveryEngineDataConnectorUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("errors", flattenDiscoveryEngineDataConnectorErrors(res["errors"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("kms_key_name", flattenDiscoveryEngineDataConnectorKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("action_config", flattenDiscoveryEngineDataConnectorActionConfig(res["actionConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("bap_config", flattenDiscoveryEngineDataConnectorBapConfig(res["bapConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("action_state", flattenDiscoveryEngineDataConnectorActionState(res["actionState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("static_ip_enabled", flattenDiscoveryEngineDataConnectorStaticIpEnabled(res["staticIpEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("destination_configs", flattenDiscoveryEngineDataConnectorDestinationConfigs(res["destinationConfigs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("static_ip_addresses", flattenDiscoveryEngineDataConnectorStaticIpAddresses(res["staticIpAddresses"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("blocking_reasons", flattenDiscoveryEngineDataConnectorBlockingReasons(res["blockingReasons"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("private_connectivity_project_id", flattenDiscoveryEngineDataConnectorPrivateConnectivityProjectId(res["privateConnectivityProjectId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("connector_type", flattenDiscoveryEngineDataConnectorConnectorType(res["connectorType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("realtime_state", flattenDiscoveryEngineDataConnectorRealtimeState(res["realtimeState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("connector_modes", flattenDiscoveryEngineDataConnectorConnectorModes(res["connectorModes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
-	}
-	if err := d.Set("incremental_refresh_interval", flattenDiscoveryEngineDataConnectorIncrementalRefreshInterval(res["incrementalRefreshInterval"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DataConnector: %s", err)
+	err = ResourceDiscoveryEngineDataConnectorFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -855,6 +877,19 @@ func resourceDiscoveryEngineDataConnectorRead(d *schema.ResourceData, meta inter
 }
 
 func resourceDiscoveryEngineDataConnectorUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDiscoveryEngineDataConnector().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDiscoveryEngineDataConnectorRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -969,7 +1004,7 @@ func resourceDiscoveryEngineDataConnectorUpdate(d *schema.ResourceData, meta int
 		obj["incrementalSyncDisabled"] = incrementalSyncDisabledProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/dataConnector")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}/dataConnector")
 	if err != nil {
 		return err
 	}
@@ -1067,6 +1102,13 @@ func resourceDiscoveryEngineDataConnectorUpdate(d *schema.ResourceData, meta int
 }
 
 func resourceDiscoveryEngineDataConnectorDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DiscoveryEngineDataConnector without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DataConnector %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1080,8 +1122,7 @@ func resourceDiscoveryEngineDataConnectorDelete(d *schema.ResourceData, meta int
 		return fmt.Errorf("Error fetching project for DataConnector: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/collections/{{collection_id}}")
 	if err != nil {
 		return err
 	}
@@ -1355,6 +1396,7 @@ func flattenDiscoveryEngineDataConnectorDestinationConfigs(v interface{}, d *sch
 		transformed = append(transformed, map[string]interface{}{
 			"key":          flattenDiscoveryEngineDataConnectorDestinationConfigsKey(original["key"], d, config),
 			"destinations": flattenDiscoveryEngineDataConnectorDestinationConfigsDestinations(original["destinations"], d, config),
+			"params":       flattenDiscoveryEngineDataConnectorDestinationConfigsParams(original["params"], d, config),
 		})
 	}
 	return transformed
@@ -1377,12 +1419,42 @@ func flattenDiscoveryEngineDataConnectorDestinationConfigsDestinations(v interfa
 		}
 		transformed = append(transformed, map[string]interface{}{
 			"host": flattenDiscoveryEngineDataConnectorDestinationConfigsDestinationsHost(original["host"], d, config),
+			"port": flattenDiscoveryEngineDataConnectorDestinationConfigsDestinationsPort(original["port"], d, config),
 		})
 	}
 	return transformed
 }
 func flattenDiscoveryEngineDataConnectorDestinationConfigsDestinationsHost(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
+}
+
+func flattenDiscoveryEngineDataConnectorDestinationConfigsDestinationsPort(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	// Handles the string fixed64 format
+	if strVal, ok := v.(string); ok {
+		if intVal, err := tpgresource.StringToFixed64(strVal); err == nil {
+			return intVal
+		}
+	}
+
+	// number values are represented as float64
+	if floatVal, ok := v.(float64); ok {
+		intVal := int(floatVal)
+		return intVal
+	}
+
+	return v // let terraform core handle it otherwise
+}
+
+func flattenDiscoveryEngineDataConnectorDestinationConfigsParams(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		// TODO: return error once https://github.com/GoogleCloudPlatform/magic-modules/issues/3257 is fixed.
+		log.Printf("[ERROR] failed to marshal schema to JSON: %v", err)
+	}
+	return string(b)
 }
 
 func flattenDiscoveryEngineDataConnectorStaticIpAddresses(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -1644,6 +1716,13 @@ func expandDiscoveryEngineDataConnectorDestinationConfigs(v interface{}, d tpgre
 			transformed["destinations"] = transformedDestinations
 		}
 
+		transformedParams, err := expandDiscoveryEngineDataConnectorDestinationConfigsParams(original["params"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedParams); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["params"] = transformedParams
+		}
+
 		req = append(req, transformed)
 	}
 	return req, nil
@@ -1673,6 +1752,13 @@ func expandDiscoveryEngineDataConnectorDestinationConfigsDestinations(v interfac
 			transformed["host"] = transformedHost
 		}
 
+		transformedPort, err := expandDiscoveryEngineDataConnectorDestinationConfigsDestinationsPort(original["port"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedPort); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["port"] = transformedPort
+		}
+
 		req = append(req, transformed)
 	}
 	return req, nil
@@ -1680,6 +1766,22 @@ func expandDiscoveryEngineDataConnectorDestinationConfigsDestinations(v interfac
 
 func expandDiscoveryEngineDataConnectorDestinationConfigsDestinationsHost(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func expandDiscoveryEngineDataConnectorDestinationConfigsDestinationsPort(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDiscoveryEngineDataConnectorDestinationConfigsParams(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	b := []byte(v.(string))
+	if len(b) == 0 {
+		return nil, nil
+	}
+	m := make(map[string]interface{})
+	if err := json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func expandDiscoveryEngineDataConnectorConnectorModes(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
@@ -2069,4 +2171,83 @@ This project must be allowlisted by in order for the connector to function.`,
 		},
 		UseJSONNumber: true,
 	}
+}
+
+func ResourceDiscoveryEngineDataConnectorFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDiscoveryEngineDataConnectorName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("state", flattenDiscoveryEngineDataConnectorState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("data_source", flattenDiscoveryEngineDataConnectorDataSource(res["dataSource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("data_source_version", flattenDiscoveryEngineDataConnectorDataSourceVersion(res["dataSourceVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("refresh_interval", flattenDiscoveryEngineDataConnectorRefreshInterval(res["refreshInterval"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("entities", flattenDiscoveryEngineDataConnectorEntities(res["entities"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("create_time", flattenDiscoveryEngineDataConnectorCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("latest_pause_time", flattenDiscoveryEngineDataConnectorLatestPauseTime(res["latestPauseTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("last_sync_time", flattenDiscoveryEngineDataConnectorLastSyncTime(res["lastSyncTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("update_time", flattenDiscoveryEngineDataConnectorUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("errors", flattenDiscoveryEngineDataConnectorErrors(res["errors"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("kms_key_name", flattenDiscoveryEngineDataConnectorKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("action_config", flattenDiscoveryEngineDataConnectorActionConfig(res["actionConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("bap_config", flattenDiscoveryEngineDataConnectorBapConfig(res["bapConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("action_state", flattenDiscoveryEngineDataConnectorActionState(res["actionState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("static_ip_enabled", flattenDiscoveryEngineDataConnectorStaticIpEnabled(res["staticIpEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("destination_configs", flattenDiscoveryEngineDataConnectorDestinationConfigs(res["destinationConfigs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("static_ip_addresses", flattenDiscoveryEngineDataConnectorStaticIpAddresses(res["staticIpAddresses"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("blocking_reasons", flattenDiscoveryEngineDataConnectorBlockingReasons(res["blockingReasons"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("private_connectivity_project_id", flattenDiscoveryEngineDataConnectorPrivateConnectivityProjectId(res["privateConnectivityProjectId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("connector_type", flattenDiscoveryEngineDataConnectorConnectorType(res["connectorType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("realtime_state", flattenDiscoveryEngineDataConnectorRealtimeState(res["realtimeState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("connector_modes", flattenDiscoveryEngineDataConnectorConnectorModes(res["connectorModes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+	if err = d.Set("incremental_refresh_interval", flattenDiscoveryEngineDataConnectorIncrementalRefreshInterval(res["incrementalRefreshInterval"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DataConnector: %s", err)
+	}
+
+	return nil
 }

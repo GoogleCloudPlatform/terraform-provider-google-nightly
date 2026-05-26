@@ -207,7 +207,7 @@ func resourceDiscoveryEngineAclConfigCreate(d *schema.ResourceData, meta interfa
 		obj["idpConfig"] = idpConfigProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/aclConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/aclConfig")
 	if err != nil {
 		return err
 	}
@@ -276,7 +276,7 @@ func resourceDiscoveryEngineAclConfigRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/aclConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/aclConfig")
 	if err != nil {
 		return err
 	}
@@ -313,11 +313,9 @@ func resourceDiscoveryEngineAclConfigRead(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error reading AclConfig: %s", err)
 	}
 
-	if err := d.Set("name", flattenDiscoveryEngineAclConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AclConfig: %s", err)
-	}
-	if err := d.Set("idp_config", flattenDiscoveryEngineAclConfigIdpConfig(res["idpConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AclConfig: %s", err)
+	err = ResourceDiscoveryEngineAclConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -342,6 +340,7 @@ func resourceDiscoveryEngineAclConfigRead(d *schema.ResourceData, meta interface
 }
 
 func resourceDiscoveryEngineAclConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -379,7 +378,7 @@ func resourceDiscoveryEngineAclConfigUpdate(d *schema.ResourceData, meta interfa
 		obj["idpConfig"] = idpConfigProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DiscoveryEngineBasePath}}projects/{{project}}/locations/{{location}}/aclConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/aclConfig")
 	if err != nil {
 		return err
 	}
@@ -538,4 +537,17 @@ func expandDiscoveryEngineAclConfigIdpConfigExternalIdpConfig(v interface{}, d t
 
 func expandDiscoveryEngineAclConfigIdpConfigExternalIdpConfigWorkforcePoolName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceDiscoveryEngineAclConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDiscoveryEngineAclConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AclConfig: %s", err)
+	}
+	if err = d.Set("idp_config", flattenDiscoveryEngineAclConfigIdpConfig(res["idpConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AclConfig: %s", err)
+	}
+
+	return nil
 }

@@ -30,6 +30,12 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/eventarc"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workflows"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +54,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = eventarc.Product
 )
 
 func TestAccEventarcPipeline_eventarcPipelineWithTopicDestinationExample(t *testing.T) {
@@ -116,7 +123,7 @@ func TestAccEventarcPipeline_eventarcPipelineWithHttpDestinationExample(t *testi
 
 	context := map[string]interface{}{
 		"project_id":              envvar.GetTestProjectFromEnv(),
-		"network_attachment_name": acctest.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-pipeline-na", acctest.BootstrapSubnet(t, "tf-bootstrap-eventarc-pipeline-subnet", acctest.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-pipeline-network"))),
+		"network_attachment_name": compute.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-pipeline-na", compute.BootstrapSubnet(t, "tf-bootstrap-eventarc-pipeline-subnet", compute.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-pipeline-network"))),
 		"pipeline_name":           "tf-test-some-pipeline" + randomSuffix,
 		"random_suffix":           randomSuffix,
 	}
@@ -251,7 +258,7 @@ func TestAccEventarcPipeline_eventarcPipelineWithOidcAndJsonFormatExample(t *tes
 	context := map[string]interface{}{
 		"project_id":              envvar.GetTestProjectFromEnv(),
 		"service_account":         envvar.GetTestServiceAccountFromEnv(t),
-		"network_attachment_name": acctest.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-pipeline-na", acctest.BootstrapSubnet(t, "tf-bootstrap-eventarc-pipeline-subnet", acctest.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-pipeline-network"))),
+		"network_attachment_name": compute.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-pipeline-na", compute.BootstrapSubnet(t, "tf-bootstrap-eventarc-pipeline-subnet", compute.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-pipeline-network"))),
 		"pipeline_name":           "tf-test-some-pipeline" + randomSuffix,
 		"random_suffix":           randomSuffix,
 	}
@@ -337,7 +344,7 @@ func TestAccEventarcPipeline_eventarcPipelineWithOauthAndProtobufFormatExample(t
 	context := map[string]interface{}{
 		"project_id":              envvar.GetTestProjectFromEnv(),
 		"service_account":         envvar.GetTestServiceAccountFromEnv(t),
-		"network_attachment_name": acctest.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-pipeline-na", acctest.BootstrapSubnet(t, "tf-bootstrap-eventarc-pipeline-subnet", acctest.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-pipeline-network"))),
+		"network_attachment_name": compute.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-pipeline-na", compute.BootstrapSubnet(t, "tf-bootstrap-eventarc-pipeline-subnet", compute.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-pipeline-network"))),
 		"pipeline_name":           "tf-test-some-pipeline" + randomSuffix,
 		"random_suffix":           randomSuffix,
 	}
@@ -433,7 +440,7 @@ EOF
 
 func TestAccEventarcPipeline_eventarcPipelineWithCmekAndAvroFormatExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-eventarc.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -444,8 +451,8 @@ func TestAccEventarcPipeline_eventarcPipelineWithCmekAndAvroFormatExample(t *tes
 
 	context := map[string]interface{}{
 		"project_id":              envvar.GetTestProjectFromEnv(),
-		"key_name":                acctest.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-eventarc-pipeline-key").CryptoKey.Name,
-		"network_attachment_name": acctest.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-pipeline-na", acctest.BootstrapSubnet(t, "tf-bootstrap-eventarc-pipeline-subnet", acctest.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-pipeline-network"))),
+		"key_name":                kms.BootstrapKMSKeyWithPurposeInLocationAndName(t, "ENCRYPT_DECRYPT", "us-central1", "tf-bootstrap-eventarc-pipeline-key").CryptoKey.Name,
+		"network_attachment_name": compute.BootstrapNetworkAttachment(t, "tf-bootstrap-eventarc-pipeline-na", compute.BootstrapSubnet(t, "tf-bootstrap-eventarc-pipeline-subnet", compute.BootstrapSharedTestNetwork(t, "tf-bootstrap-eventarc-pipeline-network"))),
 		"pipeline_name":           "tf-test-some-pipeline" + randomSuffix,
 		"random_suffix":           randomSuffix,
 	}
@@ -533,8 +540,7 @@ func testAccCheckEventarcPipelineDestroyProducer(t *testing.T) func(s *terraform
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{EventarcBasePath}}projects/{{project}}/locations/{{location}}/pipelines/{{pipeline_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(eventarc.Product, config)+"projects/{{project}}/locations/{{location}}/pipelines/{{pipeline_id}}")
 			if err != nil {
 				return err
 			}

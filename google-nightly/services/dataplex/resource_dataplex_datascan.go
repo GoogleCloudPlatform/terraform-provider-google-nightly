@@ -116,6 +116,7 @@ func ResourceDataplexDatascan() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiffWithoutAttributionLabel,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -490,6 +491,16 @@ Sampling is not applied if 'sampling_percent' is not specified, 0 or 100.`,
 							Optional:    true,
 							Description: `If set, the latest DataScan job result will be published to Dataplex Catalog.`,
 						},
+						"enable_catalog_based_rules": {
+							Type:        schema.TypeBool,
+							Optional:    true,
+							Description: `If set to true, the scan will retrieve rules defined in Data Catalog for the resource.`,
+						},
+						"filter": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: `A filter to selectively run a subset of rules.`,
+						},
 						"post_scan_actions": {
 							Type:        schema.TypeList,
 							Optional:    true,
@@ -593,6 +604,12 @@ Format://bigquery.googleapis.com/projects/PROJECT_ID/datasets/DATASET_ID/tables/
 										Type:        schema.TypeString,
 										Required:    true,
 										Description: `The dimension name a rule belongs to. Custom dimension name is supported with all uppercase letters and maximum length of 30 characters.`,
+									},
+									"attributes": {
+										Type:        schema.TypeMap,
+										Optional:    true,
+										Description: `Map of attribute name and value linked to the rule.`,
+										Elem:        &schema.Schema{Type: schema.TypeString},
 									},
 									"column": {
 										Type:        schema.TypeString,
@@ -788,6 +805,39 @@ Only relevant if a minValue has been defined. Default = false.`,
 											},
 										},
 									},
+									"template_reference": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `Aggregate rule which references a rule template and provides the parameters to be substituted in the template.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"name": {
+													Type:        schema.TypeString,
+													Required:    true,
+													Description: `The resource name of the template entry.`,
+												},
+												"values": {
+													Type:        schema.TypeSet,
+													Optional:    true,
+													Description: `The map of parameter name and value.`,
+													Elem: &schema.Resource{
+														Schema: map[string]*schema.Schema{
+															"name": {
+																Type:     schema.TypeString,
+																Required: true,
+															},
+															"value": {
+																Type:        schema.TypeString,
+																Required:    true,
+																Description: `The string representation of the parameter value.`,
+															},
+														},
+													},
+												},
+											},
+										},
+									},
 									"threshold": {
 										Type:        schema.TypeFloat,
 										Optional:    true,
@@ -826,6 +876,53 @@ Sampling is not applied if 'sampling_percent' is not specified, 0 or 100.`,
 				Optional:    true,
 				Description: `User friendly display name.`,
 			},
+			"execution_identity": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				ForceNew:    true,
+				Description: `The identity to run the datascan. If not specified, defaults to the Dataplex Service Agent.`,
+				MaxItems:    1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"dataplex_service_agent": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `The Dataplex service agent associated with the user's project.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{},
+							},
+							ExactlyOneOf: []string{"execution_identity.0.dataplex_service_agent", "execution_identity.0.service_account", "execution_identity.0.user_credential"},
+						},
+						"service_account": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `Service account to use to execute a datascan.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"email": {
+										Type:        schema.TypeString,
+										Required:    true,
+										Description: `Service account email.`,
+									},
+								},
+							},
+							ExactlyOneOf: []string{"execution_identity.0.dataplex_service_agent", "execution_identity.0.service_account", "execution_identity.0.user_credential"},
+						},
+						"user_credential": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `The credential of the calling user. Supports only ONE_TIME trigger type.`,
+							MaxItems:    1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{},
+							},
+							ExactlyOneOf: []string{"execution_identity.0.dataplex_service_agent", "execution_identity.0.service_account", "execution_identity.0.user_credential"},
+						},
+					},
+				},
+			},
 			"labels": {
 				Type:     schema.TypeMap,
 				Optional: true,
@@ -856,12 +953,12 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 						"latest_job_end_time": {
 							Type:        schema.TypeString,
 							Computed:    true,
-							Description: `The time when the latest DataScanJob started.`,
+							Description: `The time when the latest DataScanJob ended.`,
 						},
 						"latest_job_start_time": {
 							Type:        schema.TypeString,
 							Computed:    true,
-							Description: `The time when the latest DataScanJob ended.`,
+							Description: `The time when the latest DataScanJob started.`,
 						},
 					},
 				},
@@ -904,6 +1001,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -941,6 +1050,12 @@ func resourceDataplexDatascanCreate(d *schema.ResourceData, meta interface{}) er
 	} else if v, ok := d.GetOkExists("execution_spec"); !tpgresource.IsEmptyValue(reflect.ValueOf(executionSpecProp)) && (ok || !reflect.DeepEqual(v, executionSpecProp)) {
 		obj["executionSpec"] = executionSpecProp
 	}
+	executionIdentityProp, err := expandDataplexDatascanExecutionIdentity(d.Get("execution_identity"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("execution_identity"); !tpgresource.IsEmptyValue(reflect.ValueOf(executionIdentityProp)) && (ok || !reflect.DeepEqual(v, executionIdentityProp)) {
+		obj["executionIdentity"] = executionIdentityProp
+	}
 	dataQualitySpecProp, err := expandDataplexDatascanDataQualitySpec(d.Get("data_quality_spec"), d, config)
 	if err != nil {
 		return err
@@ -972,7 +1087,7 @@ func resourceDataplexDatascanCreate(d *schema.ResourceData, meta interface{}) er
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/dataScans?dataScanId={{data_scan_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataScans?dataScanId={{data_scan_id}}")
 	if err != nil {
 		return err
 	}
@@ -1056,7 +1171,7 @@ func resourceDataplexDatascanRead(d *schema.ResourceData, meta interface{}) erro
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/dataScans/{{data_scan_id}}?view=FULL")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataScans/{{data_scan_id}}?view=FULL")
 	if err != nil {
 		return err
 	}
@@ -1089,63 +1204,26 @@ func resourceDataplexDatascanRead(d *schema.ResourceData, meta interface{}) erro
 
 	log.Printf("[DEBUG] Finished reading DataplexDatascan %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Datascan: %s", err)
 	}
 
-	if err := d.Set("name", flattenDataplexDatascanName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("uid", flattenDataplexDatascanUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("description", flattenDataplexDatascanDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("display_name", flattenDataplexDatascanDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("labels", flattenDataplexDatascanLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("state", flattenDataplexDatascanState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("create_time", flattenDataplexDatascanCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("update_time", flattenDataplexDatascanUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("data", flattenDataplexDatascanData(res["data"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("execution_spec", flattenDataplexDatascanExecutionSpec(res["executionSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("execution_status", flattenDataplexDatascanExecutionStatus(res["executionStatus"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("type", flattenDataplexDatascanType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("data_quality_spec", flattenDataplexDatascanDataQualitySpec(res["dataQualitySpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("data_profile_spec", flattenDataplexDatascanDataProfileSpec(res["dataProfileSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("data_discovery_spec", flattenDataplexDatascanDataDiscoverySpec(res["dataDiscoverySpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("data_documentation_spec", flattenDataplexDatascanDataDocumentationSpec(res["dataDocumentationSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDataplexDatascanTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDataplexDatascanEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Datascan: %s", err)
+	err = ResourceDataplexDatascanFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1176,6 +1254,19 @@ func resourceDataplexDatascanRead(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceDataplexDatascanUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDataplexDatascan().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDataplexDatascanRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1260,7 +1351,7 @@ func resourceDataplexDatascanUpdate(d *schema.ResourceData, meta interface{}) er
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/dataScans/{{data_scan_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataScans/{{data_scan_id}}")
 	if err != nil {
 		return err
 	}
@@ -1344,6 +1435,13 @@ func resourceDataplexDatascanUpdate(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceDataplexDatascanDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DataplexDatascan without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Datascan %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1357,8 +1455,7 @@ func resourceDataplexDatascanDelete(d *schema.ResourceData, meta interface{}) er
 		return fmt.Errorf("Error fetching project for Datascan: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DataplexBasePath}}projects/{{project}}/locations/{{location}}/dataScans/{{data_scan_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataScans/{{data_scan_id}}")
 	if err != nil {
 		return err
 	}
@@ -1584,6 +1681,56 @@ func flattenDataplexDatascanExecutionStatusLatestJobStartTime(v interface{}, d *
 	return v
 }
 
+func flattenDataplexDatascanExecutionIdentity(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["dataplex_service_agent"] =
+		flattenDataplexDatascanExecutionIdentityDataplexServiceAgent(original["dataplexServiceAgent"], d, config)
+	transformed["user_credential"] =
+		flattenDataplexDatascanExecutionIdentityUserCredential(original["userCredential"], d, config)
+	transformed["service_account"] =
+		flattenDataplexDatascanExecutionIdentityServiceAccount(original["serviceAccount"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDataplexDatascanExecutionIdentityDataplexServiceAgent(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	return []interface{}{transformed}
+}
+
+func flattenDataplexDatascanExecutionIdentityUserCredential(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	return []interface{}{transformed}
+}
+
+func flattenDataplexDatascanExecutionIdentityServiceAccount(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["email"] =
+		flattenDataplexDatascanExecutionIdentityServiceAccountEmail(original["email"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDataplexDatascanExecutionIdentityServiceAccountEmail(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenDataplexDatascanType(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
@@ -1607,6 +1754,10 @@ func flattenDataplexDatascanDataQualitySpec(v interface{}, d *schema.ResourceDat
 		flattenDataplexDatascanDataQualitySpecRules(original["rules"], d, config)
 	transformed["catalog_publishing_enabled"] =
 		flattenDataplexDatascanDataQualitySpecCatalogPublishingEnabled(original["catalogPublishingEnabled"], d, config)
+	transformed["enable_catalog_based_rules"] =
+		flattenDataplexDatascanDataQualitySpecEnableCatalogBasedRules(original["enableCatalogBasedRules"], d, config)
+	transformed["filter"] =
+		flattenDataplexDatascanDataQualitySpecFilter(original["filter"], d, config)
 	return []interface{}{transformed}
 }
 func flattenDataplexDatascanDataQualitySpecSamplingPercent(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -1738,6 +1889,7 @@ func flattenDataplexDatascanDataQualitySpecRules(v interface{}, d *schema.Resour
 			"name":                        flattenDataplexDatascanDataQualitySpecRulesName(original["name"], d, config),
 			"suspended":                   flattenDataplexDatascanDataQualitySpecRulesSuspended(original["suspended"], d, config),
 			"description":                 flattenDataplexDatascanDataQualitySpecRulesDescription(original["description"], d, config),
+			"attributes":                  flattenDataplexDatascanDataQualitySpecRulesAttributes(original["attributes"], d, config),
 			"range_expectation":           flattenDataplexDatascanDataQualitySpecRulesRangeExpectation(original["rangeExpectation"], d, config),
 			"non_null_expectation":        flattenDataplexDatascanDataQualitySpecRulesNonNullExpectation(original["nonNullExpectation"], d, config),
 			"set_expectation":             flattenDataplexDatascanDataQualitySpecRulesSetExpectation(original["setExpectation"], d, config),
@@ -1747,6 +1899,7 @@ func flattenDataplexDatascanDataQualitySpecRules(v interface{}, d *schema.Resour
 			"row_condition_expectation":   flattenDataplexDatascanDataQualitySpecRulesRowConditionExpectation(original["rowConditionExpectation"], d, config),
 			"table_condition_expectation": flattenDataplexDatascanDataQualitySpecRulesTableConditionExpectation(original["tableConditionExpectation"], d, config),
 			"sql_assertion":               flattenDataplexDatascanDataQualitySpecRulesSqlAssertion(original["sqlAssertion"], d, config),
+			"template_reference":          flattenDataplexDatascanDataQualitySpecRulesTemplateReference(original["templateReference"], d, config),
 		})
 	}
 	return transformed
@@ -1776,6 +1929,10 @@ func flattenDataplexDatascanDataQualitySpecRulesSuspended(v interface{}, d *sche
 }
 
 func flattenDataplexDatascanDataQualitySpecRulesDescription(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesAttributes(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1956,7 +2113,53 @@ func flattenDataplexDatascanDataQualitySpecRulesSqlAssertionSqlStatement(v inter
 	return v
 }
 
+func flattenDataplexDatascanDataQualitySpecRulesTemplateReference(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["name"] =
+		flattenDataplexDatascanDataQualitySpecRulesTemplateReferenceName(original["name"], d, config)
+	transformed["values"] =
+		flattenDataplexDatascanDataQualitySpecRulesTemplateReferenceValues(original["values"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDataplexDatascanDataQualitySpecRulesTemplateReferenceName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesTemplateReferenceValues(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return v
+	}
+	l := v.(map[string]interface{})
+	transformed := make([]interface{}, 0, len(l))
+	for k, raw := range l {
+		original := raw.(map[string]interface{})
+		transformed = append(transformed, map[string]interface{}{
+			"name":  k,
+			"value": flattenDataplexDatascanDataQualitySpecRulesTemplateReferenceValuesValue(original["value"], d, config),
+		})
+	}
+	return transformed
+}
+func flattenDataplexDatascanDataQualitySpecRulesTemplateReferenceValuesValue(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenDataplexDatascanDataQualitySpecCatalogPublishingEnabled(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecEnableCatalogBasedRules(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecFilter(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -2423,6 +2626,104 @@ func expandDataplexDatascanExecutionSpecField(v interface{}, d tpgresource.Terra
 	return v, nil
 }
 
+func expandDataplexDatascanExecutionIdentity(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedDataplexServiceAgent, err := expandDataplexDatascanExecutionIdentityDataplexServiceAgent(original["dataplex_service_agent"], d, config)
+	if err != nil {
+		return nil, err
+	} else {
+		transformed["dataplexServiceAgent"] = transformedDataplexServiceAgent
+	}
+
+	transformedUserCredential, err := expandDataplexDatascanExecutionIdentityUserCredential(original["user_credential"], d, config)
+	if err != nil {
+		return nil, err
+	} else {
+		transformed["userCredential"] = transformedUserCredential
+	}
+
+	transformedServiceAccount, err := expandDataplexDatascanExecutionIdentityServiceAccount(original["service_account"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedServiceAccount); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["serviceAccount"] = transformedServiceAccount
+	}
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanExecutionIdentityDataplexServiceAgent(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 {
+		return nil, nil
+	}
+
+	if l[0] == nil {
+		transformed := make(map[string]interface{})
+		return transformed, nil
+	}
+	transformed := make(map[string]interface{})
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanExecutionIdentityUserCredential(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 {
+		return nil, nil
+	}
+
+	if l[0] == nil {
+		transformed := make(map[string]interface{})
+		return transformed, nil
+	}
+	transformed := make(map[string]interface{})
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanExecutionIdentityServiceAccount(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedEmail, err := expandDataplexDatascanExecutionIdentityServiceAccountEmail(original["email"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedEmail); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["email"] = transformedEmail
+	}
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanExecutionIdentityServiceAccountEmail(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandDataplexDatascanDataQualitySpec(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	if v == nil {
 		return nil, nil
@@ -2468,6 +2769,20 @@ func expandDataplexDatascanDataQualitySpec(v interface{}, d tpgresource.Terrafor
 		return nil, err
 	} else if val := reflect.ValueOf(transformedCatalogPublishingEnabled); val.IsValid() && !tpgresource.IsEmptyValue(val) {
 		transformed["catalogPublishingEnabled"] = transformedCatalogPublishingEnabled
+	}
+
+	transformedEnableCatalogBasedRules, err := expandDataplexDatascanDataQualitySpecEnableCatalogBasedRules(original["enable_catalog_based_rules"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedEnableCatalogBasedRules); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["enableCatalogBasedRules"] = transformedEnableCatalogBasedRules
+	}
+
+	transformedFilter, err := expandDataplexDatascanDataQualitySpecFilter(original["filter"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedFilter); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["filter"] = transformedFilter
 	}
 
 	return transformed, nil
@@ -2729,6 +3044,13 @@ func expandDataplexDatascanDataQualitySpecRules(v interface{}, d tpgresource.Ter
 			transformed["description"] = transformedDescription
 		}
 
+		transformedAttributes, err := expandDataplexDatascanDataQualitySpecRulesAttributes(original["attributes"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedAttributes); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["attributes"] = transformedAttributes
+		}
+
 		transformedRangeExpectation, err := expandDataplexDatascanDataQualitySpecRulesRangeExpectation(original["range_expectation"], d, config)
 		if err != nil {
 			return nil, err
@@ -2792,6 +3114,13 @@ func expandDataplexDatascanDataQualitySpecRules(v interface{}, d tpgresource.Ter
 			transformed["sqlAssertion"] = transformedSqlAssertion
 		}
 
+		transformedTemplateReference, err := expandDataplexDatascanDataQualitySpecRulesTemplateReference(original["template_reference"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedTemplateReference); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["templateReference"] = transformedTemplateReference
+		}
+
 		req = append(req, transformed)
 	}
 	return req, nil
@@ -2823,6 +3152,17 @@ func expandDataplexDatascanDataQualitySpecRulesSuspended(v interface{}, d tpgres
 
 func expandDataplexDatascanDataQualitySpecRulesDescription(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesAttributes(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
 }
 
 func expandDataplexDatascanDataQualitySpecRulesRangeExpectation(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
@@ -3120,7 +3460,77 @@ func expandDataplexDatascanDataQualitySpecRulesSqlAssertionSqlStatement(v interf
 	return v, nil
 }
 
+func expandDataplexDatascanDataQualitySpecRulesTemplateReference(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedName, err := expandDataplexDatascanDataQualitySpecRulesTemplateReferenceName(original["name"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedName); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["name"] = transformedName
+	}
+
+	transformedValues, err := expandDataplexDatascanDataQualitySpecRulesTemplateReferenceValues(original["values"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedValues); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["values"] = transformedValues
+	}
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesTemplateReferenceName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesTemplateReferenceValues(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]interface{}, error) {
+	if v == nil {
+		return map[string]interface{}{}, nil
+	}
+	m := make(map[string]interface{})
+	for _, raw := range v.(*schema.Set).List() {
+		original := raw.(map[string]interface{})
+		transformed := make(map[string]interface{})
+
+		transformedValue, err := expandDataplexDatascanDataQualitySpecRulesTemplateReferenceValuesValue(original["value"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedValue); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["value"] = transformedValue
+		}
+
+		transformedName, err := tpgresource.ExpandString(original["name"], d, config)
+		if err != nil {
+			return nil, err
+		}
+		m[transformedName] = transformed
+	}
+	return m, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesTemplateReferenceValuesValue(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandDataplexDatascanDataQualitySpecCatalogPublishingEnabled(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecEnableCatalogBasedRules(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecFilter(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -3576,4 +3986,68 @@ func expandDataplexDatascanEffectiveLabels(v interface{}, d tpgresource.Terrafor
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceDataplexDatascanFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDataplexDatascanName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("uid", flattenDataplexDatascanUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("description", flattenDataplexDatascanDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("display_name", flattenDataplexDatascanDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("labels", flattenDataplexDatascanLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("state", flattenDataplexDatascanState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("create_time", flattenDataplexDatascanCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("update_time", flattenDataplexDatascanUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("data", flattenDataplexDatascanData(res["data"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("execution_spec", flattenDataplexDatascanExecutionSpec(res["executionSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("execution_status", flattenDataplexDatascanExecutionStatus(res["executionStatus"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("execution_identity", flattenDataplexDatascanExecutionIdentity(res["executionIdentity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("type", flattenDataplexDatascanType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("data_quality_spec", flattenDataplexDatascanDataQualitySpec(res["dataQualitySpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("data_profile_spec", flattenDataplexDatascanDataProfileSpec(res["dataProfileSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("data_discovery_spec", flattenDataplexDatascanDataDiscoverySpec(res["dataDiscoverySpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("data_documentation_spec", flattenDataplexDatascanDataDocumentationSpec(res["dataDocumentationSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDataplexDatascanTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDataplexDatascanEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Datascan: %s", err)
+	}
+
+	return nil
 }

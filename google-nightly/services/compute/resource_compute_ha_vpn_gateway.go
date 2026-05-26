@@ -125,6 +125,7 @@ func ResourceComputeHaVpnGateway() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -300,6 +301,18 @@ otherwise the request will fail with error 412 conditionNotMet.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -374,7 +387,7 @@ func resourceComputeHaVpnGatewayCreate(d *schema.ResourceData, meta interface{})
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/vpnGateways")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/vpnGateways")
 	if err != nil {
 		return err
 	}
@@ -458,7 +471,7 @@ func resourceComputeHaVpnGatewayRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/vpnGateways/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/vpnGateways/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -491,45 +504,26 @@ func resourceComputeHaVpnGatewayRead(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[DEBUG] Finished reading ComputeHaVpnGateway %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
 	}
 
-	if err := d.Set("description", flattenComputeHaVpnGatewayDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("name", flattenComputeHaVpnGatewayName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("network", flattenComputeHaVpnGatewayNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("stack_type", flattenComputeHaVpnGatewayStackType(res["stackType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("gateway_ip_version", flattenComputeHaVpnGatewayGatewayIpVersion(res["gatewayIpVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("vpn_interfaces", flattenComputeHaVpnGatewayVpnInterfaces(res["vpnInterfaces"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("labels", flattenComputeHaVpnGatewayLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("label_fingerprint", flattenComputeHaVpnGatewayLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenComputeHaVpnGatewayTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenComputeHaVpnGatewayEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("region", flattenComputeHaVpnGatewayRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	err = ResourceComputeHaVpnGatewayFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -560,6 +554,19 @@ func resourceComputeHaVpnGatewayRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceComputeHaVpnGatewayUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeHaVpnGateway().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeHaVpnGatewayRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -612,7 +619,7 @@ func resourceComputeHaVpnGatewayUpdate(d *schema.ResourceData, meta interface{})
 			obj["labels"] = labelsProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/vpnGateways/{{name}}/setLabels")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/vpnGateways/{{name}}/setLabels")
 		if err != nil {
 			return err
 		}
@@ -654,6 +661,13 @@ func resourceComputeHaVpnGatewayUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceComputeHaVpnGatewayDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeHaVpnGateway without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing HaVpnGateway %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -667,8 +681,7 @@ func resourceComputeHaVpnGatewayDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error fetching project for HaVpnGateway: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/vpnGateways/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/vpnGateways/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1106,4 +1119,46 @@ func ResourceComputeHaVpnGatewayUpgradeV0(_ context.Context, rawState map[string
 
 	log.Printf("[DEBUG] Attributes after migration: %#v", rawState)
 	return rawState, nil
+}
+
+func ResourceComputeHaVpnGatewayFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("description", flattenComputeHaVpnGatewayDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("name", flattenComputeHaVpnGatewayName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("network", flattenComputeHaVpnGatewayNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("stack_type", flattenComputeHaVpnGatewayStackType(res["stackType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("gateway_ip_version", flattenComputeHaVpnGatewayGatewayIpVersion(res["gatewayIpVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("vpn_interfaces", flattenComputeHaVpnGatewayVpnInterfaces(res["vpnInterfaces"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("labels", flattenComputeHaVpnGatewayLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("label_fingerprint", flattenComputeHaVpnGatewayLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenComputeHaVpnGatewayTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenComputeHaVpnGatewayEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("region", flattenComputeHaVpnGatewayRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading HaVpnGateway: %s", err)
+	}
+	return nil
 }

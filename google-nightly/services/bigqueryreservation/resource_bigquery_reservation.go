@@ -115,6 +115,7 @@ func ResourceBigqueryReservationReservation() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -371,6 +372,18 @@ replicated to the secondary.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -439,7 +452,7 @@ func resourceBigqueryReservationReservationCreate(d *schema.ResourceData, meta i
 		obj["reservationGroup"] = reservationGroupProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryReservationBasePath}}projects/{{project}}/locations/{{location}}/reservations?reservationId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/reservations?reservationId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -513,7 +526,7 @@ func resourceBigqueryReservationReservationRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryReservationBasePath}}projects/{{project}}/locations/{{location}}/reservations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/reservations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -546,45 +559,26 @@ func resourceBigqueryReservationReservationRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading BigqueryReservationReservation %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Reservation: %s", err)
 	}
 
-	if err := d.Set("slot_capacity", flattenBigqueryReservationReservationSlotCapacity(res["slotCapacity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("ignore_idle_slots", flattenBigqueryReservationReservationIgnoreIdleSlots(res["ignoreIdleSlots"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("concurrency", flattenBigqueryReservationReservationConcurrency(res["concurrency"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("edition", flattenBigqueryReservationReservationEdition(res["edition"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("autoscale", flattenBigqueryReservationReservationAutoscale(res["autoscale"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("primary_location", flattenBigqueryReservationReservationPrimaryLocation(res["primaryLocation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("secondary_location", flattenBigqueryReservationReservationSecondaryLocation(res["secondaryLocation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("original_primary_location", flattenBigqueryReservationReservationOriginalPrimaryLocation(res["originalPrimaryLocation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("replication_status", flattenBigqueryReservationReservationReplicationStatus(res["replicationStatus"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("scaling_mode", flattenBigqueryReservationReservationScalingMode(res["scalingMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("max_slots", flattenBigqueryReservationReservationMaxSlots(res["maxSlots"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
-	}
-	if err := d.Set("reservation_group", flattenBigqueryReservationReservationReservationGroup(res["reservationGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Reservation: %s", err)
+	err = ResourceBigqueryReservationReservationFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -615,6 +609,19 @@ func resourceBigqueryReservationReservationRead(d *schema.ResourceData, meta int
 }
 
 func resourceBigqueryReservationReservationUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceBigqueryReservationReservation().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceBigqueryReservationReservationRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -699,7 +706,7 @@ func resourceBigqueryReservationReservationUpdate(d *schema.ResourceData, meta i
 		obj["reservationGroup"] = reservationGroupProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryReservationBasePath}}projects/{{project}}/locations/{{location}}/reservations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/reservations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -776,6 +783,13 @@ func resourceBigqueryReservationReservationUpdate(d *schema.ResourceData, meta i
 }
 
 func resourceBigqueryReservationReservationDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BigqueryReservationReservation without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Reservation %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -789,8 +803,7 @@ func resourceBigqueryReservationReservationDelete(d *schema.ResourceData, meta i
 		return fmt.Errorf("Error fetching project for Reservation: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigqueryReservationBasePath}}projects/{{project}}/locations/{{location}}/reservations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/reservations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1102,4 +1115,47 @@ func expandBigqueryReservationReservationMaxSlots(v interface{}, d tpgresource.T
 
 func expandBigqueryReservationReservationReservationGroup(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceBigqueryReservationReservationFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("slot_capacity", flattenBigqueryReservationReservationSlotCapacity(res["slotCapacity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("ignore_idle_slots", flattenBigqueryReservationReservationIgnoreIdleSlots(res["ignoreIdleSlots"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("concurrency", flattenBigqueryReservationReservationConcurrency(res["concurrency"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("edition", flattenBigqueryReservationReservationEdition(res["edition"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("autoscale", flattenBigqueryReservationReservationAutoscale(res["autoscale"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("primary_location", flattenBigqueryReservationReservationPrimaryLocation(res["primaryLocation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("secondary_location", flattenBigqueryReservationReservationSecondaryLocation(res["secondaryLocation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("original_primary_location", flattenBigqueryReservationReservationOriginalPrimaryLocation(res["originalPrimaryLocation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("replication_status", flattenBigqueryReservationReservationReplicationStatus(res["replicationStatus"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("scaling_mode", flattenBigqueryReservationReservationScalingMode(res["scalingMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("max_slots", flattenBigqueryReservationReservationMaxSlots(res["maxSlots"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+	if err = d.Set("reservation_group", flattenBigqueryReservationReservationReservationGroup(res["reservationGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Reservation: %s", err)
+	}
+
+	return nil
 }

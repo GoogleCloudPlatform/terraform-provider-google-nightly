@@ -27,13 +27,14 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/netapp"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
 
 func TestAccNetappVolume_NetappVolumeBasicExample_update(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -674,7 +675,7 @@ func testAccNetappVolume_volumeBasicExample_cleanupScheduledBackup(t *testing.T,
 
 func TestAccNetappVolume_autoTieredNetappVolume_update(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -775,7 +776,7 @@ func testAccNetappVolume_autoTieredVolume_custom(context map[string]interface{})
 
 func TestAccNetappVolume_flexAutoTierNetappVolume_update(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -879,7 +880,7 @@ func testAccNetappVolume_flexAutoTierVolume_update(context map[string]interface{
 
 func TestAccNetappBlockVolume_NetappVolumeBasicExample_update(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -997,7 +998,7 @@ func testAccNetappBlockVolume_volumeBasicExample_update(context map[string]inter
 
 func TestAccNetappVolume_volumeExportPolicyWithSquashMode(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 	acctest.VcrTest(t, resource.TestCase{
@@ -1344,7 +1345,7 @@ func testAccNetappVolume_volumeExportPolicyWithSquashMode_switchMutipleExportRul
 
 func TestAccNetappVolume_NetappVolumeNfsv4Example_update(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -1487,13 +1488,13 @@ func TestSuppressHasRootAccessDiff(t *testing.T) {
 
 func TestAccNetappVolume_LargeCapacityScaleTypeConfig(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckNetappVolumeDestroyProducer(t),
 		ExternalProviders: map[string]resource.ExternalProvider{
 			"time": {},
@@ -1524,9 +1525,8 @@ func TestAccNetappVolume_LargeCapacityScaleTypeConfig(t *testing.T) {
 func testAccNetappVolume_LargeCapacityScaleTypeConfig_basic(context map[string]interface{}) string {
 	return acctest.Nprintf(`
     resource "google_netapp_storage_pool" "default" {
-        provider = google-beta
         name = "tf-test-test-pool%{random_suffix}"
-        location = "us-central1-c"
+        location = "us-east4-a"
         service_level = "FLEX"
         capacity_gib = "13312"
         type = "UNIFIED"
@@ -1535,12 +1535,12 @@ func testAccNetappVolume_LargeCapacityScaleTypeConfig_basic(context map[string]i
     }
 
     resource "google_netapp_volume" "test_volume" {
-        provider = google-beta
-        location = "us-central1-c"
+        location = "us-east4-a"
         name = "tf_test_test_volume%{random_suffix}"
         capacity_gib = "13312"
         storage_pool = google_netapp_storage_pool.default.name
         protocols = ["NFSV3"]
+        description = "This is a test description"
         share_name = "tf-test-volume-%{random_suffix}"
         security_style = "UNIX"
         large_capacity_config {
@@ -1549,7 +1549,6 @@ func testAccNetappVolume_LargeCapacityScaleTypeConfig_basic(context map[string]i
     }
 
     data "google_compute_network" "default" {
-        provider = google-beta
         name = "%{network_name}"
     }
     `, context)
@@ -1558,9 +1557,8 @@ func testAccNetappVolume_LargeCapacityScaleTypeConfig_basic(context map[string]i
 func testAccNetappVolume_LargeCapacityScaleTypeConfig_updated(context map[string]interface{}) string {
 	return acctest.Nprintf(`
     resource "google_netapp_storage_pool" "default" {
-        provider = google-beta
         name = "tf-test-test-pool%{random_suffix}"
-        location = "us-central1-c"
+        location = "us-east4-a"
         service_level = "FLEX"
         capacity_gib = "13312"
         type = "UNIFIED"
@@ -1569,12 +1567,12 @@ func testAccNetappVolume_LargeCapacityScaleTypeConfig_updated(context map[string
     }
 
     resource "google_netapp_volume" "test_volume" {
-        provider = google-beta
-        location = "us-central1-c"
+        location = "us-east4-a"
         name = "tf_test_test_volume%{random_suffix}"
         capacity_gib = "13311"
         storage_pool = google_netapp_storage_pool.default.name
         protocols = ["NFSV3"]
+        description = "This is a test description"
         share_name = "tf-test-volume-%{random_suffix}"
         security_style = "UNIX"
         large_capacity_config {
@@ -1583,14 +1581,13 @@ func testAccNetappVolume_LargeCapacityScaleTypeConfig_updated(context map[string
     }
 
     data "google_compute_network" "default" {
-        provider = google-beta
         name = "%{network_name}"
     }
     `, context)
 }
 func TestAccNetappVolume_LargeCapacityScaleTierConfig(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 

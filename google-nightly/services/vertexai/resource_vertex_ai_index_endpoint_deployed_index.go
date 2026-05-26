@@ -355,6 +355,19 @@ A timestamp in RFC3339 UTC "Zulu" format, with nanosecond resolution and up to n
 					},
 				},
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -429,7 +442,7 @@ func resourceVertexAIIndexEndpointDeployedIndexCreate(d *schema.ResourceData, me
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}{{index_endpoint}}:deployIndex")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{index_endpoint}}:deployIndex")
 	if err != nil {
 		return err
 	}
@@ -486,7 +499,7 @@ func resourceVertexAIIndexEndpointDeployedIndexRead(d *schema.ResourceData, meta
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}{{index_endpoint}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{index_endpoint}}")
 	if err != nil {
 		return err
 	}
@@ -525,50 +538,41 @@ func resourceVertexAIIndexEndpointDeployedIndexRead(d *schema.ResourceData, meta
 		return nil
 	}
 
-	if err := d.Set("name", flattenVertexAIIndexEndpointDeployedIndexName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("deployed_index_id", flattenVertexAIIndexEndpointDeployedIndexDeployedIndexId(res["deployedIndexId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("index", flattenVertexAIIndexEndpointDeployedIndexIndex(res["index"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("display_name", flattenVertexAIIndexEndpointDeployedIndexDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("create_time", flattenVertexAIIndexEndpointDeployedIndexCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("private_endpoints", flattenVertexAIIndexEndpointDeployedIndexPrivateEndpoints(res["privateEndpoints"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("index_sync_time", flattenVertexAIIndexEndpointDeployedIndexIndexSyncTime(res["indexSyncTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("automatic_resources", flattenVertexAIIndexEndpointDeployedIndexAutomaticResources(res["automaticResources"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("dedicated_resources", flattenVertexAIIndexEndpointDeployedIndexDedicatedResources(res["dedicatedResources"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("enable_access_logging", flattenVertexAIIndexEndpointDeployedIndexEnableAccessLogging(res["enableAccessLogging"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("deployed_index_auth_config", flattenVertexAIIndexEndpointDeployedIndexDeployedIndexAuthConfig(res["deployedIndexAuthConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("reserved_ip_ranges", flattenVertexAIIndexEndpointDeployedIndexReservedIpRanges(res["reservedIpRanges"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
-	}
-	if err := d.Set("deployment_group", flattenVertexAIIndexEndpointDeployedIndexDeploymentGroup(res["deploymentGroup"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+
+	err = ResourceVertexAIIndexEndpointDeployedIndexFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceVertexAIIndexEndpointDeployedIndexUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVertexAIIndexEndpointDeployedIndex().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVertexAIIndexEndpointDeployedIndexRead(d, meta)
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -639,7 +643,7 @@ func resourceVertexAIIndexEndpointDeployedIndexUpdate(d *schema.ResourceData, me
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}{{index_endpoint}}:mutateDeployedIndex")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{index_endpoint}}:mutateDeployedIndex")
 	if err != nil {
 		return err
 	}
@@ -681,6 +685,13 @@ func resourceVertexAIIndexEndpointDeployedIndexUpdate(d *schema.ResourceData, me
 }
 
 func resourceVertexAIIndexEndpointDeployedIndexDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VertexAIIndexEndpointDeployedIndex without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing IndexEndpointDeployedIndex %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -690,7 +701,7 @@ func resourceVertexAIIndexEndpointDeployedIndexDelete(d *schema.ResourceData, me
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}{{index_endpoint}}:undeployIndex")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{index_endpoint}}:undeployIndex")
 	if err != nil {
 		return err
 	}
@@ -1227,4 +1238,50 @@ func resourceVertexAIIndexEndpointDeployedIndexDecoder(d *schema.ResourceData, m
 		return nil, fmt.Errorf("Error: Deployment Index not Found")
 	}
 	return dpIndex, nil
+}
+
+func ResourceVertexAIIndexEndpointDeployedIndexFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenVertexAIIndexEndpointDeployedIndexName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("deployed_index_id", flattenVertexAIIndexEndpointDeployedIndexDeployedIndexId(res["deployedIndexId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("index", flattenVertexAIIndexEndpointDeployedIndexIndex(res["index"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("display_name", flattenVertexAIIndexEndpointDeployedIndexDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("create_time", flattenVertexAIIndexEndpointDeployedIndexCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("private_endpoints", flattenVertexAIIndexEndpointDeployedIndexPrivateEndpoints(res["privateEndpoints"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("index_sync_time", flattenVertexAIIndexEndpointDeployedIndexIndexSyncTime(res["indexSyncTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("automatic_resources", flattenVertexAIIndexEndpointDeployedIndexAutomaticResources(res["automaticResources"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("dedicated_resources", flattenVertexAIIndexEndpointDeployedIndexDedicatedResources(res["dedicatedResources"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("enable_access_logging", flattenVertexAIIndexEndpointDeployedIndexEnableAccessLogging(res["enableAccessLogging"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("deployed_index_auth_config", flattenVertexAIIndexEndpointDeployedIndexDeployedIndexAuthConfig(res["deployedIndexAuthConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("reserved_ip_ranges", flattenVertexAIIndexEndpointDeployedIndexReservedIpRanges(res["reservedIpRanges"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+	if err = d.Set("deployment_group", flattenVertexAIIndexEndpointDeployedIndexDeploymentGroup(res["deploymentGroup"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IndexEndpointDeployedIndex: %s", err)
+	}
+
+	return nil
 }

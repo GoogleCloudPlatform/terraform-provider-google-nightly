@@ -116,6 +116,7 @@ func ResourceComputeInstantSnapshot() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -176,6 +177,26 @@ character, which cannot be a dash.`,
 Please refer to the field 'effective_labels' for all of the labels present on the resource.`,
 				Elem: &schema.Schema{Type: schema.TypeString},
 			},
+			"params": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				ForceNew:    true,
+				Description: `Additional params passed with the request, but not persisted as part of resource payload`,
+				MaxItems:    1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"resource_manager_tags": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							ForceNew: true,
+							Description: `Resource manager tags to be bound to the instant snapshot. Tag keys and values have the
+same definition as resource manager tags. Keys must be in the format tagKeys/{tag_key_id},
+and values are in the format tagValues/456.`,
+							Elem: &schema.Schema{Type: schema.TypeString},
+						},
+					},
+				},
+			},
 			"zone": {
 				Type:             schema.TypeString,
 				Computed:         true,
@@ -228,6 +249,18 @@ internally during updates.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -259,6 +292,12 @@ func resourceComputeInstantSnapshotCreate(d *schema.ResourceData, meta interface
 	} else if v, ok := d.GetOkExists("label_fingerprint"); !tpgresource.IsEmptyValue(reflect.ValueOf(labelFingerprintProp)) && (ok || !reflect.DeepEqual(v, labelFingerprintProp)) {
 		obj["labelFingerprint"] = labelFingerprintProp
 	}
+	paramsProp, err := expandComputeInstantSnapshotParams(d.Get("params"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("params"); !tpgresource.IsEmptyValue(reflect.ValueOf(paramsProp)) && (ok || !reflect.DeepEqual(v, paramsProp)) {
+		obj["params"] = paramsProp
+	}
 	effectiveLabelsProp, err := expandComputeInstantSnapshotEffectiveLabels(d.Get("effective_labels"), d, config)
 	if err != nil {
 		return err
@@ -278,7 +317,7 @@ func resourceComputeInstantSnapshotCreate(d *schema.ResourceData, meta interface
 		obj["zone"] = zoneProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instantSnapshots")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/instantSnapshots")
 	if err != nil {
 		return err
 	}
@@ -362,7 +401,7 @@ func resourceComputeInstantSnapshotRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instantSnapshots/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/instantSnapshots/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -395,45 +434,26 @@ func resourceComputeInstantSnapshotRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading ComputeInstantSnapshot %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeInstantSnapshotCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("name", flattenComputeInstantSnapshotName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("description", flattenComputeInstantSnapshotDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("source_disk_id", flattenComputeInstantSnapshotSourceDiskId(res["sourceDiskId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("disk_size_gb", flattenComputeInstantSnapshotDiskSizeGb(res["diskSizeGb"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("labels", flattenComputeInstantSnapshotLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("label_fingerprint", flattenComputeInstantSnapshotLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenComputeInstantSnapshotTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenComputeInstantSnapshotEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("source_disk", flattenComputeInstantSnapshotSourceDisk(res["sourceDisk"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("zone", flattenComputeInstantSnapshotZone(res["zone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	err = ResourceComputeInstantSnapshotFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -464,6 +484,19 @@ func resourceComputeInstantSnapshotRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceComputeInstantSnapshotUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeInstantSnapshot().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeInstantSnapshotRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -516,7 +549,7 @@ func resourceComputeInstantSnapshotUpdate(d *schema.ResourceData, meta interface
 			obj["labels"] = labelsProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instantSnapshots/{{name}}/setLabels")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/instantSnapshots/{{name}}/setLabels")
 		if err != nil {
 			return err
 		}
@@ -558,6 +591,13 @@ func resourceComputeInstantSnapshotUpdate(d *schema.ResourceData, meta interface
 }
 
 func resourceComputeInstantSnapshotDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeInstantSnapshot without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing InstantSnapshot %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -571,8 +611,7 @@ func resourceComputeInstantSnapshotDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for InstantSnapshot: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instantSnapshots/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/instantSnapshots/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -731,6 +770,39 @@ func expandComputeInstantSnapshotLabelFingerprint(v interface{}, d tpgresource.T
 	return v, nil
 }
 
+func expandComputeInstantSnapshotParams(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedResourceManagerTags, err := expandComputeInstantSnapshotParamsResourceManagerTags(original["resource_manager_tags"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedResourceManagerTags); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["resourceManagerTags"] = transformedResourceManagerTags
+	}
+
+	return transformed, nil
+}
+
+func expandComputeInstantSnapshotParamsResourceManagerTags(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
+}
+
 func expandComputeInstantSnapshotEffectiveLabels(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
 	if v == nil {
 		return map[string]string{}, nil
@@ -756,4 +828,46 @@ func expandComputeInstantSnapshotZone(v interface{}, d tpgresource.TerraformReso
 		return nil, fmt.Errorf("Invalid value for zone: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeInstantSnapshotFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeInstantSnapshotCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("name", flattenComputeInstantSnapshotName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("description", flattenComputeInstantSnapshotDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("source_disk_id", flattenComputeInstantSnapshotSourceDiskId(res["sourceDiskId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("disk_size_gb", flattenComputeInstantSnapshotDiskSizeGb(res["diskSizeGb"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("labels", flattenComputeInstantSnapshotLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("label_fingerprint", flattenComputeInstantSnapshotLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenComputeInstantSnapshotTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenComputeInstantSnapshotEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("source_disk", flattenComputeInstantSnapshotSourceDisk(res["sourceDisk"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("zone", flattenComputeInstantSnapshotZone(res["zone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading InstantSnapshot: %s", err)
+	}
+	return nil
 }

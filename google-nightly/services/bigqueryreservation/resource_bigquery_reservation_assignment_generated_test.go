@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigqueryreservation"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = bigqueryreservation.Product
 )
 
 func TestAccBigqueryReservationReservationAssignment_bigqueryReservationAssignmentBasicExample(t *testing.T) {
@@ -168,8 +170,7 @@ func testAccCheckBigqueryReservationReservationAssignmentDestroyProducer(t *test
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{BigqueryReservationBasePath}}projects/{{project}}/locations/{{location}}/reservations/{{reservation}}/assignments")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(bigqueryreservation.Product, config)+"projects/{{project}}/locations/{{location}}/reservations/{{reservation}}/assignments")
 			if err != nil {
 				return err
 			}

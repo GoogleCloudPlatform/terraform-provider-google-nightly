@@ -30,6 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dialogflowcx"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/discoveryengine"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/integrationconnectors"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +52,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = dialogflowcx.Product
 )
 
 func TestAccDialogflowCXToolVersion_dialogflowcxToolVersionOpenApiExample(t *testing.T) {
@@ -635,8 +640,7 @@ func testAccCheckDialogflowCXToolVersionDestroyProducer(t *testing.T) func(s *te
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DialogflowCXBasePath}}{{parent}}/versions/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(dialogflowcx.Product, config)+"{{parent}}/versions/{{name}}")
 			if err != nil {
 				return err
 			}

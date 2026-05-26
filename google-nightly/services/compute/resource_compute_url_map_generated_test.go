@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = compute.Product
 )
 
 func TestAccComputeUrlMap_urlMapBucketAndServiceExample(t *testing.T) {
@@ -1087,7 +1090,7 @@ func TestAccComputeUrlMap_urlMapCachePolicyBasicExample(t *testing.T) {
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckComputeUrlMapDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -1112,7 +1115,6 @@ func TestAccComputeUrlMap_urlMapCachePolicyBasicExample(t *testing.T) {
 func testAccComputeUrlMap_urlMapCachePolicyBasicExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_compute_url_map" "urlmap" {
-  provider = google-beta
   name     = "%{url_map_name}"
   
   default_service = google_compute_backend_service.default.id
@@ -1140,7 +1142,6 @@ resource "google_compute_url_map" "urlmap" {
 }
 
 resource "google_compute_backend_service" "default" {
-  provider = google-beta
   name     = "%{backend_service_name}"
   
   protocol              = "HTTP"
@@ -1150,7 +1151,6 @@ resource "google_compute_backend_service" "default" {
 }
 
 resource "google_compute_health_check" "default" {
-  provider = google-beta
   name     = "%{health_check_name}"
   http_health_check {
     port = 80
@@ -1173,7 +1173,7 @@ func TestAccComputeUrlMap_urlMapCachePolicyMultiLevelExample(t *testing.T) {
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
 		CheckDestroy:             testAccCheckComputeUrlMapDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -1198,7 +1198,6 @@ func TestAccComputeUrlMap_urlMapCachePolicyMultiLevelExample(t *testing.T) {
 func testAccComputeUrlMap_urlMapCachePolicyMultiLevelExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_compute_url_map" "urlmap" {
-  provider = google-beta
   name     = "%{url_map_name}"
   
   default_service = google_compute_backend_service.default.id
@@ -1329,7 +1328,6 @@ resource "google_compute_url_map" "urlmap" {
 }
 
 resource "google_compute_backend_service" "default" {
-  provider = google-beta
   name     = "%{backend_service_name}"
   
   protocol              = "HTTP"
@@ -1339,7 +1337,6 @@ resource "google_compute_backend_service" "default" {
 }
 
 resource "google_compute_health_check" "default" {
-  provider = google-beta
   name     = "%{health_check_name}"
   http_health_check {
     port = 80
@@ -2378,8 +2375,7 @@ func testAccCheckComputeUrlMapDestroyProducer(t *testing.T) func(s *terraform.St
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/global/urlMaps/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(compute.Product, config)+"projects/{{project}}/global/urlMaps/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -214,22 +214,18 @@ the provider project is used`,
 				Computed:    true,
 				Description: `The version of the Secret.`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `The deletion policy for the secret version. Setting 'ABANDON' allows the resource
-to be abandoned rather than deleted. Setting 'DISABLE' allows the resource to be
-disabled rather than deleted. Default is 'DELETE'. Possible values are:
-  * DELETE
-  * DISABLE
-  * ABANDON`,
-				Default: "DELETE",
-			},
 			"is_secret_data_base64": {
 				Type:        schema.TypeBool,
 				Optional:    true,
 				ForceNew:    true,
 				Description: `If set to 'true', the secret data is expected to be base64-encoded string and would be sent as is.`,
+			},
+
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/secret_manager_secret_version.html.markdown for specifics`,
 			},
 		},
 		UseJSONNumber: true,
@@ -257,7 +253,7 @@ func resourceSecretManagerSecretVersionCreate(d *schema.ResourceData, meta inter
 		obj["payload"] = payloadProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerBasePath}}{{secret}}:addVersion")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{secret}}:addVersion")
 	if err != nil {
 		return err
 	}
@@ -358,7 +354,7 @@ func resourceSecretManagerSecretVersionRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -405,46 +401,40 @@ func resourceSecretManagerSecretVersionRead(d *schema.ResourceData, meta interfa
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DELETE"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 
-	if err := d.Set("enabled", flattenSecretManagerSecretVersionEnabled(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecretVersion: %s", err)
-	}
-	if err := d.Set("name", flattenSecretManagerSecretVersionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecretVersion: %s", err)
-	}
-	if err := d.Set("version", flattenSecretManagerSecretVersionVersion(res["version"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecretVersion: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecretManagerSecretVersionCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecretVersion: %s", err)
-	}
-	if err := d.Set("destroy_time", flattenSecretManagerSecretVersionDestroyTime(res["destroyTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading SecretVersion: %s", err)
-	}
-	// Terraform must set the top level schema field, but since this object contains collapsed properties
-	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
-	if flattenedProp := flattenSecretManagerSecretVersionPayload(res["payload"], d, config); flattenedProp != nil {
-		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
-			return fmt.Errorf("Error reading SecretVersion: %s", gerr)
-		}
-		casted := flattenedProp.([]interface{})[0]
-		if casted != nil {
-			for k, v := range casted.(map[string]interface{}) {
-				if err := d.Set(k, v); err != nil {
-					return fmt.Errorf("Error setting %s: %s", k, err)
-				}
-			}
-		}
+	err = ResourceSecretManagerSecretVersionFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceSecretManagerSecretVersionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecretManagerSecretVersion().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecretManagerSecretVersionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	err := setEnabled(d.Get("enabled"), d, config)
 	if err != nil {
@@ -455,6 +445,13 @@ func resourceSecretManagerSecretVersionUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceSecretManagerSecretVersionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecretManagerSecretVersion without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing SecretVersion %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -463,7 +460,7 @@ func resourceSecretManagerSecretVersionDelete(d *schema.ResourceData, meta inter
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerBasePath}}{{name}}:destroy")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}:destroy")
 	if err != nil {
 		return err
 	}
@@ -477,10 +474,7 @@ func resourceSecretManagerSecretVersionDelete(d *schema.ResourceData, meta inter
 
 	headers := make(http.Header)
 	deletionPolicy := d.Get("deletion_policy")
-
-	if deletionPolicy == "ABANDON" {
-		return nil
-	} else if deletionPolicy == "DISABLE" {
+	if deletionPolicy == "DISABLE" {
 		url, err = tpgresource.ReplaceVars(d, config, "{{SecretManagerBasePath}}{{name}}:disable")
 		if err != nil {
 			return err
@@ -721,5 +715,42 @@ func resourceSecretManagerSecretVersionPostCreateSetComputedFields(d *schema.Res
 	if err := d.Set("name", flattenSecretManagerSecretVersionName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceSecretManagerSecretVersionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("enabled", flattenSecretManagerSecretVersionEnabled(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecretVersion: %s", err)
+	}
+	if err = d.Set("name", flattenSecretManagerSecretVersionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecretVersion: %s", err)
+	}
+	if err = d.Set("version", flattenSecretManagerSecretVersionVersion(res["version"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecretVersion: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecretManagerSecretVersionCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecretVersion: %s", err)
+	}
+	if err = d.Set("destroy_time", flattenSecretManagerSecretVersionDestroyTime(res["destroyTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading SecretVersion: %s", err)
+	}
+	// Terraform must set the top level schema field, but since this object contains collapsed properties
+	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
+	if flattenedProp := flattenSecretManagerSecretVersionPayload(res["payload"], d, config); flattenedProp != nil {
+		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
+			return fmt.Errorf("Error reading SecretVersion: %s", gerr)
+		}
+		casted := flattenedProp.([]interface{})[0]
+		if casted != nil {
+			for k, v := range casted.(map[string]interface{}) {
+				if err := d.Set(k, v); err != nil {
+					return fmt.Errorf("Error setting %s: %s", k, err)
+				}
+			}
+		}
+	}
+
 	return nil
 }

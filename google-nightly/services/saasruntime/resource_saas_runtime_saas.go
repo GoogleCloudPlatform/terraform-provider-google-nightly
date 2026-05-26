@@ -117,6 +117,7 @@ func ResourceSaasRuntimeSaas() *schema.Resource {
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -254,6 +255,18 @@ Changes to a resource made by the service should refresh this value.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -286,7 +299,7 @@ func resourceSaasRuntimeSaasCreate(d *schema.ResourceData, meta interface{}) err
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SaasRuntimeBasePath}}projects/{{project}}/locations/{{location}}/saas?saasId={{saas_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/saas?saasId={{saas_id}}")
 	if err != nil {
 		return err
 	}
@@ -360,7 +373,7 @@ func resourceSaasRuntimeSaasRead(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SaasRuntimeBasePath}}projects/{{project}}/locations/{{location}}/saas/{{saas_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/saas/{{saas_id}}")
 	if err != nil {
 		return err
 	}
@@ -393,42 +406,26 @@ func resourceSaasRuntimeSaasRead(d *schema.ResourceData, meta interface{}) error
 
 	log.Printf("[DEBUG] Finished reading SaasRuntimeSaas %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Saas: %s", err)
 	}
 
-	if err := d.Set("annotations", flattenSaasRuntimeSaasAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("create_time", flattenSaasRuntimeSaasCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("etag", flattenSaasRuntimeSaasEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("labels", flattenSaasRuntimeSaasLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("locations", flattenSaasRuntimeSaasLocations(res["locations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("name", flattenSaasRuntimeSaasName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("uid", flattenSaasRuntimeSaasUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("update_time", flattenSaasRuntimeSaasUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenSaasRuntimeSaasEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenSaasRuntimeSaasTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenSaasRuntimeSaasEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Saas: %s", err)
+	err = ResourceSaasRuntimeSaasFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -459,6 +456,19 @@ func resourceSaasRuntimeSaasRead(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceSaasRuntimeSaasUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSaasRuntimeSaas().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSaasRuntimeSaasRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -513,7 +523,7 @@ func resourceSaasRuntimeSaasUpdate(d *schema.ResourceData, meta interface{}) err
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SaasRuntimeBasePath}}projects/{{project}}/locations/{{location}}/saas/{{saas_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/saas/{{saas_id}}")
 	if err != nil {
 		return err
 	}
@@ -570,6 +580,13 @@ func resourceSaasRuntimeSaasUpdate(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceSaasRuntimeSaasDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SaasRuntimeSaas without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Saas %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -583,8 +600,7 @@ func resourceSaasRuntimeSaasDelete(d *schema.ResourceData, meta interface{}) err
 		return fmt.Errorf("Error fetching project for Saas: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SaasRuntimeBasePath}}projects/{{project}}/locations/{{location}}/saas/{{saas_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/saas/{{saas_id}}")
 	if err != nil {
 		return err
 	}
@@ -781,4 +797,44 @@ func expandSaasRuntimeSaasEffectiveLabels(v interface{}, d tpgresource.Terraform
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceSaasRuntimeSaasFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("annotations", flattenSaasRuntimeSaasAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("create_time", flattenSaasRuntimeSaasCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("etag", flattenSaasRuntimeSaasEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("labels", flattenSaasRuntimeSaasLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("locations", flattenSaasRuntimeSaasLocations(res["locations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("name", flattenSaasRuntimeSaasName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("uid", flattenSaasRuntimeSaasUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("update_time", flattenSaasRuntimeSaasUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenSaasRuntimeSaasEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenSaasRuntimeSaasTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenSaasRuntimeSaasEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Saas: %s", err)
+	}
+
+	return nil
 }

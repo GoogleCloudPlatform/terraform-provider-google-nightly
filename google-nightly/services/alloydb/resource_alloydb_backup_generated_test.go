@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/alloydb"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = alloydb.Product
 )
 
 func TestAccAlloydbBackup_alloydbBackupBasicTestExample(t *testing.T) {
@@ -59,7 +62,7 @@ func TestAccAlloydbBackup_alloydbBackupBasicTestExample(t *testing.T) {
 		"alloydb_backup_id":     "tf-test-alloydb-backup" + randomSuffix,
 		"alloydb_cluster_name":  "tf-test-alloydb-cluster" + randomSuffix,
 		"alloydb_instance_name": "tf-test-alloydb-instance" + randomSuffix,
-		"network_name":          acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":          servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 		"random_suffix":         randomSuffix,
 	}
 
@@ -129,7 +132,7 @@ func TestAccAlloydbBackup_alloydbBackupFullTestExample(t *testing.T) {
 		"alloydb_backup_id":     "tf-test-alloydb-backup" + randomSuffix,
 		"alloydb_cluster_name":  "tf-test-alloydb-cluster" + randomSuffix,
 		"alloydb_instance_name": "tf-test-alloydb-instance" + randomSuffix,
-		"network_name":          acctest.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
+		"network_name":          servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "alloydb-1"),
 		"random_suffix":         randomSuffix,
 	}
 
@@ -205,8 +208,7 @@ func testAccCheckAlloydbBackupDestroyProducer(t *testing.T) func(s *terraform.St
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{AlloydbBasePath}}projects/{{project}}/locations/{{location}}/backups/{{backup_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(alloydb.Product, config)+"projects/{{project}}/locations/{{location}}/backups/{{backup_id}}")
 			if err != nil {
 				return err
 			}

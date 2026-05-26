@@ -100,6 +100,7 @@ func ResourceSiteVerificationWebResource() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceSiteVerificationWebResourceCreate,
 		Read:   resourceSiteVerificationWebResourceRead,
+		Update: resourceSiteVerificationWebResourceUpdate,
 		Delete: resourceSiteVerificationWebResourceDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -174,6 +175,19 @@ for example verified owners of the containing domain—are not included in this 
 				Computed:    true,
 				Description: `The string used to identify this web resource.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -194,7 +208,7 @@ func resourceSiteVerificationWebResourceCreate(d *schema.ResourceData, meta inte
 		obj["site"] = siteProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SiteVerificationBasePath}}webResource?verificationMethod={{verification_method}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"webResource?verificationMethod={{verification_method}}")
 	if err != nil {
 		return err
 	}
@@ -263,7 +277,7 @@ func resourceSiteVerificationWebResourceRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SiteVerificationBasePath}}webResource/{{web_resource_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"webResource/{{web_resource_id}}")
 	if err != nil {
 		return err
 	}
@@ -295,14 +309,23 @@ func resourceSiteVerificationWebResourceRead(d *schema.ResourceData, meta interf
 
 	log.Printf("[DEBUG] Finished reading SiteVerificationWebResource %q: %#v", d.Id(), res)
 
-	if err := d.Set("web_resource_id", flattenSiteVerificationWebResourceWebResourceId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WebResource: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("site", flattenSiteVerificationWebResourceSite(res["site"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WebResource: %s", err)
-	}
-	if err := d.Set("owners", flattenSiteVerificationWebResourceOwners(res["owners"], d, config)); err != nil {
-		return fmt.Errorf("Error reading WebResource: %s", err)
+
+	err = ResourceSiteVerificationWebResourceFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -320,7 +343,19 @@ func resourceSiteVerificationWebResourceRead(d *schema.ResourceData, meta interf
 	return nil
 }
 
+func resourceSiteVerificationWebResourceUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceSiteVerificationWebResourceRead(d, meta)
+}
+
 func resourceSiteVerificationWebResourceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SiteVerificationWebResource without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing WebResource %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -329,7 +364,7 @@ func resourceSiteVerificationWebResourceDelete(d *schema.ResourceData, meta inte
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SiteVerificationBasePath}}webResource/{{web_resource_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"webResource/{{web_resource_id}}")
 	if err != nil {
 		return err
 	}
@@ -458,5 +493,21 @@ func resourceSiteVerificationWebResourcePostCreateSetComputedFields(d *schema.Re
 	if err := d.Set("web_resource_id", flattenSiteVerificationWebResourceWebResourceId(res["id"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "web_resource_id": %s`, err)
 	}
+	return nil
+}
+
+func ResourceSiteVerificationWebResourceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("web_resource_id", flattenSiteVerificationWebResourceWebResourceId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WebResource: %s", err)
+	}
+	if err = d.Set("site", flattenSiteVerificationWebResourceSite(res["site"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WebResource: %s", err)
+	}
+	if err = d.Set("owners", flattenSiteVerificationWebResourceOwners(res["owners"], d, config)); err != nil {
+		return fmt.Errorf("Error reading WebResource: %s", err)
+	}
+
 	return nil
 }

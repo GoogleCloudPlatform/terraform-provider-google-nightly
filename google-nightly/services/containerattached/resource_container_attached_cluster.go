@@ -127,6 +127,7 @@ func ResourceContainerAttachedCluster() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -497,17 +498,17 @@ the Workload Identity Pool.`,
 					},
 				},
 			},
-			"deletion_policy": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				Description: `Policy to determine what flags to send on delete. Possible values: DELETE, DELETE_IGNORE_ERRORS`,
-				Default:     "DELETE",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/container_attached_cluster.html.markdown for specifics`,
 			},
 		},
 		UseJSONNumber: true,
@@ -601,7 +602,7 @@ func resourceContainerAttachedClusterCreate(d *schema.ResourceData, meta interfa
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ContainerAttachedBasePath}}projects/{{project}}/locations/{{location}}/attachedClusters?attached_cluster_id={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/attachedClusters?attached_cluster_id={{name}}")
 	if err != nil {
 		return err
 	}
@@ -685,7 +686,7 @@ func resourceContainerAttachedClusterRead(d *schema.ResourceData, meta interface
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ContainerAttachedBasePath}}projects/{{project}}/locations/{{location}}/attachedClusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/attachedClusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -720,82 +721,24 @@ func resourceContainerAttachedClusterRead(d *schema.ResourceData, meta interface
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DELETE"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Cluster: %s", err)
 	}
 
-	if err := d.Set("name", flattenContainerAttachedClusterName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("description", flattenContainerAttachedClusterDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("oidc_config", flattenContainerAttachedClusterOidcConfig(res["oidcConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("platform_version", flattenContainerAttachedClusterPlatformVersion(res["platformVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("distribution", flattenContainerAttachedClusterDistribution(res["distribution"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("cluster_region", flattenContainerAttachedClusterClusterRegion(res["clusterRegion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("fleet", flattenContainerAttachedClusterFleet(res["fleet"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("state", flattenContainerAttachedClusterState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("uid", flattenContainerAttachedClusterUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("reconciling", flattenContainerAttachedClusterReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("create_time", flattenContainerAttachedClusterCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("update_time", flattenContainerAttachedClusterUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("kubernetes_version", flattenContainerAttachedClusterKubernetesVersion(res["kubernetesVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("annotations", flattenContainerAttachedClusterAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("workload_identity_config", flattenContainerAttachedClusterWorkloadIdentityConfig(res["workloadIdentityConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("logging_config", flattenContainerAttachedClusterLoggingConfig(res["loggingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("errors", flattenContainerAttachedClusterErrors(res["errors"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("authorization", flattenContainerAttachedClusterAuthorization(res["authorization"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("monitoring_config", flattenContainerAttachedClusterMonitoringConfig(res["monitoringConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("binary_authorization", flattenContainerAttachedClusterBinaryAuthorization(res["binaryAuthorization"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("proxy_config", flattenContainerAttachedClusterProxyConfig(res["proxyConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("security_posture_config", flattenContainerAttachedClusterSecurityPostureConfig(res["securityPostureConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenContainerAttachedClusterEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
+	err = ResourceContainerAttachedClusterFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -826,6 +769,19 @@ func resourceContainerAttachedClusterRead(d *schema.ResourceData, meta interface
 }
 
 func resourceContainerAttachedClusterUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceContainerAttachedCluster().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceContainerAttachedClusterRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -928,7 +884,7 @@ func resourceContainerAttachedClusterUpdate(d *schema.ResourceData, meta interfa
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ContainerAttachedBasePath}}projects/{{project}}/locations/{{location}}/attachedClusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/attachedClusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1060,6 +1016,13 @@ func resourceContainerAttachedClusterUpdate(d *schema.ResourceData, meta interfa
 }
 
 func resourceContainerAttachedClusterDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ContainerAttachedCluster without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Cluster %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1073,8 +1036,7 @@ func resourceContainerAttachedClusterDelete(d *schema.ResourceData, meta interfa
 		return fmt.Errorf("Error fetching project for Cluster: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ContainerAttachedBasePath}}projects/{{project}}/locations/{{location}}/attachedClusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/attachedClusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1141,9 +1103,6 @@ func resourceContainerAttachedClusterImport(d *schema.ResourceData, meta interfa
 	d.SetId(id)
 
 	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "DELETE"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -1857,4 +1816,80 @@ func expandContainerAttachedClusterEffectiveAnnotations(v interface{}, d tpgreso
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceContainerAttachedClusterFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenContainerAttachedClusterName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("description", flattenContainerAttachedClusterDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("oidc_config", flattenContainerAttachedClusterOidcConfig(res["oidcConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("platform_version", flattenContainerAttachedClusterPlatformVersion(res["platformVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("distribution", flattenContainerAttachedClusterDistribution(res["distribution"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("cluster_region", flattenContainerAttachedClusterClusterRegion(res["clusterRegion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("fleet", flattenContainerAttachedClusterFleet(res["fleet"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("state", flattenContainerAttachedClusterState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("uid", flattenContainerAttachedClusterUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("reconciling", flattenContainerAttachedClusterReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("create_time", flattenContainerAttachedClusterCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("update_time", flattenContainerAttachedClusterUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("kubernetes_version", flattenContainerAttachedClusterKubernetesVersion(res["kubernetesVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("annotations", flattenContainerAttachedClusterAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("workload_identity_config", flattenContainerAttachedClusterWorkloadIdentityConfig(res["workloadIdentityConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("logging_config", flattenContainerAttachedClusterLoggingConfig(res["loggingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("errors", flattenContainerAttachedClusterErrors(res["errors"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("authorization", flattenContainerAttachedClusterAuthorization(res["authorization"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("monitoring_config", flattenContainerAttachedClusterMonitoringConfig(res["monitoringConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("binary_authorization", flattenContainerAttachedClusterBinaryAuthorization(res["binaryAuthorization"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("proxy_config", flattenContainerAttachedClusterProxyConfig(res["proxyConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("security_posture_config", flattenContainerAttachedClusterSecurityPostureConfig(res["securityPostureConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenContainerAttachedClusterEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+
+	return nil
 }

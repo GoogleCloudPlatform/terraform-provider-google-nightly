@@ -87,6 +87,26 @@ func validateDefaultTableExpirationMs(v interface{}, k string) (ws []string, err
 	return
 }
 
+func customCollationDiff(_ context.Context, d *schema.ResourceDiff, meta interface{}) error {
+	// 1. Check if the configuration is explicitly set to an empty string.
+	// We use GetRawConfig to see what the user actually wrote,
+	// before the SDK "fills in" computed values.
+	conf := d.GetRawConfig()
+	if !conf.IsNull() && conf.GetAttr("default_collation").IsKnown() && !conf.GetAttr("default_collation").IsNull() {
+		val := conf.GetAttr("default_collation").AsString()
+
+		// 2. If config is "", but the state (old value) is NOT "", force an update.
+		old, _ := d.GetChange("default_collation")
+		if old != "" && val == "" {
+			// THIS is what goes inside the block:
+			if err := d.SetNew("default_collation", ""); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // bigqueryDatasetAccessHash is a custom hash function for the access block.
 // It normalizes
 // 1) the 'role' field before hashing, treating legacy roles
@@ -181,8 +201,10 @@ func ResourceBigQueryDataset() *schema.Resource {
 		},
 
 		CustomizeDiff: customdiff.All(
+			customCollationDiff,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Schema: map[string]*schema.Schema{
@@ -436,6 +458,18 @@ destroying the resource will fail if tables are present.`,
 			"self_link": {
 				Type:     schema.TypeString,
 				Computed: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -702,7 +736,7 @@ func resourceBigQueryDatasetCreate(d *schema.ResourceData, meta interface{}) err
 	defaultCollationProp, err := expandBigQueryDatasetDefaultCollation(d.Get("default_collation"), d, config)
 	if err != nil {
 		return err
-	} else if v, ok := d.GetOkExists("default_collation"); !tpgresource.IsEmptyValue(reflect.ValueOf(defaultCollationProp)) && (ok || !reflect.DeepEqual(v, defaultCollationProp)) {
+	} else if v, ok := d.GetOkExists("default_collation"); ok || !reflect.DeepEqual(v, defaultCollationProp) {
 		obj["defaultCollation"] = defaultCollationProp
 	}
 	storageBillingModelProp, err := expandBigQueryDatasetStorageBillingModel(d.Get("storage_billing_model"), d, config)
@@ -730,7 +764,7 @@ func resourceBigQueryDatasetCreate(d *schema.ResourceData, meta interface{}) err
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigQueryBasePath}}projects/{{project}}/datasets?accessPolicyVersion=3")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/datasets?accessPolicyVersion=3")
 	if err != nil {
 		return err
 	}
@@ -783,7 +817,7 @@ func resourceBigQueryDatasetRead(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigQueryBasePath}}projects/{{project}}/datasets/{{dataset_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/datasets/{{dataset_id}}")
 	if err != nil {
 		return err
 	}
@@ -823,93 +857,44 @@ func resourceBigQueryDatasetRead(d *schema.ResourceData, meta interface{}) error
 			return fmt.Errorf("Error setting delete_contents_on_destroy: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Dataset: %s", err)
 	}
 
-	if err := d.Set("max_time_travel_hours", flattenBigQueryDatasetMaxTimeTravelHours(res["maxTimeTravelHours"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("access", flattenBigQueryDatasetAccess(res["access"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("creation_time", flattenBigQueryDatasetCreationTime(res["creationTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	// Terraform must set the top level schema field, but since this object contains collapsed properties
-	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
-	if flattenedProp := flattenBigQueryDatasetDatasetReference(res["datasetReference"], d, config); flattenedProp != nil {
-		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
-			return fmt.Errorf("Error reading Dataset: %s", gerr)
-		}
-		casted := flattenedProp.([]interface{})[0]
-		if casted != nil {
-			for k, v := range casted.(map[string]interface{}) {
-				if err := d.Set(k, v); err != nil {
-					return fmt.Errorf("Error setting %s: %s", k, err)
-				}
-			}
-		}
-	}
-	if err := d.Set("default_table_expiration_ms", flattenBigQueryDatasetDefaultTableExpirationMs(res["defaultTableExpirationMs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("default_partition_expiration_ms", flattenBigQueryDatasetDefaultPartitionExpirationMs(res["defaultPartitionExpirationMs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("description", flattenBigQueryDatasetDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("etag", flattenBigQueryDatasetEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("external_dataset_reference", flattenBigQueryDatasetExternalDatasetReference(res["externalDatasetReference"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("friendly_name", flattenBigQueryDatasetFriendlyName(res["friendlyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("labels", flattenBigQueryDatasetLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("last_modified_time", flattenBigQueryDatasetLastModifiedTime(res["lastModifiedTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("location", flattenBigQueryDatasetLocation(res["location"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("default_encryption_configuration", flattenBigQueryDatasetDefaultEncryptionConfiguration(res["defaultEncryptionConfiguration"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("is_case_insensitive", flattenBigQueryDatasetIsCaseInsensitive(res["isCaseInsensitive"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("default_collation", flattenBigQueryDatasetDefaultCollation(res["defaultCollation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("storage_billing_model", flattenBigQueryDatasetStorageBillingModel(res["storageBillingModel"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("resource_tags", flattenBigQueryDatasetResourceTags(res["resourceTags"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("external_catalog_dataset_options", flattenBigQueryDatasetExternalCatalogDatasetOptions(res["externalCatalogDatasetOptions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenBigQueryDatasetTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenBigQueryDatasetEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading Dataset: %s", err)
+	err = ResourceBigQueryDatasetFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
 func resourceBigQueryDatasetUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceBigQueryDataset().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceBigQueryDatasetRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -994,7 +979,7 @@ func resourceBigQueryDatasetUpdate(d *schema.ResourceData, meta interface{}) err
 	defaultCollationProp, err := expandBigQueryDatasetDefaultCollation(d.Get("default_collation"), d, config)
 	if err != nil {
 		return err
-	} else if v, ok := d.GetOkExists("default_collation"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, defaultCollationProp)) {
+	} else if v, ok := d.GetOkExists("default_collation"); ok || !reflect.DeepEqual(v, defaultCollationProp) {
 		obj["defaultCollation"] = defaultCollationProp
 	}
 	storageBillingModelProp, err := expandBigQueryDatasetStorageBillingModel(d.Get("storage_billing_model"), d, config)
@@ -1022,7 +1007,7 @@ func resourceBigQueryDatasetUpdate(d *schema.ResourceData, meta interface{}) err
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigQueryBasePath}}projects/{{project}}/datasets/{{dataset_id}}?accessPolicyVersion=3")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/datasets/{{dataset_id}}?accessPolicyVersion=3")
 	if err != nil {
 		return err
 	}
@@ -1056,6 +1041,13 @@ func resourceBigQueryDatasetUpdate(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceBigQueryDatasetDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BigQueryDataset without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Dataset %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1069,8 +1061,7 @@ func resourceBigQueryDatasetDelete(d *schema.ResourceData, meta interface{}) err
 		return fmt.Errorf("Error fetching project for Dataset: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{BigQueryBasePath}}projects/{{project}}/datasets/{{dataset_id}}?deleteContents={{delete_contents_on_destroy}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/datasets/{{dataset_id}}?deleteContents={{delete_contents_on_destroy}}")
 	if err != nil {
 		return err
 	}
@@ -2000,6 +1991,12 @@ func expandBigQueryDatasetIsCaseInsensitive(v interface{}, d tpgresource.Terrafo
 }
 
 func expandBigQueryDatasetDefaultCollation(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if rd, ok := d.(*schema.ResourceData); ok {
+		conf := rd.GetRawConfig()
+		if !conf.IsNull() && conf.GetAttr("default_collation").IsKnown() && !conf.GetAttr("default_collation").IsNull() {
+			return conf.GetAttr("default_collation").AsString(), nil
+		}
+	}
 	return v, nil
 }
 
@@ -2071,4 +2068,88 @@ func expandBigQueryDatasetEffectiveLabels(v interface{}, d tpgresource.Terraform
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceBigQueryDatasetFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("max_time_travel_hours", flattenBigQueryDatasetMaxTimeTravelHours(res["maxTimeTravelHours"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("access", flattenBigQueryDatasetAccess(res["access"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("creation_time", flattenBigQueryDatasetCreationTime(res["creationTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	// Terraform must set the top level schema field, but since this object contains collapsed properties
+	// it's difficult to know what the top level should be. Instead we just loop over the map returned from flatten.
+	if flattenedProp := flattenBigQueryDatasetDatasetReference(res["datasetReference"], d, config); flattenedProp != nil {
+		if gerr, ok := flattenedProp.(*googleapi.Error); ok {
+			return fmt.Errorf("Error reading Dataset: %s", gerr)
+		}
+		casted := flattenedProp.([]interface{})[0]
+		if casted != nil {
+			for k, v := range casted.(map[string]interface{}) {
+				if err := d.Set(k, v); err != nil {
+					return fmt.Errorf("Error setting %s: %s", k, err)
+				}
+			}
+		}
+	}
+	if err = d.Set("default_table_expiration_ms", flattenBigQueryDatasetDefaultTableExpirationMs(res["defaultTableExpirationMs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("default_partition_expiration_ms", flattenBigQueryDatasetDefaultPartitionExpirationMs(res["defaultPartitionExpirationMs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("description", flattenBigQueryDatasetDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("etag", flattenBigQueryDatasetEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("external_dataset_reference", flattenBigQueryDatasetExternalDatasetReference(res["externalDatasetReference"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("friendly_name", flattenBigQueryDatasetFriendlyName(res["friendlyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("labels", flattenBigQueryDatasetLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("last_modified_time", flattenBigQueryDatasetLastModifiedTime(res["lastModifiedTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("location", flattenBigQueryDatasetLocation(res["location"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("default_encryption_configuration", flattenBigQueryDatasetDefaultEncryptionConfiguration(res["defaultEncryptionConfiguration"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("is_case_insensitive", flattenBigQueryDatasetIsCaseInsensitive(res["isCaseInsensitive"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("default_collation", flattenBigQueryDatasetDefaultCollation(res["defaultCollation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("storage_billing_model", flattenBigQueryDatasetStorageBillingModel(res["storageBillingModel"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("resource_tags", flattenBigQueryDatasetResourceTags(res["resourceTags"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("external_catalog_dataset_options", flattenBigQueryDatasetExternalCatalogDatasetOptions(res["externalCatalogDatasetOptions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenBigQueryDatasetTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenBigQueryDatasetEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading Dataset: %s", err)
+	}
+	return nil
 }

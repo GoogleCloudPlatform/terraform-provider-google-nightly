@@ -31,6 +31,10 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 
 	compute "google.golang.org/api/compute/v0.beta"
@@ -277,6 +281,33 @@ func TestAccComputeInstanceTemplate_IPv6(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckComputeInstanceTemplateExists(
 						t, "google_compute_instance_template.foobar", &instanceTemplate),
+				),
+			},
+			{
+				ResourceName:      "google_compute_instance_template.foobar",
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+		},
+	})
+}
+
+func TestAccComputeInstanceTemplate_aliasIpv6Range(t *testing.T) {
+	t.Parallel()
+
+	var instanceTemplate compute.InstanceTemplate
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckComputeInstanceTemplateDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeInstanceTemplate_aliasIpv6Range(acctest.RandString(t, 10)),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckComputeInstanceTemplateExists(
+						t, "google_compute_instance_template.foobar", &instanceTemplate),
+					resource.TestCheckResourceAttr("google_compute_instance_template.foobar", "network_interface.0.alias_ipv6_range.0.ip_cidr_range", "/96"),
 				),
 			},
 			{
@@ -703,7 +734,7 @@ func TestAccComputeInstanceTemplate_EncryptKMS(t *testing.T) {
 	t.Parallel()
 
 	var instanceTemplate compute.InstanceTemplate
-	kms := acctest.BootstrapKMSKey(t)
+	bootstrapped := kms.BootstrapKMSKey(t)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -711,7 +742,7 @@ func TestAccComputeInstanceTemplate_EncryptKMS(t *testing.T) {
 		CheckDestroy:             testAccCheckComputeInstanceTemplateDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccComputeInstanceTemplate_encryptionKMS(acctest.RandString(t, 10), kms.CryptoKey.Name, tpgresource.GetResourceNameFromSelfLink(kms.KeyRing.Name)),
+				Config: testAccComputeInstanceTemplate_encryptionKMS(acctest.RandString(t, 10), bootstrapped.CryptoKey.Name, tpgresource.GetResourceNameFromSelfLink(bootstrapped.KeyRing.Name)),
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckComputeInstanceTemplateExists(t, "google_compute_instance_template.foobar", &instanceTemplate),
 				),
@@ -1582,7 +1613,7 @@ func TestAccComputeInstanceTemplate_sourceSnapshotEncryptionKey(t *testing.T) {
 	t.Parallel()
 
 	var instanceTemplate compute.InstanceTemplate
-	kmsKey := acctest.BootstrapKMSKeyInLocation(t, "us-central1")
+	kmsKey := kms.BootstrapKMSKeyInLocation(t, "us-central1")
 
 	context := map[string]interface{}{
 		"kms_ring_name":     tpgresource.GetResourceNameFromSelfLink(kmsKey.KeyRing.Name),
@@ -1644,7 +1675,7 @@ func TestAccComputeInstanceTemplate_sourceImageEncryptionKey(t *testing.T) {
 	t.Parallel()
 
 	var instanceTemplate compute.InstanceTemplate
-	kmsKey := acctest.BootstrapKMSKeyInLocation(t, "us-central1")
+	kmsKey := kms.BootstrapKMSKeyInLocation(t, "us-central1")
 
 	context := map[string]interface{}{
 		"kms_ring_name":     tpgresource.GetResourceNameFromSelfLink(kmsKey.KeyRing.Name),
@@ -1705,9 +1736,9 @@ func TestAccComputeInstanceTemplate_sourceImageEncryptionKey(t *testing.T) {
 func TestAccComputeInstanceTemplate_NetworkAttachment(t *testing.T) {
 	t.Parallel()
 
-	testNetworkName := acctest.BootstrapSharedTestNetwork(t, "attachment-network")
-	subnetName := acctest.BootstrapSubnet(t, "tf-test-subnet", testNetworkName)
-	networkAttachmentName := acctest.BootstrapNetworkAttachment(t, "tf-test-attachment", subnetName)
+	testNetworkName := tpgcompute.BootstrapSharedTestNetwork(t, "attachment-network")
+	subnetName := tpgcompute.BootstrapSubnet(t, "tf-test-subnet", testNetworkName)
+	networkAttachmentName := tpgcompute.BootstrapNetworkAttachment(t, "tf-test-attachment", subnetName)
 
 	// Need to have the full network attachment name in the format project/{project_id}/regions/{region_id}/networkAttachments/{networkAttachmentName}
 	fullFormNetworkAttachmentName := fmt.Sprintf("projects/%s/regions/%s/networkAttachments/%s", envvar.GetTestProjectFromEnv(), envvar.GetTestRegionFromEnv(), networkAttachmentName)
@@ -2298,7 +2329,7 @@ func testAccCheckComputeInstanceTemplateDestroyProducer(t *testing.T) func(s *te
 			}
 
 			splits := strings.Split(rs.Primary.ID, "/")
-			_, err := config.NewComputeClient(config.UserAgent).InstanceTemplates.Get(
+			_, err := tpgcompute.NewClient(config, config.UserAgent).InstanceTemplates.Get(
 				config.Project, splits[len(splits)-1]).Do()
 			if err == nil {
 				return fmt.Errorf("Instance template still exists")
@@ -2332,7 +2363,7 @@ func testAccCheckComputeInstanceTemplateExistsInProject(t *testing.T, n, p strin
 
 		splits := strings.Split(rs.Primary.ID, "/")
 		templateName := splits[len(splits)-1]
-		found, err := config.NewComputeClient(config.UserAgent).InstanceTemplates.Get(
+		found, err := tpgcompute.NewClient(config, config.UserAgent).InstanceTemplates.Get(
 			p, templateName).View("FULL").Do()
 
 		if err != nil {
@@ -5636,4 +5667,46 @@ resource "google_compute_instance_template" "foobar" {
   }
 }
 `, context)
+}
+
+func testAccComputeInstanceTemplate_aliasIpv6Range(suffix string) string {
+	return fmt.Sprintf(`
+resource "google_compute_network" "custom-test" {
+  name                    = "tf-test-network-%s"
+  auto_create_subnetworks = false
+  enable_ula_internal_ipv6 = true
+}
+
+resource "google_compute_subnetwork" "custom-test" {
+  name             = "tf-test-subnetwork-%s"
+  region           = "us-central1"
+  network          = google_compute_network.custom-test.id
+  stack_type       = "IPV6_ONLY"
+  ipv6_access_type = "INTERNAL"
+
+  secondary_ip_range {
+    range_name    = "v6-ula"
+    ip_version    = "IPV6"
+  }
+}
+
+resource "google_compute_instance_template" "foobar" {
+  name         = "tf-test-template-%s"
+  machine_type = "e2-medium"
+
+  disk {
+    source_image = "debian-cloud/debian-11"
+    auto_delete  = true
+    boot         = true
+  }
+
+  network_interface {
+    subnetwork = google_compute_subnetwork.custom-test.name
+    stack_type = "IPV6_ONLY"
+    alias_ipv6_range {
+      ip_cidr_range         = "/96"
+    }
+  }
+}
+`, suffix, suffix, suffix)
 }

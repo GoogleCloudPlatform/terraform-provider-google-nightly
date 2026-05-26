@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebaseailogic"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = firebaseailogic.Product
 )
 
 func TestAccFirebaseAILogicPromptTemplate_firebaseailogicPromptTemplateFileExample(t *testing.T) {
@@ -156,8 +158,7 @@ func testAccCheckFirebaseAILogicPromptTemplateDestroyProducer(t *testing.T) func
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{FirebaseAILogicBasePath}}projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(firebaseailogic.Product, config)+"projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
 			if err != nil {
 				return err
 			}

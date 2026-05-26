@@ -14,8 +14,6 @@
 //	overwritten during the next generation cycle.
 //
 // ----------------------------------------------------------------------------
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
 package discoveryengine_test
 
 import (
@@ -23,6 +21,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/discoveryengine"
 )
 
 func TestAccDataSourceGoogleDiscoveryEngineDataStore_basic(t *testing.T) {

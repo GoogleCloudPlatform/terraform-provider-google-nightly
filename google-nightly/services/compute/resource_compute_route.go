@@ -115,6 +115,7 @@ func ResourceComputeRoute() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceComputeRouteCreate,
 		Read:   resourceComputeRouteRead,
+		Update: resourceComputeRouteUpdate,
 		Delete: resourceComputeRouteDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -128,6 +129,7 @@ func ResourceComputeRoute() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -430,6 +432,18 @@ NO_RESULTS_ON_PAGE if there are no results in the response.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -523,7 +537,7 @@ func resourceComputeRouteCreate(d *schema.ResourceData, meta interface{}) error 
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/routes")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/routes")
 	if err != nil {
 		return err
 	}
@@ -603,7 +617,7 @@ func resourceComputeRouteRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/routes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/routes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -649,78 +663,26 @@ func resourceComputeRouteRead(d *schema.ResourceData, meta interface{}) error {
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Route: %s", err)
 	}
 
-	if err := d.Set("dest_range", flattenComputeRouteDestRange(res["destRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("description", flattenComputeRouteDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("name", flattenComputeRouteName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("network", flattenComputeRouteNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("priority", flattenComputeRoutePriority(res["priority"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("tags", flattenComputeRouteTags(res["tags"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_gateway", flattenComputeRouteNextHopGateway(res["nextHopGateway"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_instance", flattenComputeRouteNextHopInstance(res["nextHopInstance"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_ip", flattenComputeRouteNextHopIp(res["nextHopIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_vpn_tunnel", flattenComputeRouteNextHopVpnTunnel(res["nextHopVpnTunnel"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_network", flattenComputeRouteNextHopNetwork(res["nextHopNetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_origin", flattenComputeRouteNextHopOrigin(res["nextHopOrigin"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_med", flattenComputeRouteNextHopMed(res["nextHopMed"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_inter_region_cost", flattenComputeRouteNextHopInterRegionCost(res["nextHopInterRegionCost"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_ilb", flattenComputeRouteNextHopIlb(res["nextHopIlb"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeRouteCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_peering", flattenComputeRouteNextHopPeering(res["nextHopPeering"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("warnings", flattenComputeRouteWarnings(res["warnings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("next_hop_hub", flattenComputeRouteNextHopHub(res["nextHopHub"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("route_type", flattenComputeRouteRouteType(res["routeType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("as_paths", flattenComputeRouteAsPaths(res["asPaths"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("route_status", flattenComputeRouteRouteStatus(res["routeStatus"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading Route: %s", err)
+	err = ResourceComputeRouteFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -744,7 +706,19 @@ func resourceComputeRouteRead(d *schema.ResourceData, meta interface{}) error {
 	return nil
 }
 
+func resourceComputeRouteUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceComputeRouteRead(d, meta)
+}
+
 func resourceComputeRouteDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeRoute without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Route %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -765,8 +739,7 @@ func resourceComputeRouteDelete(d *schema.ResourceData, meta interface{}) error 
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/routes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/routes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1065,7 +1038,7 @@ func expandComputeRouteNextHopInstance(v interface{}, d tpgresource.TerraformRes
 		return nil, err
 	}
 
-	nextInstance, err := config.NewComputeClient(userAgent).Instances.Get(val.Project, val.Zone, val.Name).Do()
+	nextInstance, err := NewClient(config, userAgent).Instances.Get(val.Project, val.Zone, val.Name).Do()
 	if err != nil {
 		return nil, err
 	}
@@ -1134,4 +1107,79 @@ func resourceComputeRouteDecoder(d *schema.ResourceData, meta interface{}, res m
 	}
 
 	return res, nil
+}
+
+func ResourceComputeRouteFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("dest_range", flattenComputeRouteDestRange(res["destRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("description", flattenComputeRouteDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("name", flattenComputeRouteName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("network", flattenComputeRouteNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("priority", flattenComputeRoutePriority(res["priority"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("tags", flattenComputeRouteTags(res["tags"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_gateway", flattenComputeRouteNextHopGateway(res["nextHopGateway"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_instance", flattenComputeRouteNextHopInstance(res["nextHopInstance"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_ip", flattenComputeRouteNextHopIp(res["nextHopIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_vpn_tunnel", flattenComputeRouteNextHopVpnTunnel(res["nextHopVpnTunnel"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_network", flattenComputeRouteNextHopNetwork(res["nextHopNetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_origin", flattenComputeRouteNextHopOrigin(res["nextHopOrigin"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_med", flattenComputeRouteNextHopMed(res["nextHopMed"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_inter_region_cost", flattenComputeRouteNextHopInterRegionCost(res["nextHopInterRegionCost"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_ilb", flattenComputeRouteNextHopIlb(res["nextHopIlb"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeRouteCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_peering", flattenComputeRouteNextHopPeering(res["nextHopPeering"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("warnings", flattenComputeRouteWarnings(res["warnings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("next_hop_hub", flattenComputeRouteNextHopHub(res["nextHopHub"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("route_type", flattenComputeRouteRouteType(res["routeType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("as_paths", flattenComputeRouteAsPaths(res["asPaths"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("route_status", flattenComputeRouteRouteStatus(res["routeStatus"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading Route: %s", err)
+	}
+	return nil
 }

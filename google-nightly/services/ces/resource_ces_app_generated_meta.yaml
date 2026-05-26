@@ -4,7 +4,7 @@ resource: google_ces_app
 generation_type: mmv1
 source_file: products/ces/App.yaml
 api_service_name: ces.googleapis.com
-api_version: v1
+api_version: v1beta
 api_resource_type_kind: App
 autogen_status: true
 fields:
@@ -67,6 +67,7 @@ fields:
     - api_field: pinned
     - api_field: rootAgent
     - api_field: timeZoneSettings.timeZone
+    - api_field: toolExecutionMode
     - api_field: updateTime
     - api_field: variableDeclarations.description
     - api_field: variableDeclarations.name
@@ -75,6 +76,7 @@ fields:
     - api_field: variableDeclarations.schema.anyOf
       json: true
     - api_field: variableDeclarations.schema.default
+      json: true
     - api_field: variableDeclarations.schema.defs
       json: true
     - api_field: variableDeclarations.schema.description
@@ -91,3 +93,5 @@ fields:
     - api_field: variableDeclarations.schema.title
     - api_field: variableDeclarations.schema.type
     - api_field: variableDeclarations.schema.uniqueItems
+    - field: deletion_policy
+      provider_only: true

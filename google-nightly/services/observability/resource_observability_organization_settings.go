@@ -192,7 +192,7 @@ func resourceObservabilityOrganizationSettingsCreate(d *schema.ResourceData, met
 		obj["kmsKeyName"] = kmsKeyNameProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ObservabilityBasePath}}organizations/{{organization}}/locations/{{location}}/settings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/locations/{{location}}/settings")
 	if err != nil {
 		return err
 	}
@@ -279,7 +279,7 @@ func resourceObservabilityOrganizationSettingsRead(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ObservabilityBasePath}}organizations/{{organization}}/locations/{{location}}/settings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/locations/{{location}}/settings")
 	if err != nil {
 		return err
 	}
@@ -306,17 +306,9 @@ func resourceObservabilityOrganizationSettingsRead(d *schema.ResourceData, meta 
 
 	log.Printf("[DEBUG] Finished reading ObservabilityOrganizationSettings %q: %#v", d.Id(), res)
 
-	if err := d.Set("default_storage_location", flattenObservabilityOrganizationSettingsDefaultStorageLocation(res["defaultStorageLocation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
-	}
-	if err := d.Set("kms_key_name", flattenObservabilityOrganizationSettingsKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
-	}
-	if err := d.Set("name", flattenObservabilityOrganizationSettingsName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
-	}
-	if err := d.Set("service_account_id", flattenObservabilityOrganizationSettingsServiceAccountId(res["serviceAccountId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	err = ResourceObservabilityOrganizationSettingsFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -379,7 +371,7 @@ func resourceObservabilityOrganizationSettingsUpdate(d *schema.ResourceData, met
 		obj["kmsKeyName"] = kmsKeyNameProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ObservabilityBasePath}}organizations/{{organization}}/locations/{{location}}/settings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/locations/{{location}}/settings")
 	if err != nil {
 		return err
 	}
@@ -488,4 +480,23 @@ func expandObservabilityOrganizationSettingsDefaultStorageLocation(v interface{}
 
 func expandObservabilityOrganizationSettingsKmsKeyName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceObservabilityOrganizationSettingsFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("default_storage_location", flattenObservabilityOrganizationSettingsDefaultStorageLocation(res["defaultStorageLocation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+	if err = d.Set("kms_key_name", flattenObservabilityOrganizationSettingsKmsKeyName(res["kmsKeyName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+	if err = d.Set("name", flattenObservabilityOrganizationSettingsName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+	if err = d.Set("service_account_id", flattenObservabilityOrganizationSettingsServiceAccountId(res["serviceAccountId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading OrganizationSettings: %s", err)
+	}
+
+	return nil
 }

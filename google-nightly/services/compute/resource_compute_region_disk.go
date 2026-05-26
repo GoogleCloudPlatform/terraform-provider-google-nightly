@@ -122,6 +122,7 @@ func ResourceComputeRegionDisk() *schema.Resource {
 			hyperDiskIopsUpdateDiffSuppress,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -276,6 +277,21 @@ Applicable only for bootable disks.`,
 				Elem: computeRegionDiskGuestOsFeaturesSchema(),
 				// Default schema.HashSchema is used.
 			},
+			"image": {
+				Type:             schema.TypeString,
+				Optional:         true,
+				ForceNew:         true,
+				DiffSuppressFunc: DiskImageDiffSuppress,
+				Description: `The image from which to initialize this disk. This can be
+one of: the image's 'self_link', 'projects/{project}/global/images/{image}',
+'projects/{project}/global/images/family/{family}', 'global/images/{image}',
+'global/images/family/{family}', 'family/{family}', '{project}/{family}',
+'{project}/{image}', '{family}', or '{image}'. If referred by family, the
+images names must include the family name. If they don't, use the
+[google_compute_image data source](/docs/providers/google/d/compute_image.html).
+For instance, the image 'centos-6-v20180104' includes its family name 'centos-6'.
+These images can be referred by family name here.`,
+			},
 			"interface": {
 				Type:             schema.TypeString,
 				Optional:         true,
@@ -382,6 +398,54 @@ For example, the following are valid values:
 * zones/{zone}/disks/{disk}
 * regions/{region}/disks/{disk}`,
 			},
+			"source_image_encryption_key": {
+				Type:     schema.TypeList,
+				Optional: true,
+				ForceNew: true,
+				Description: `The customer-supplied encryption key of the source image. Required if
+the source image is protected by a customer-supplied encryption key.`,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"kms_key_name": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							ForceNew:    true,
+							Description: `The name of the encryption key that is stored in Google Cloud KMS.`,
+						},
+						"kms_key_service_account": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							Description: `The service account used for the encryption request for the given KMS key.
+If absent, the Compute Engine Service Agent service account is used.`,
+						},
+						"raw_key": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							Description: `Specifies a 256-bit customer-supplied encryption key, encoded in
+RFC 4648 base64 to either encrypt or decrypt this resource.`,
+							Sensitive: true,
+						},
+						"rsa_encrypted_key": {
+							Type:     schema.TypeString,
+							Optional: true,
+							ForceNew: true,
+							Description: `Specifies an RFC 4648 base64 encoded, RSA-wrapped 2048-bit
+customer-supplied encryption key to either encrypt or decrypt
+this resource. You can provide either the rawKey or the rsaEncryptedKey.`,
+							Sensitive: true,
+						},
+						"sha256": {
+							Type:     schema.TypeString,
+							Computed: true,
+							Description: `The RFC 4648 base64 encoded SHA-256 hash of the customer-supplied
+encryption key that protects this resource.`,
+						},
+					},
+				},
+			},
 			"source_snapshot_encryption_key": {
 				Type:     schema.TypeList,
 				Optional: true,
@@ -404,6 +468,7 @@ key.`,
 							ForceNew: true,
 							Description: `Specifies a 256-bit customer-supplied encryption key, encoded in
 RFC 4648 base64 to either encrypt or decrypt this resource.`,
+							Sensitive: true,
 						},
 						"sha256": {
 							Type:     schema.TypeString,
@@ -462,6 +527,15 @@ internally during updates.`,
 be used to determine whether the image was taken from the current
 or a previous instance of a given disk name.`,
 			},
+			"source_image_id": {
+				Type:     schema.TypeString,
+				Computed: true,
+				Description: `The ID value of the image used to create this disk. This value
+identifies the exact image that was used to create this persistent
+disk. For example, if you created the persistent disk from an image
+that was later deleted and recreated under the same name, the source
+image ID would identify the exact version of the image that was used.`,
+			},
 			"source_snapshot_id": {
 				Type:     schema.TypeString,
 				Computed: true,
@@ -511,6 +585,18 @@ The name of the snapshot by default will be '{{disk-name}}-YYYYMMDD-HHmm'`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -543,6 +629,12 @@ func resourceComputeRegionDiskCreate(d *schema.ResourceData, meta interface{}) e
 		return err
 	} else if v, ok := d.GetOkExists("disk_encryption_key"); !tpgresource.IsEmptyValue(reflect.ValueOf(diskEncryptionKeyProp)) && (ok || !reflect.DeepEqual(v, diskEncryptionKeyProp)) {
 		obj["diskEncryptionKey"] = diskEncryptionKeyProp
+	}
+	sourceImageEncryptionKeyProp, err := expandComputeRegionDiskSourceImageEncryptionKey(d.Get("source_image_encryption_key"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("source_image_encryption_key"); !tpgresource.IsEmptyValue(reflect.ValueOf(sourceImageEncryptionKeyProp)) && (ok || !reflect.DeepEqual(v, sourceImageEncryptionKeyProp)) {
+		obj["sourceImageEncryptionKey"] = sourceImageEncryptionKeyProp
 	}
 	sourceSnapshotEncryptionKeyProp, err := expandComputeRegionDiskSourceSnapshotEncryptionKey(d.Get("source_snapshot_encryption_key"), d, config)
 	if err != nil {
@@ -658,13 +750,19 @@ func resourceComputeRegionDiskCreate(d *schema.ResourceData, meta interface{}) e
 	} else if v, ok := d.GetOkExists("snapshot"); !tpgresource.IsEmptyValue(reflect.ValueOf(snapshotProp)) && (ok || !reflect.DeepEqual(v, snapshotProp)) {
 		obj["sourceSnapshot"] = snapshotProp
 	}
+	imageProp, err := expandComputeRegionDiskImage(d.Get("image"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("image"); !tpgresource.IsEmptyValue(reflect.ValueOf(imageProp)) && (ok || !reflect.DeepEqual(v, imageProp)) {
+		obj["sourceImage"] = imageProp
+	}
 
 	obj, err = resourceComputeRegionDiskEncoder(d, meta, obj)
 	if err != nil {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/disks")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/disks")
 	if err != nil {
 		return err
 	}
@@ -748,7 +846,7 @@ func resourceComputeRegionDiskRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/disks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/disks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -804,96 +902,25 @@ func resourceComputeRegionDiskRead(d *schema.ResourceData, meta interface{}) err
 			return fmt.Errorf("Error setting create_snapshot_before_destroy: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading RegionDisk: %s", err)
 	}
 
-	if err := d.Set("disk_encryption_key", flattenComputeRegionDiskDiskEncryptionKey(res["diskEncryptionKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("source_snapshot_encryption_key", flattenComputeRegionDiskSourceSnapshotEncryptionKey(res["sourceSnapshotEncryptionKey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("source_snapshot_id", flattenComputeRegionDiskSourceSnapshotId(res["sourceSnapshotId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("label_fingerprint", flattenComputeRegionDiskLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeRegionDiskCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("description", flattenComputeRegionDiskDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("last_attach_timestamp", flattenComputeRegionDiskLastAttachTimestamp(res["lastAttachTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("last_detach_timestamp", flattenComputeRegionDiskLastDetachTimestamp(res["lastDetachTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("labels", flattenComputeRegionDiskLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("name", flattenComputeRegionDiskName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("size", flattenComputeRegionDiskSize(res["sizeGb"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("users", flattenComputeRegionDiskUsers(res["users"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("physical_block_size_bytes", flattenComputeRegionDiskPhysicalBlockSizeBytes(res["physicalBlockSizeBytes"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("replica_zones", flattenComputeRegionDiskReplicaZones(res["replicaZones"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("type", flattenComputeRegionDiskType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("source_disk", flattenComputeRegionDiskSourceDisk(res["sourceDisk"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("disk_id", flattenComputeRegionDiskDiskId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("source_disk_id", flattenComputeRegionDiskSourceDiskId(res["sourceDiskId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("async_primary_disk", flattenComputeRegionDiskAsyncPrimaryDisk(res["asyncPrimaryDisk"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("guest_os_features", flattenComputeRegionDiskGuestOsFeatures(res["guestOsFeatures"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("licenses", flattenComputeRegionDiskLicenses(res["licenses"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("access_mode", flattenComputeRegionDiskAccessMode(res["accessMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("provisioned_iops", flattenComputeRegionDiskProvisionedIops(res["provisionedIops"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("provisioned_throughput", flattenComputeRegionDiskProvisionedThroughput(res["provisionedThroughput"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenComputeRegionDiskTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenComputeRegionDiskEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("region", flattenComputeRegionDiskRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("snapshot", flattenComputeRegionDiskSnapshot(res["sourceSnapshot"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	err = ResourceComputeRegionDiskFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -924,6 +951,19 @@ func resourceComputeRegionDiskRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceComputeRegionDiskUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeRegionDisk().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeRegionDiskRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 
 	// 'config' is provided by the boilerplate.
@@ -1108,6 +1148,13 @@ func resourceComputeRegionDiskUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceComputeRegionDiskDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeRegionDisk without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RegionDisk %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1121,8 +1168,7 @@ func resourceComputeRegionDiskDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for RegionDisk: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/disks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/disks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1184,7 +1230,7 @@ func resourceComputeRegionDiskDelete(d *schema.ResourceData, meta interface{}) e
 			snapshotObj["snapshotEncryptionKey"] = snapshotEncryptionKey
 		}
 
-		snapshotUrl := fmt.Sprintf("%sprojects/%s/global/snapshots", config.ComputeBasePath, project)
+		snapshotUrl := fmt.Sprintf("%sprojects/%s/global/snapshots", transport_tpg.BaseUrl(Product, config), project)
 
 		res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 			Config:    config,
@@ -1220,7 +1266,7 @@ func resourceComputeRegionDiskDelete(d *schema.ResourceData, meta interface{}) e
 			}
 
 			// Get instance details using REST API
-			instanceUrl, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s", config.ComputeBasePath, instanceProject, instanceZone, instanceName))
+			instanceUrl, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s", transport_tpg.BaseUrl(Product, config), instanceProject, instanceZone, instanceName))
 			if err != nil {
 				return err
 			}
@@ -1258,7 +1304,7 @@ func resourceComputeRegionDiskDelete(d *schema.ResourceData, meta interface{}) e
 
 		for _, call := range detachCalls {
 			detachUrl := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s/detachDisk?deviceName=%s",
-				config.ComputeBasePath, call.project, call.zone, call.instance, call.deviceName)
+				transport_tpg.BaseUrl(Product, config), call.project, call.zone, call.instance, call.deviceName)
 
 			res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 				Config:    config,
@@ -1279,9 +1325,13 @@ func resourceComputeRegionDiskDelete(d *schema.ResourceData, meta interface{}) e
 				userAgent, d.Timeout(schema.TimeoutDelete))
 			if err != nil {
 				var opErr ComputeOperationError
-				if errors.As(err, &opErr) && len(opErr.Errors) == 1 && opErr.Errors[0].Code == "RESOURCE_NOT_FOUND" {
-					log.Printf("[WARN] instance %q was deleted while awaiting detach", call.instance)
-					continue
+				if errors.As(err, &opErr) {
+					if rawErrors, _ := opErr["errors"].([]interface{}); len(rawErrors) == 1 {
+						if errMap, _ := rawErrors[0].(map[string]interface{}); errMap["code"] == "RESOURCE_NOT_FOUND" {
+							log.Printf("[WARN] instance %q was deleted while awaiting detach", call.instance)
+							continue
+						}
+					}
 				}
 				return err
 			}
@@ -1376,6 +1426,10 @@ func flattenComputeRegionDiskDiskEncryptionKeySha256(v interface{}, d *schema.Re
 }
 
 func flattenComputeRegionDiskDiskEncryptionKeyKmsKeyName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeRegionDiskSourceImageId(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -1635,6 +1689,10 @@ func flattenComputeRegionDiskSnapshot(v interface{}, d *schema.ResourceData, con
 	return tpgresource.ConvertSelfLinkToV1(v.(string))
 }
 
+func flattenComputeRegionDiskImage(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func expandComputeRegionDiskDiskEncryptionKey(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	if v == nil {
 		return nil, nil
@@ -1691,6 +1749,76 @@ func expandComputeRegionDiskDiskEncryptionKeySha256(v interface{}, d tpgresource
 }
 
 func expandComputeRegionDiskDiskEncryptionKeyKmsKeyName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandComputeRegionDiskSourceImageEncryptionKey(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedRawKey, err := expandComputeRegionDiskSourceImageEncryptionKeyRawKey(original["raw_key"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedRawKey); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["rawKey"] = transformedRawKey
+	}
+
+	transformedRsaEncryptedKey, err := expandComputeRegionDiskSourceImageEncryptionKeyRsaEncryptedKey(original["rsa_encrypted_key"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedRsaEncryptedKey); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["rsaEncryptedKey"] = transformedRsaEncryptedKey
+	}
+
+	transformedSha256, err := expandComputeRegionDiskSourceImageEncryptionKeySha256(original["sha256"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedSha256); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["sha256"] = transformedSha256
+	}
+
+	transformedKmsKeyName, err := expandComputeRegionDiskSourceImageEncryptionKeyKmsKeyName(original["kms_key_name"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedKmsKeyName); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["kmsKeyName"] = transformedKmsKeyName
+	}
+
+	transformedKmsKeyServiceAccount, err := expandComputeRegionDiskSourceImageEncryptionKeyKmsKeyServiceAccount(original["kms_key_service_account"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedKmsKeyServiceAccount); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["kmsKeyServiceAccount"] = transformedKmsKeyServiceAccount
+	}
+
+	return transformed, nil
+}
+
+func expandComputeRegionDiskSourceImageEncryptionKeyRawKey(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandComputeRegionDiskSourceImageEncryptionKeyRsaEncryptedKey(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandComputeRegionDiskSourceImageEncryptionKeySha256(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandComputeRegionDiskSourceImageEncryptionKeyKmsKeyName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandComputeRegionDiskSourceImageEncryptionKeyKmsKeyServiceAccount(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -1905,6 +2033,10 @@ func expandComputeRegionDiskSnapshot(v interface{}, d tpgresource.TerraformResou
 	return f.RelativeLink(), nil
 }
 
+func expandComputeRegionDiskImage(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func resourceComputeRegionDiskEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
 	config := meta.(*transport_tpg.Config)
 
@@ -2020,4 +2152,103 @@ func resourceComputeRegionDiskDecoder(d *schema.ResourceData, meta interface{}, 
 	}
 
 	return res, nil
+}
+
+func ResourceComputeRegionDiskFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("disk_encryption_key", flattenComputeRegionDiskDiskEncryptionKey(res["diskEncryptionKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("source_image_id", flattenComputeRegionDiskSourceImageId(res["sourceImageId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("source_snapshot_encryption_key", flattenComputeRegionDiskSourceSnapshotEncryptionKey(res["sourceSnapshotEncryptionKey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("source_snapshot_id", flattenComputeRegionDiskSourceSnapshotId(res["sourceSnapshotId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("label_fingerprint", flattenComputeRegionDiskLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeRegionDiskCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("description", flattenComputeRegionDiskDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("last_attach_timestamp", flattenComputeRegionDiskLastAttachTimestamp(res["lastAttachTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("last_detach_timestamp", flattenComputeRegionDiskLastDetachTimestamp(res["lastDetachTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("labels", flattenComputeRegionDiskLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("name", flattenComputeRegionDiskName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("size", flattenComputeRegionDiskSize(res["sizeGb"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("users", flattenComputeRegionDiskUsers(res["users"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("physical_block_size_bytes", flattenComputeRegionDiskPhysicalBlockSizeBytes(res["physicalBlockSizeBytes"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("replica_zones", flattenComputeRegionDiskReplicaZones(res["replicaZones"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("type", flattenComputeRegionDiskType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("source_disk", flattenComputeRegionDiskSourceDisk(res["sourceDisk"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("disk_id", flattenComputeRegionDiskDiskId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("source_disk_id", flattenComputeRegionDiskSourceDiskId(res["sourceDiskId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("async_primary_disk", flattenComputeRegionDiskAsyncPrimaryDisk(res["asyncPrimaryDisk"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("guest_os_features", flattenComputeRegionDiskGuestOsFeatures(res["guestOsFeatures"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("licenses", flattenComputeRegionDiskLicenses(res["licenses"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("access_mode", flattenComputeRegionDiskAccessMode(res["accessMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("provisioned_iops", flattenComputeRegionDiskProvisionedIops(res["provisionedIops"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("provisioned_throughput", flattenComputeRegionDiskProvisionedThroughput(res["provisionedThroughput"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenComputeRegionDiskTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenComputeRegionDiskEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("region", flattenComputeRegionDiskRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("snapshot", flattenComputeRegionDiskSnapshot(res["sourceSnapshot"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("image", flattenComputeRegionDiskImage(res["sourceImage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading RegionDisk: %s", err)
+	}
+	return nil
 }

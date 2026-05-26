@@ -100,6 +100,7 @@ func ResourceApigeeKeystoresAliasesSelfSignedCert() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceApigeeKeystoresAliasesSelfSignedCertCreate,
 		Read:   resourceApigeeKeystoresAliasesSelfSignedCertRead,
+		Update: resourceApigeeKeystoresAliasesSelfSignedCertUpdate,
 		Delete: resourceApigeeKeystoresAliasesSelfSignedCertDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -335,6 +336,19 @@ Flag is set to Yes if the certificate is valid, No if expired, or Not yet if not
 				Computed:    true,
 				Description: `Optional.Type of Alias`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -385,7 +399,7 @@ func resourceApigeeKeystoresAliasesSelfSignedCertCreate(d *schema.ResourceData, 
 		obj["certValidityInDays"] = certValidityInDaysProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/keystores/{{keystore}}/aliases?alias={{alias}}&format=selfsignedcert")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/keystores/{{keystore}}/aliases?alias={{alias}}&format=selfsignedcert")
 	if err != nil {
 		return err
 	}
@@ -458,7 +472,7 @@ func resourceApigeeKeystoresAliasesSelfSignedCertRead(d *schema.ResourceData, me
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/keystores/{{keystore}}/aliases/{{alias}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/keystores/{{keystore}}/aliases/{{alias}}")
 	if err != nil {
 		return err
 	}
@@ -485,17 +499,23 @@ func resourceApigeeKeystoresAliasesSelfSignedCertRead(d *schema.ResourceData, me
 
 	log.Printf("[DEBUG] Finished reading ApigeeKeystoresAliasesSelfSignedCert %q: %#v", d.Id(), res)
 
-	if err := d.Set("certs_info", flattenApigeeKeystoresAliasesSelfSignedCertCertsInfo(res["certsInfo"], d, config)); err != nil {
-		return fmt.Errorf("Error reading KeystoresAliasesSelfSignedCert: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("type", flattenApigeeKeystoresAliasesSelfSignedCertType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading KeystoresAliasesSelfSignedCert: %s", err)
-	}
-	if err := d.Set("alias", flattenApigeeKeystoresAliasesSelfSignedCertAlias(res["alias"], d, config)); err != nil {
-		return fmt.Errorf("Error reading KeystoresAliasesSelfSignedCert: %s", err)
-	}
-	if err := d.Set("subject_alternative_dns_names", flattenApigeeKeystoresAliasesSelfSignedCertSubjectAlternativeDnsNames(res["subjectAlternativeDnsNames"], d, config)); err != nil {
-		return fmt.Errorf("Error reading KeystoresAliasesSelfSignedCert: %s", err)
+
+	err = ResourceApigeeKeystoresAliasesSelfSignedCertFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -531,7 +551,19 @@ func resourceApigeeKeystoresAliasesSelfSignedCertRead(d *schema.ResourceData, me
 	return nil
 }
 
+func resourceApigeeKeystoresAliasesSelfSignedCertUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceApigeeKeystoresAliasesSelfSignedCertRead(d, meta)
+}
+
 func resourceApigeeKeystoresAliasesSelfSignedCertDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ApigeeKeystoresAliasesSelfSignedCert without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing KeystoresAliasesSelfSignedCert %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -540,7 +572,7 @@ func resourceApigeeKeystoresAliasesSelfSignedCertDelete(d *schema.ResourceData, 
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}organizations/{{org_id}}/environments/{{environment}}/keystores/{{keystore}}/aliases/{{alias}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{org_id}}/environments/{{environment}}/keystores/{{keystore}}/aliases/{{alias}}")
 	if err != nil {
 		return err
 	}
@@ -849,4 +881,23 @@ func expandApigeeKeystoresAliasesSelfSignedCertSubjectEmail(v interface{}, d tpg
 
 func expandApigeeKeystoresAliasesSelfSignedCertCertValidityInDays(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceApigeeKeystoresAliasesSelfSignedCertFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("certs_info", flattenApigeeKeystoresAliasesSelfSignedCertCertsInfo(res["certsInfo"], d, config)); err != nil {
+		return fmt.Errorf("Error reading KeystoresAliasesSelfSignedCert: %s", err)
+	}
+	if err = d.Set("type", flattenApigeeKeystoresAliasesSelfSignedCertType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading KeystoresAliasesSelfSignedCert: %s", err)
+	}
+	if err = d.Set("alias", flattenApigeeKeystoresAliasesSelfSignedCertAlias(res["alias"], d, config)); err != nil {
+		return fmt.Errorf("Error reading KeystoresAliasesSelfSignedCert: %s", err)
+	}
+	if err = d.Set("subject_alternative_dns_names", flattenApigeeKeystoresAliasesSelfSignedCertSubjectAlternativeDnsNames(res["subjectAlternativeDnsNames"], d, config)); err != nil {
+		return fmt.Errorf("Error reading KeystoresAliasesSelfSignedCert: %s", err)
+	}
+
+	return nil
 }

@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkconnectivity"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = networkconnectivity.Product
 )
 
 func TestAccNetworkConnectivityRegionalEndpoint_networkConnectivityRegionalEndpointRegionalAccessExample(t *testing.T) {
@@ -187,8 +190,7 @@ func testAccCheckNetworkConnectivityRegionalEndpointDestroyProducer(t *testing.T
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/regionalEndpoints/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(networkconnectivity.Product, config)+"projects/{{project}}/locations/{{location}}/regionalEndpoints/{{name}}")
 			if err != nil {
 				return err
 			}

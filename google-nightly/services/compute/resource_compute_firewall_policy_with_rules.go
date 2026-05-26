@@ -809,6 +809,19 @@ It can be set only if action = 'apply_security_profile_group' and cannot be set 
 				Computed:    true,
 				Description: `Server-defined URL for this resource with the resource id.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -858,7 +871,7 @@ func resourceComputeFirewallPolicyWithRulesCreate(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}locations/global/firewallPolicies?parentId={{parent}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/global/firewallPolicies?parentId={{parent}}")
 	if err != nil {
 		return err
 	}
@@ -979,7 +992,7 @@ func resourceComputeFirewallPolicyWithRulesRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}locations/global/firewallPolicies/{{policy_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/global/firewallPolicies/{{policy_id}}")
 	if err != nil {
 		return err
 	}
@@ -1018,38 +1031,23 @@ func resourceComputeFirewallPolicyWithRulesRead(d *schema.ResourceData, meta int
 		return nil
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeFirewallPolicyWithRulesCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("short_name", flattenComputeFirewallPolicyWithRulesShortName(res["shortName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
-	}
-	if err := d.Set("policy_id", flattenComputeFirewallPolicyWithRulesPolicyId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
-	}
-	if err := d.Set("description", flattenComputeFirewallPolicyWithRulesDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
-	}
-	if err := d.Set("rule", flattenComputeFirewallPolicyWithRulesRule(res["rules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
-	}
-	if err := d.Set("predefined_rules", flattenComputeFirewallPolicyWithRulesPredefinedRules(res["predefinedRules"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
-	}
-	if err := d.Set("fingerprint", flattenComputeFirewallPolicyWithRulesFingerprint(res["fingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
-	}
-	if err := d.Set("self_link", flattenComputeFirewallPolicyWithRulesSelfLink(res["selfLink"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
-	}
-	if err := d.Set("self_link_with_id", flattenComputeFirewallPolicyWithRulesSelfLinkWithId(res["selfLinkWithId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
-	}
-	if err := d.Set("rule_tuple_count", flattenComputeFirewallPolicyWithRulesRuleTupleCount(res["ruleTupleCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
-	}
-	if err := d.Set("parent", flattenComputeFirewallPolicyWithRulesParent(res["parent"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+
+	err = ResourceComputeFirewallPolicyWithRulesFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1068,6 +1066,19 @@ func resourceComputeFirewallPolicyWithRulesRead(d *schema.ResourceData, meta int
 }
 
 func resourceComputeFirewallPolicyWithRulesUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeFirewallPolicyWithRules().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeFirewallPolicyWithRulesRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1111,7 +1122,7 @@ func resourceComputeFirewallPolicyWithRulesUpdate(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}locations/global/firewallPolicies/{{policy_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/global/firewallPolicies/{{policy_id}}")
 	if err != nil {
 		return err
 	}
@@ -1155,6 +1166,13 @@ func resourceComputeFirewallPolicyWithRulesUpdate(d *schema.ResourceData, meta i
 }
 
 func resourceComputeFirewallPolicyWithRulesDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeFirewallPolicyWithRules without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing FirewallPolicyWithRules %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1163,7 +1181,7 @@ func resourceComputeFirewallPolicyWithRulesDelete(d *schema.ResourceData, meta i
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}locations/global/firewallPolicies/{{policy_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/global/firewallPolicies/{{policy_id}}")
 	if err != nil {
 		return err
 	}
@@ -2308,5 +2326,45 @@ func resourceComputeFirewallPolicyWithRulesPostCreateSetComputedFields(d *schema
 	if err := d.Set("policy_id", flattenComputeFirewallPolicyWithRulesPolicyId(res["id"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "policy_id": %s`, err)
 	}
+	return nil
+}
+
+func ResourceComputeFirewallPolicyWithRulesFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeFirewallPolicyWithRulesCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("short_name", flattenComputeFirewallPolicyWithRulesShortName(res["shortName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("policy_id", flattenComputeFirewallPolicyWithRulesPolicyId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("description", flattenComputeFirewallPolicyWithRulesDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("rule", flattenComputeFirewallPolicyWithRulesRule(res["rules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("predefined_rules", flattenComputeFirewallPolicyWithRulesPredefinedRules(res["predefinedRules"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("fingerprint", flattenComputeFirewallPolicyWithRulesFingerprint(res["fingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("self_link", flattenComputeFirewallPolicyWithRulesSelfLink(res["selfLink"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("self_link_with_id", flattenComputeFirewallPolicyWithRulesSelfLinkWithId(res["selfLinkWithId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("rule_tuple_count", flattenComputeFirewallPolicyWithRulesRuleTupleCount(res["ruleTupleCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+	if err = d.Set("parent", flattenComputeFirewallPolicyWithRulesParent(res["parent"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyWithRules: %s", err)
+	}
+
 	return nil
 }

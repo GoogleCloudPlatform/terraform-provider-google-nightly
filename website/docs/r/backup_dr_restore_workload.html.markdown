@@ -27,6 +27,10 @@ The resource represents the restore operation and its result.
 
 
 
+~> **Warning:** All arguments including the following potentially sensitive
+values will be stored in the raw state as plain text: `compute_instance_restore_properties.disks.disk_encryption_key.raw_key`, `compute_instance_restore_properties.disks.disk_encryption_key.rsa_encrypted_key`, `compute_instance_restore_properties.instance_encryption_key.raw_key`, `compute_instance_restore_properties.instance_encryption_key.rsa_encrypted_key`, `disk_restore_properties.disk_encryption_key.raw_key`, `disk_restore_properties.disk_encryption_key.rsa_encrypted_key`.
+[Read more about sensitive data in state](https://developer.hashicorp.com/terraform/language/manage-sensitive-data).
+
 ## Example Usage - Backup Dr Restore Workload Compute Instance Basic
 
 
@@ -298,6 +302,12 @@ The following arguments are supported:
   Optional. If true (default), running terraform destroy will delete the live resource in GCP.
   If false, only the restore record is removed from the state, leaving the resource active.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_compute_instance_target_environment"></a>The `compute_instance_target_environment` block supports:
@@ -579,10 +589,12 @@ The following arguments are supported:
 * `raw_key` -
   (Optional)
   Optional. Specifies a 256-bit customer-supplied encryption key.
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `rsa_encrypted_key` -
   (Optional)
   Optional. RSA-wrapped 2048-bit customer-supplied encryption key.
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `kms_key_name` -
   (Optional)
@@ -612,9 +624,11 @@ The following arguments are supported:
 
 * `raw_key` -
   (Optional)
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `rsa_encrypted_key` -
   (Optional)
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `kms_key_name` -
   (Optional)
@@ -977,9 +991,11 @@ The following arguments are supported:
 
 * `raw_key` -
   (Optional)
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `rsa_encrypted_key` -
   (Optional)
+  **Note**: This property is sensitive and will not be displayed in the plan.
 
 * `kms_key_name` -
   (Optional)

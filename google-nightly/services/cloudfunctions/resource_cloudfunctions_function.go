@@ -160,6 +160,7 @@ func ResourceCloudFunctionsFunction() *schema.Resource {
 		},
 
 		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 			tpgresource.DefaultProviderProject,
 			tpgresource.DefaultProviderRegion,
 			tpgresource.SetLabelsDiff,
@@ -550,6 +551,9 @@ func ResourceCloudFunctionsFunction() *schema.Resource {
 				Computed:    true,
 				Description: `The version identifier of the Cloud Function. Each deployment attempt results in a new version of a function being created.`,
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -701,7 +705,7 @@ func resourceCloudFunctionsCreate(d *schema.ResourceData, meta interface{}) erro
 	// source code and we need to try the whole creation again.
 	rerr := transport_tpg.Retry(transport_tpg.RetryOptions{
 		RetryFunc: func() error {
-			op, err := config.NewCloudFunctionsClient(userAgent).Projects.Locations.Functions.Create(
+			op, err := NewClient(config, userAgent).Projects.Locations.Functions.Create(
 				cloudFuncId.locationId(), function).Do()
 			if err != nil {
 				return err
@@ -735,7 +739,7 @@ func resourceCloudFunctionsRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	function, err := config.NewCloudFunctionsClient(userAgent).Projects.Locations.Functions.Get(cloudFuncId.CloudFunctionId()).Do()
+	function, err := NewClient(config, userAgent).Projects.Locations.Functions.Get(cloudFuncId.CloudFunctionId()).Do()
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, fmt.Sprintf("Target CloudFunctions Function %q", cloudFuncId.Name))
 	}
@@ -884,11 +888,20 @@ func resourceCloudFunctionsRead(d *schema.ResourceData, meta interface{}) error 
 		d.Set("automatic_update_policy", nil)
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func resourceCloudFunctionsUpdate(d *schema.ResourceData, meta interface{}) error {
 	log.Printf("[DEBUG]: Updating google_cloudfunctions_function")
+
+	if tpgresource.DeletionPolicyPreUpdate(d, ResourceCloudFunctionsFunction) {
+		return ResourceCloudFunctionsFunction().Read(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -906,7 +919,7 @@ func resourceCloudFunctionsUpdate(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	// The full function needs to supplied in the PATCH call to evaluate some Organization Policies. https://github.com/hashicorp/terraform-provider-google/issues/6603
-	function, err := config.NewCloudFunctionsClient(userAgent).Projects.Locations.Functions.Get(cloudFuncId.CloudFunctionId()).Do()
+	function, err := NewClient(config, userAgent).Projects.Locations.Functions.Get(cloudFuncId.CloudFunctionId()).Do()
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, fmt.Sprintf("Target CloudFunctions Function %q", cloudFuncId.Name))
 	}
@@ -1060,7 +1073,7 @@ func resourceCloudFunctionsUpdate(d *schema.ResourceData, meta interface{}) erro
 		updateMask := strings.Join(updateMaskArr, ",")
 		rerr := transport_tpg.Retry(transport_tpg.RetryOptions{
 			RetryFunc: func() error {
-				op, err := config.NewCloudFunctionsClient(userAgent).Projects.Locations.Functions.Patch(function.Name, function).
+				op, err := NewClient(config, userAgent).Projects.Locations.Functions.Patch(function.Name, function).
 					UpdateMask(updateMask).Do()
 				if err != nil {
 					return err
@@ -1081,6 +1094,13 @@ func resourceCloudFunctionsUpdate(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceCloudFunctionsDestroy(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1092,7 +1112,7 @@ func resourceCloudFunctionsDestroy(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	op, err := config.NewCloudFunctionsClient(userAgent).Projects.Locations.Functions.Delete(cloudFuncId.CloudFunctionId()).Do()
+	op, err := NewClient(config, userAgent).Projects.Locations.Functions.Delete(cloudFuncId.CloudFunctionId()).Do()
 	if err != nil {
 		return err
 	}

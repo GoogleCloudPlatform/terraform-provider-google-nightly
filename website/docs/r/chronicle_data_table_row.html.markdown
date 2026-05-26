@@ -23,12 +23,10 @@ description: |-
 
 Represents a single row in a data table.
 
-~> **Warning:** This resource is in beta, and should be used with the terraform-provider-google-beta provider.
-See [Provider Versions](../guides/provider_versions.html.markdown) for more details on beta resources.
 
 To get more information about DataTableRow, see:
 
-* [API documentation](https://cloud.google.com/chronicle/docs/reference/rest/v1beta/projects.locations.instances.dataTables.dataTableRows)
+* [API documentation](https://cloud.google.com/chronicle/docs/reference/rest/v1/projects.locations.instances.dataTables.dataTableRows)
 * How-to Guides
     * [Google SecOps Guides](https://cloud.google.com/chronicle/docs/secops/secops-overview)
 
@@ -37,7 +35,6 @@ To get more information about DataTableRow, see:
 
 ```hcl
 resource "google_chronicle_data_table" "example_dt" {
-  provider       = google-beta
   location       = "us"
   instance = "00000000-0000-0000-0000-000000000000"
   data_table_id  = "terraform_test"
@@ -55,7 +52,6 @@ resource "google_chronicle_data_table" "example_dt" {
 }
 
 resource "google_chronicle_data_table_row" "example_row" {
-  provider       = google-beta
   location       = "us"
   instance       = "00000000-0000-0000-0000-000000000000"
   data_table_id  = google_chronicle_data_table.example_dt.data_table_id
@@ -119,6 +115,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 ## Attributes Reference

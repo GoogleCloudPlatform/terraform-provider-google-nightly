@@ -152,6 +152,7 @@ func ResourceFirestoreIndex() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -195,7 +196,7 @@ composite index is not directional, the '__name__' will be ordered
 							Optional:     true,
 							ForceNew:     true,
 							ValidateFunc: verify.ValidateEnum([]string{"CONTAINS", ""}),
-							Description: `Indicates that this field supports operations on arrayValues. Only one of 'order', 'arrayConfig', and
+							Description: `Indicates that this field supports operations on arrayValues. Only one of 'order', 'arrayConfig', 'searchConfig' and
 'vectorConfig' can be specified. Possible values: ["CONTAINS"]`,
 						},
 						"field_path": {
@@ -210,13 +211,76 @@ composite index is not directional, the '__name__' will be ordered
 							ForceNew:     true,
 							ValidateFunc: verify.ValidateEnum([]string{"ASCENDING", "DESCENDING", ""}),
 							Description: `Indicates that this field supports ordering by the specified order or comparing using =, <, <=, >, >=.
-Only one of 'order', 'arrayConfig', and 'vectorConfig' can be specified. Possible values: ["ASCENDING", "DESCENDING"]`,
+Only one of 'order', 'arrayConfig', 'searchConfig' and 'vectorConfig' can be specified. Possible values: ["ASCENDING", "DESCENDING"]`,
+						},
+						"search_config": {
+							Type:     schema.TypeList,
+							Optional: true,
+							ForceNew: true,
+							Description: `Indicates that this field supports text or geo-search operations. Only one of 'order', 'arrayConfig', 'searchConfig' and
+'vectorConfig' can be specified.`,
+							MaxItems: 1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"geo_spec": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										ForceNew:    true,
+										Description: `The specification for building a geo search index for a field.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"geo_json_indexing_disabled": {
+													Type:     schema.TypeBool,
+													Required: true,
+													ForceNew: true,
+													Description: `If true, disables GeoJSON indexing for the field. By default, GeoJSON points are indexed.
+Firestore GeoPoints are indexed regardless of the value of this field.`,
+												},
+											},
+										},
+									},
+									"text_spec": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										ForceNew:    true,
+										Description: `The specification for building a text search index for a field.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"index_specs": {
+													Type:        schema.TypeList,
+													Required:    true,
+													ForceNew:    true,
+													Description: `Specifications for how the field should be indexed. Repeated so that the field can be indexed in multiple ways.`,
+													Elem: &schema.Resource{
+														Schema: map[string]*schema.Schema{
+															"index_type": {
+																Type:        schema.TypeString,
+																Optional:    true,
+																ForceNew:    true,
+																Description: `Ways to index the text field value.`,
+															},
+															"match_type": {
+																Type:        schema.TypeString,
+																Optional:    true,
+																ForceNew:    true,
+																Description: `How to match the text field value.`,
+															},
+														},
+													},
+												},
+											},
+										},
+									},
+								},
+							},
 						},
 						"vector_config": {
 							Type:     schema.TypeList,
 							Optional: true,
 							ForceNew: true,
-							Description: `Indicates that this field supports vector search operations. Only one of 'order', 'arrayConfig', and
+							Description: `Indicates that this field supports vector search operations. Only one of 'order', 'arrayConfig', 'searchConfig' and
 'vectorConfig' can be specified. Vector Fields should come after the field path '__name__'.`,
 							MaxItems: 1,
 							Elem: &schema.Resource{
@@ -301,21 +365,23 @@ with the same dimension.`,
 				Description: `Whether to skip waiting for the index to be created.`,
 				Default:     false,
 			},
-			"deletion_policy": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				ValidateFunc: verify.ValidateEnum([]string{"DELETE", "PREVENT", ""}),
-				Description: `Deletion behavior for this index.
-If the deletion policy is 'PREVENT', the index cannot be deleted and a terraform destroy will fail.
-If the deletion policy is 'DELETE', the index will both be removed from Terraform state and deleted from Google Cloud upon destruction.
-The default value is 'DELETE'. Default value: "DELETE" Possible values: ["DELETE", "PREVENT"]`,
-				Default: "DELETE",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -478,7 +544,7 @@ func resourceFirestoreIndexRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -519,34 +585,24 @@ func resourceFirestoreIndexRead(d *schema.ResourceData, meta interface{}) error 
 		}
 	}
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DELETE"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Index: %s", err)
 	}
 
-	if err := d.Set("name", flattenFirestoreIndexName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Index: %s", err)
-	}
-	if err := d.Set("query_scope", flattenFirestoreIndexQueryScope(res["queryScope"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Index: %s", err)
-	}
-	if err := d.Set("api_scope", flattenFirestoreIndexApiScope(res["apiScope"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Index: %s", err)
-	}
-	if err := d.Set("density", flattenFirestoreIndexDensity(res["density"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Index: %s", err)
-	}
-	if err := d.Set("multikey", flattenFirestoreIndexMultikey(res["multikey"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Index: %s", err)
-	}
-	if err := d.Set("unique", flattenFirestoreIndexUnique(res["unique"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Index: %s", err)
-	}
-	if err := d.Set("fields", flattenFirestoreIndexFields(res["fields"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Index: %s", err)
+	err = ResourceFirestoreIndexFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -565,11 +621,18 @@ func resourceFirestoreIndexRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceFirestoreIndexUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceFirestoreIndexRead(d, meta)
 }
 
 func resourceFirestoreIndexDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy FirestoreIndex without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Index %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -583,8 +646,7 @@ func resourceFirestoreIndexDelete(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("Error fetching project for Index: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirestoreBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -597,9 +659,6 @@ func resourceFirestoreIndexDelete(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	headers := make(http.Header)
-	if d.Get("deletion_policy").(string) == "PREVENT" {
-		return fmt.Errorf("cannot destroy google_firestore_index resource with id : %q  without setting deletion_policy=DELETE and running `terraform apply`", d.Id())
-	}
 
 	log.Printf("[DEBUG] Deleting Index %q", d.Id())
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
@@ -703,6 +762,7 @@ func flattenFirestoreIndexFields(v interface{}, d *schema.ResourceData, config *
 			"field_path":    flattenFirestoreIndexFieldsFieldPath(original["fieldPath"], d, config),
 			"order":         flattenFirestoreIndexFieldsOrder(original["order"], d, config),
 			"array_config":  flattenFirestoreIndexFieldsArrayConfig(original["arrayConfig"], d, config),
+			"search_config": flattenFirestoreIndexFieldsSearchConfig(original["searchConfig"], d, config),
 			"vector_config": flattenFirestoreIndexFieldsVectorConfig(original["vectorConfig"], d, config),
 		})
 	}
@@ -717,6 +777,75 @@ func flattenFirestoreIndexFieldsOrder(v interface{}, d *schema.ResourceData, con
 }
 
 func flattenFirestoreIndexFieldsArrayConfig(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenFirestoreIndexFieldsSearchConfig(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["text_spec"] =
+		flattenFirestoreIndexFieldsSearchConfigTextSpec(original["textSpec"], d, config)
+	transformed["geo_spec"] =
+		flattenFirestoreIndexFieldsSearchConfigGeoSpec(original["geoSpec"], d, config)
+	return []interface{}{transformed}
+}
+func flattenFirestoreIndexFieldsSearchConfigTextSpec(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["index_specs"] =
+		flattenFirestoreIndexFieldsSearchConfigTextSpecIndexSpecs(original["indexSpecs"], d, config)
+	return []interface{}{transformed}
+}
+func flattenFirestoreIndexFieldsSearchConfigTextSpecIndexSpecs(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return v
+	}
+	l := v.([]interface{})
+	transformed := make([]interface{}, 0, len(l))
+	for _, raw := range l {
+		original := raw.(map[string]interface{})
+		if len(original) < 1 {
+			// Do not include empty json objects coming back from the api
+			continue
+		}
+		transformed = append(transformed, map[string]interface{}{
+			"index_type": flattenFirestoreIndexFieldsSearchConfigTextSpecIndexSpecsIndexType(original["indexType"], d, config),
+			"match_type": flattenFirestoreIndexFieldsSearchConfigTextSpecIndexSpecsMatchType(original["matchType"], d, config),
+		})
+	}
+	return transformed
+}
+func flattenFirestoreIndexFieldsSearchConfigTextSpecIndexSpecsIndexType(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenFirestoreIndexFieldsSearchConfigTextSpecIndexSpecsMatchType(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenFirestoreIndexFieldsSearchConfigGeoSpec(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	// work around the inability to set default map fields
+	if v != nil && len(v.(map[string]interface{})) == 0 {
+		transformed := make(map[string]interface{})
+		transformed["geo_json_indexing_disabled"] = false
+		return []interface{}{transformed}
+	} else if v != nil && len(v.(map[string]interface{})) == 1 {
+		transformed := make(map[string]interface{})
+		transformed["geo_json_indexing_disabled"] = v.(map[string]interface{})["geoJsonIndexingDisabled"]
+		return []interface{}{transformed}
+	}
 	return v
 }
 
@@ -822,6 +951,13 @@ func expandFirestoreIndexFields(v interface{}, d tpgresource.TerraformResourceDa
 			transformed["arrayConfig"] = transformedArrayConfig
 		}
 
+		transformedSearchConfig, err := expandFirestoreIndexFieldsSearchConfig(original["search_config"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedSearchConfig); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["searchConfig"] = transformedSearchConfig
+		}
+
 		transformedVectorConfig, err := expandFirestoreIndexFieldsVectorConfig(original["vector_config"], d, config)
 		if err != nil {
 			return nil, err
@@ -843,6 +979,123 @@ func expandFirestoreIndexFieldsOrder(v interface{}, d tpgresource.TerraformResou
 }
 
 func expandFirestoreIndexFieldsArrayConfig(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandFirestoreIndexFieldsSearchConfig(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedTextSpec, err := expandFirestoreIndexFieldsSearchConfigTextSpec(original["text_spec"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedTextSpec); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["textSpec"] = transformedTextSpec
+	}
+
+	transformedGeoSpec, err := expandFirestoreIndexFieldsSearchConfigGeoSpec(original["geo_spec"], d, config)
+	if err != nil {
+		return nil, err
+	} else {
+		transformed["geoSpec"] = transformedGeoSpec
+	}
+
+	return transformed, nil
+}
+
+func expandFirestoreIndexFieldsSearchConfigTextSpec(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedIndexSpecs, err := expandFirestoreIndexFieldsSearchConfigTextSpecIndexSpecs(original["index_specs"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedIndexSpecs); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["indexSpecs"] = transformedIndexSpecs
+	}
+
+	return transformed, nil
+}
+
+func expandFirestoreIndexFieldsSearchConfigTextSpecIndexSpecs(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	req := make([]interface{}, 0, len(l))
+	for _, raw := range l {
+		if raw == nil {
+			continue
+		}
+		original := raw.(map[string]interface{})
+		transformed := make(map[string]interface{})
+
+		transformedIndexType, err := expandFirestoreIndexFieldsSearchConfigTextSpecIndexSpecsIndexType(original["index_type"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedIndexType); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["indexType"] = transformedIndexType
+		}
+
+		transformedMatchType, err := expandFirestoreIndexFieldsSearchConfigTextSpecIndexSpecsMatchType(original["match_type"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedMatchType); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["matchType"] = transformedMatchType
+		}
+
+		req = append(req, transformed)
+	}
+	return req, nil
+}
+
+func expandFirestoreIndexFieldsSearchConfigTextSpecIndexSpecsIndexType(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandFirestoreIndexFieldsSearchConfigTextSpecIndexSpecsMatchType(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandFirestoreIndexFieldsSearchConfigGeoSpec(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedGeoJsonIndexingDisabled, err := expandFirestoreIndexFieldsSearchConfigGeoSpecGeoJsonIndexingDisabled(original["geo_json_indexing_disabled"], d, config)
+	if err != nil {
+		return nil, err
+	} else {
+		transformed["geoJsonIndexingDisabled"] = transformedGeoJsonIndexingDisabled
+	}
+
+	return transformed, nil
+}
+
+func expandFirestoreIndexFieldsSearchConfigGeoSpecGeoJsonIndexingDisabled(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -905,4 +1158,32 @@ func resourceFirestoreIndexEncoder(d *schema.ResourceData, meta interface{}, obj
 	delete(obj, "database")
 	delete(obj, "collection")
 	return obj, nil
+}
+
+func ResourceFirestoreIndexFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenFirestoreIndexName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Index: %s", err)
+	}
+	if err = d.Set("query_scope", flattenFirestoreIndexQueryScope(res["queryScope"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Index: %s", err)
+	}
+	if err = d.Set("api_scope", flattenFirestoreIndexApiScope(res["apiScope"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Index: %s", err)
+	}
+	if err = d.Set("density", flattenFirestoreIndexDensity(res["density"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Index: %s", err)
+	}
+	if err = d.Set("multikey", flattenFirestoreIndexMultikey(res["multikey"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Index: %s", err)
+	}
+	if err = d.Set("unique", flattenFirestoreIndexUnique(res["unique"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Index: %s", err)
+	}
+	if err = d.Set("fields", flattenFirestoreIndexFields(res["fields"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Index: %s", err)
+	}
+
+	return nil
 }

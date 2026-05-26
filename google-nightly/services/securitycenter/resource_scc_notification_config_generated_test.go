@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/securitycenter"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = securitycenter.Product
 )
 
 func TestAccSecurityCenterNotificationConfig_sccNotificationConfigBasicExample(t *testing.T) {
@@ -110,8 +113,7 @@ func testAccCheckSecurityCenterNotificationConfigDestroyProducer(t *testing.T) f
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{SecurityCenterBasePath}}{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(securitycenter.Product, config)+"{{name}}")
 			if err != nil {
 				return err
 			}

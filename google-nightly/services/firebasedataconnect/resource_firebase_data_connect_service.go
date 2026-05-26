@@ -117,6 +117,7 @@ func ResourceFirebaseDataConnectService() *schema.Resource {
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DEFAULT"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -239,21 +240,17 @@ service.`,
 				Computed:    true,
 				Description: `Output only. [Output only] Update time stamp.`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `The deletion policy for the database. Setting the field to FORCE allows the
-Service to be deleted even if a Schema or Connector is present. By default,
-the Service deletion will only succeed when no Schema or Connectors are
-present.
-Possible values: DEFAULT, FORCE`,
-				Default: "DEFAULT",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/firebase_data_connect_service.html.markdown for specifics`,
 			},
 		},
 		UseJSONNumber: true,
@@ -293,7 +290,7 @@ func resourceFirebaseDataConnectServiceCreate(d *schema.ResourceData, meta inter
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseDataConnectBasePath}}projects/{{project}}/locations/{{location}}/services?serviceId={{service_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/services?serviceId={{service_id}}")
 	if err != nil {
 		return err
 	}
@@ -377,7 +374,7 @@ func resourceFirebaseDataConnectServiceRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseDataConnectBasePath}}projects/{{project}}/locations/{{location}}/services/{{service_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/services/{{service_id}}")
 	if err != nil {
 		return err
 	}
@@ -412,49 +409,24 @@ func resourceFirebaseDataConnectServiceRead(d *schema.ResourceData, meta interfa
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Service: %s", err)
 	}
 
-	if err := d.Set("display_name", flattenFirebaseDataConnectServiceDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("annotations", flattenFirebaseDataConnectServiceAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("reconciling", flattenFirebaseDataConnectServiceReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("etag", flattenFirebaseDataConnectServiceEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("name", flattenFirebaseDataConnectServiceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("create_time", flattenFirebaseDataConnectServiceCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("update_time", flattenFirebaseDataConnectServiceUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("labels", flattenFirebaseDataConnectServiceLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("uid", flattenFirebaseDataConnectServiceUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenFirebaseDataConnectServiceEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenFirebaseDataConnectServiceTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenFirebaseDataConnectServiceEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Service: %s", err)
+	err = ResourceFirebaseDataConnectServiceFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -485,6 +457,19 @@ func resourceFirebaseDataConnectServiceRead(d *schema.ResourceData, meta interfa
 }
 
 func resourceFirebaseDataConnectServiceUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceFirebaseDataConnectService().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceFirebaseDataConnectServiceRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -545,7 +530,7 @@ func resourceFirebaseDataConnectServiceUpdate(d *schema.ResourceData, meta inter
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseDataConnectBasePath}}projects/{{project}}/locations/{{location}}/services/{{service_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/services/{{service_id}}")
 	if err != nil {
 		return err
 	}
@@ -613,6 +598,13 @@ func resourceFirebaseDataConnectServiceUpdate(d *schema.ResourceData, meta inter
 }
 
 func resourceFirebaseDataConnectServiceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy FirebaseDataConnectService without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Service %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -626,8 +618,7 @@ func resourceFirebaseDataConnectServiceDelete(d *schema.ResourceData, meta inter
 		return fmt.Errorf("Error fetching project for Service: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseDataConnectBasePath}}projects/{{project}}/locations/{{location}}/services/{{service_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/services/{{service_id}}")
 	if err != nil {
 		return err
 	}
@@ -690,9 +681,6 @@ func resourceFirebaseDataConnectServiceImport(d *schema.ResourceData, meta inter
 	d.SetId(id)
 
 	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -806,4 +794,47 @@ func expandFirebaseDataConnectServiceEffectiveLabels(v interface{}, d tpgresourc
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceFirebaseDataConnectServiceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("display_name", flattenFirebaseDataConnectServiceDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("annotations", flattenFirebaseDataConnectServiceAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("reconciling", flattenFirebaseDataConnectServiceReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("etag", flattenFirebaseDataConnectServiceEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("name", flattenFirebaseDataConnectServiceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("create_time", flattenFirebaseDataConnectServiceCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("update_time", flattenFirebaseDataConnectServiceUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("labels", flattenFirebaseDataConnectServiceLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("uid", flattenFirebaseDataConnectServiceUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenFirebaseDataConnectServiceEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenFirebaseDataConnectServiceTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenFirebaseDataConnectServiceEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+
+	return nil
 }

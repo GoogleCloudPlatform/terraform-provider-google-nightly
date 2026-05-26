@@ -25,6 +25,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/activedirectory"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -118,7 +119,7 @@ func testAccCheckActiveDirectoryDomainDestroyProducer(t *testing.T) func(s *terr
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ActiveDirectoryBasePath}}{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(activedirectory.Product, config)+"{{name}}")
 			if err != nil {
 				return err
 			}

@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanagerregional"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = secretmanagerregional.Product
 )
 
 func TestAccSecretManagerRegionalRegionalSecret_regionalSecretConfigBasicExample(t *testing.T) {
@@ -110,7 +114,7 @@ func TestAccSecretManagerRegionalRegionalSecret_regionalSecretWithCmekExample(t 
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"kms_key_name":  acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name":  kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"secret_id":     "tf-test-tf-reg-secret" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
@@ -409,8 +413,7 @@ func testAccCheckSecretManagerRegionalRegionalSecretDestroyProducer(t *testing.T
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{SecretManagerRegionalBasePath}}projects/{{project}}/locations/{{location}}/secrets/{{secret_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(secretmanagerregional.Product, config)+"projects/{{project}}/locations/{{location}}/secrets/{{secret_id}}")
 			if err != nil {
 				return err
 			}

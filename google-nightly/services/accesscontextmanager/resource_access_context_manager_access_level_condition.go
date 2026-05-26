@@ -100,6 +100,7 @@ func ResourceAccessContextManagerAccessLevelCondition() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceAccessContextManagerAccessLevelConditionCreate,
 		Read:   resourceAccessContextManagerAccessLevelConditionRead,
+		Update: resourceAccessContextManagerAccessLevelConditionUpdate,
 		Delete: resourceAccessContextManagerAccessLevelConditionDelete,
 
 		Timeouts: &schema.ResourceTimeout{
@@ -317,6 +318,19 @@ Format: accessPolicies/{policy_id}/accessLevels/{short_name}`,
 				Computed:    true,
 				Description: `The name of the Access Policy this resource belongs to.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -385,7 +399,7 @@ func resourceAccessContextManagerAccessLevelConditionCreate(d *schema.ResourceDa
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{access_level}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{access_level}}")
 	if err != nil {
 		return err
 	}
@@ -454,8 +468,7 @@ func resourceAccessContextManagerAccessLevelConditionPollRead(d *schema.Resource
 	return func() (map[string]interface{}, error) {
 		config := meta.(*transport_tpg.Config)
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{access_level}}")
-
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{access_level}}")
 		if err != nil {
 			return nil, err
 		}
@@ -502,7 +515,7 @@ func resourceAccessContextManagerAccessLevelConditionRead(d *schema.ResourceData
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{access_level}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{access_level}}")
 	if err != nil {
 		return err
 	}
@@ -541,26 +554,23 @@ func resourceAccessContextManagerAccessLevelConditionRead(d *schema.ResourceData
 		return nil
 	}
 
-	if err := d.Set("ip_subnetworks", flattenNestedAccessContextManagerAccessLevelConditionIpSubnetworks(res["ipSubnetworks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("required_access_levels", flattenNestedAccessContextManagerAccessLevelConditionRequiredAccessLevels(res["requiredAccessLevels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
-	}
-	if err := d.Set("members", flattenNestedAccessContextManagerAccessLevelConditionMembers(res["members"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
-	}
-	if err := d.Set("negate", flattenNestedAccessContextManagerAccessLevelConditionNegate(res["negate"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
-	}
-	if err := d.Set("device_policy", flattenNestedAccessContextManagerAccessLevelConditionDevicePolicy(res["devicePolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
-	}
-	if err := d.Set("regions", flattenNestedAccessContextManagerAccessLevelConditionRegions(res["regions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
-	}
-	if err := d.Set("vpc_network_sources", flattenNestedAccessContextManagerAccessLevelConditionVpcNetworkSources(res["vpcNetworkSources"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
+
+	err = ResourceAccessContextManagerAccessLevelConditionFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -578,7 +588,19 @@ func resourceAccessContextManagerAccessLevelConditionRead(d *schema.ResourceData
 	return nil
 }
 
+func resourceAccessContextManagerAccessLevelConditionUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceAccessContextManagerAccessLevelConditionRead(d, meta)
+}
+
 func resourceAccessContextManagerAccessLevelConditionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy AccessContextManagerAccessLevelCondition without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing AccessLevelCondition %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -593,8 +615,7 @@ func resourceAccessContextManagerAccessLevelConditionDelete(d *schema.ResourceDa
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{access_level}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{access_level}}")
 	if err != nil {
 		return err
 	}
@@ -605,6 +626,7 @@ func resourceAccessContextManagerAccessLevelConditionDelete(d *schema.ResourceDa
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, "AccessLevelCondition")
 	}
+
 	url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": "basic.conditions"})
 	if err != nil {
 		return err
@@ -1189,4 +1211,32 @@ func resourceAccessContextManagerAccessLevelConditionListForPatch(d *schema.Reso
 		return ls, nil
 	}
 	return nil, nil
+}
+
+func ResourceAccessContextManagerAccessLevelConditionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("ip_subnetworks", flattenNestedAccessContextManagerAccessLevelConditionIpSubnetworks(res["ipSubnetworks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
+	}
+	if err = d.Set("required_access_levels", flattenNestedAccessContextManagerAccessLevelConditionRequiredAccessLevels(res["requiredAccessLevels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
+	}
+	if err = d.Set("members", flattenNestedAccessContextManagerAccessLevelConditionMembers(res["members"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
+	}
+	if err = d.Set("negate", flattenNestedAccessContextManagerAccessLevelConditionNegate(res["negate"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
+	}
+	if err = d.Set("device_policy", flattenNestedAccessContextManagerAccessLevelConditionDevicePolicy(res["devicePolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
+	}
+	if err = d.Set("regions", flattenNestedAccessContextManagerAccessLevelConditionRegions(res["regions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
+	}
+	if err = d.Set("vpc_network_sources", flattenNestedAccessContextManagerAccessLevelConditionVpcNetworkSources(res["vpcNetworkSources"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccessLevelCondition: %s", err)
+	}
+
+	return nil
 }

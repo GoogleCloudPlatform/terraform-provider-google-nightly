@@ -30,6 +30,14 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/artifactregistry"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudbuild"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudfunctions2"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +56,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = cloudfunctions2.Product
 )
 
 func TestAccCloudfunctions2function_cloudfunctions2BasicExample(t *testing.T) {
@@ -246,7 +255,7 @@ resource "google_cloudfunctions2_function" "function" {
 
 func TestAccCloudfunctions2function_cloudfunctions2BasicGcsExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -399,7 +408,7 @@ resource "google_cloudfunctions2_function" "function" {
 
 func TestAccCloudfunctions2function_cloudfunctions2BasicAuditlogsExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -681,7 +690,7 @@ resource "google_cloudfunctions2_function" "function" {
 
 func TestAccCloudfunctions2function_cloudfunctions2SecretEnvExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -796,7 +805,7 @@ resource "google_secret_manager_secret_version" "secret" {
 
 func TestAccCloudfunctions2function_cloudfunctions2SecretVolumeExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -1012,7 +1021,7 @@ func TestAccCloudfunctions2function_cloudfunctions2CmekExample(t *testing.T) {
 		"bucket_name":       "tf-test-gcf-source" + randomSuffix,
 		"cmek-repo":         "tf-test-cmek-repo" + randomSuffix,
 		"function":          "tf-test-function-cmek" + randomSuffix,
-		"kms_key_name":      acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name":      kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"kms_service_name":  "cloudkms.googleapis.com" + randomSuffix,
 		"location":          "us-central1",
 		"unencoded-ar-repo": "tf-test-ar-repo" + randomSuffix,
@@ -1528,8 +1537,7 @@ func testAccCheckCloudfunctions2functionDestroyProducer(t *testing.T) func(s *te
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{Cloudfunctions2BasePath}}projects/{{project}}/locations/{{location}}/functions/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(cloudfunctions2.Product, config)+"projects/{{project}}/locations/{{location}}/functions/{{name}}")
 			if err != nil {
 				return err
 			}

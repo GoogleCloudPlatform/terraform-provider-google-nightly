@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/datastream"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = datastream.Product
 )
 
 func TestAccDatastreamPrivateConnection_datastreamPrivateConnectionFullExample(t *testing.T) {
@@ -73,7 +76,7 @@ func TestAccDatastreamPrivateConnection_datastreamPrivateConnectionFullExample(t
 				ResourceName:            "google_datastream_private_connection.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"create_without_validation", "labels", "location", "private_connection_id", "terraform_labels"},
+				ImportStateVerifyIgnore: []string{"create_without_validation", "deletion_policy", "labels", "location", "private_connection_id", "terraform_labels"},
 			},
 			{
 				ResourceName:       "google_datastream_private_connection.default",
@@ -91,6 +94,65 @@ resource "google_datastream_private_connection" "default" {
 	display_name          = "Connection profile"
 	location              = "us-central1"
 	private_connection_id = "%{private_connection_id}"
+
+	labels = {
+		key = "value"
+	}
+
+	vpc_peering_config {
+		vpc = google_compute_network.default.id
+		subnet = "10.0.0.0/29"
+	}
+}
+
+resource "google_compute_network" "default" {
+  name = "%{network_name}"
+}
+`, context)
+}
+
+func TestAccDatastreamPrivateConnection_datastreamPrivateConnectionForceDeleteExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"network_name":          "tf-test-my-network" + randomSuffix,
+		"private_connection_id": "tf-test-my-connection" + randomSuffix,
+		"random_suffix":         randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckDatastreamPrivateConnectionDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDatastreamPrivateConnection_datastreamPrivateConnectionForceDeleteExample(context),
+			},
+			{
+				ResourceName:            "google_datastream_private_connection.default",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"create_without_validation", "deletion_policy", "labels", "location", "private_connection_id", "terraform_labels"},
+			},
+			{
+				ResourceName:       "google_datastream_private_connection.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccDatastreamPrivateConnection_datastreamPrivateConnectionForceDeleteExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_datastream_private_connection" "default" {
+	display_name          = "Connection profile"
+	location              = "us-central1"
+	private_connection_id = "%{private_connection_id}"
+	deletion_policy       = "FORCE"
 
 	labels = {
 		key = "value"
@@ -137,7 +199,7 @@ func TestAccDatastreamPrivateConnection_datastreamPrivateConnectionPscInterfaceE
 				ResourceName:            "google_datastream_private_connection.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"create_without_validation", "labels", "location", "private_connection_id", "terraform_labels"},
+				ImportStateVerifyIgnore: []string{"create_without_validation", "deletion_policy", "labels", "location", "private_connection_id", "terraform_labels"},
 			},
 			{
 				ResourceName:       "google_datastream_private_connection.default",
@@ -153,7 +215,7 @@ func testAccDatastreamPrivateConnection_datastreamPrivateConnectionPscInterfaceE
 	return acctest.Nprintf(`
 resource "google_datastream_private_connection" "default" {
     display_name          = "Connection profile"
-    location              = "us-central1"
+    location              = "us-west1"
     private_connection_id = "%{private_connection_id}"
 
     labels = {
@@ -167,7 +229,7 @@ resource "google_datastream_private_connection" "default" {
 
 resource "google_compute_network_attachment" "default" {
     name                  = "%{network_attachment_name}"
-    region                = "us-central1"
+    region                = "us-west1"
     description           = "basic network attachment description"
     connection_preference = "ACCEPT_AUTOMATIC"
 
@@ -183,7 +245,7 @@ resource "google_compute_network" "default" {
 
 resource "google_compute_subnetwork" "default" {
     name   = "%{subnetwork_name}"
-    region = "us-central1"
+    region = "us-west1"
 
     network       = google_compute_network.default.id
     ip_cidr_range = "10.0.0.0/16"
@@ -202,8 +264,7 @@ func testAccCheckDatastreamPrivateConnectionDestroyProducer(t *testing.T) func(s
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{DatastreamBasePath}}projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(datastream.Product, config)+"projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
 			if err != nil {
 				return err
 			}

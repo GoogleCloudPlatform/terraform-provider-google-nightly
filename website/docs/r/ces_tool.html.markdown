@@ -208,7 +208,7 @@ resource "google_ces_tool" "ces_tool_data_store_tool_engine_source_basic" {
             modality_type = "TEXT"
             rewriter_config {
                 model_settings {
-                    model = "gemini-2.5-flash"
+                    model = "gemini-3.0-flash-001"
                     temperature = 1
                 }
                 prompt = "example-prompt"
@@ -216,7 +216,7 @@ resource "google_ces_tool" "ces_tool_data_store_tool_engine_source_basic" {
             }
             summarization_config {
                 model_settings {
-                    model = "gemini-2.5-flash"
+                    model = "gemini-3.0-flash-001"
                     temperature = 1
                 }
                 prompt = "example-prompt"
@@ -238,7 +238,6 @@ resource "google_ces_tool" "ces_tool_data_store_tool_engine_source_basic" {
             }
             filter = "example_field: ANY(\"specific_example\")"
         }
-        max_results = 5
     }
 }
 ```
@@ -359,6 +358,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_client_function"></a>The `client_function` block supports:
@@ -624,9 +629,11 @@ The following arguments are supported:
   Structure is [documented below](#nested_data_store_tool_engine_source).
 
 * `max_results` -
-  (Optional)
+  (Optional, Deprecated)
   Number of search results to return per query.
   The default value is 10. The maximum allowed value is 10.
+
+  ~> **Warning:** `max_results` is deprecated and will be removed in a future release.
 
 * `modality_configs` -
   (Optional)

@@ -100,6 +100,7 @@ func ResourceOSConfigPatchDeployment() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceOSConfigPatchDeploymentCreate,
 		Read:   resourceOSConfigPatchDeploymentRead,
+		Update: resourceOSConfigPatchDeploymentUpdate,
 		Delete: resourceOSConfigPatchDeploymentDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +114,7 @@ func ResourceOSConfigPatchDeployment() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -1053,6 +1055,18 @@ A timestamp in RFC3339 UTC "Zulu" format, accurate to nanoseconds. Example: "201
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1114,7 +1128,7 @@ func resourceOSConfigPatchDeploymentCreate(d *schema.ResourceData, meta interfac
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OSConfigBasePath}}projects/{{project}}/patchDeployments?patchDeploymentId={{patch_deployment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/patchDeployments?patchDeploymentId={{patch_deployment_id}}")
 	if err != nil {
 		return err
 	}
@@ -1189,7 +1203,7 @@ func resourceOSConfigPatchDeploymentRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OSConfigBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1234,42 +1248,26 @@ func resourceOSConfigPatchDeploymentRead(d *schema.ResourceData, meta interface{
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading PatchDeployment: %s", err)
 	}
 
-	if err := d.Set("name", flattenOSConfigPatchDeploymentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("description", flattenOSConfigPatchDeploymentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("instance_filter", flattenOSConfigPatchDeploymentInstanceFilter(res["instanceFilter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("patch_config", flattenOSConfigPatchDeploymentPatchConfig(res["patchConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("duration", flattenOSConfigPatchDeploymentDuration(res["duration"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("create_time", flattenOSConfigPatchDeploymentCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("update_time", flattenOSConfigPatchDeploymentUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("last_execute_time", flattenOSConfigPatchDeploymentLastExecuteTime(res["lastExecuteTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("one_time_schedule", flattenOSConfigPatchDeploymentOneTimeSchedule(res["oneTimeSchedule"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("recurring_schedule", flattenOSConfigPatchDeploymentRecurringSchedule(res["recurringSchedule"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
-	}
-	if err := d.Set("rollout", flattenOSConfigPatchDeploymentRollout(res["rollout"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	err = ResourceOSConfigPatchDeploymentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1293,7 +1291,19 @@ func resourceOSConfigPatchDeploymentRead(d *schema.ResourceData, meta interface{
 	return nil
 }
 
+func resourceOSConfigPatchDeploymentUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceOSConfigPatchDeploymentRead(d, meta)
+}
+
 func resourceOSConfigPatchDeploymentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy OSConfigPatchDeployment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PatchDeployment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1307,8 +1317,7 @@ func resourceOSConfigPatchDeploymentDelete(d *schema.ResourceData, meta interfac
 		return fmt.Errorf("Error fetching project for PatchDeployment: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{OSConfigBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -3633,5 +3642,45 @@ func resourceOSConfigPatchDeploymentPostCreateSetComputedFields(d *schema.Resour
 	if err := d.Set("name", flattenOSConfigPatchDeploymentName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceOSConfigPatchDeploymentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenOSConfigPatchDeploymentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("description", flattenOSConfigPatchDeploymentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("instance_filter", flattenOSConfigPatchDeploymentInstanceFilter(res["instanceFilter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("patch_config", flattenOSConfigPatchDeploymentPatchConfig(res["patchConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("duration", flattenOSConfigPatchDeploymentDuration(res["duration"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("create_time", flattenOSConfigPatchDeploymentCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("update_time", flattenOSConfigPatchDeploymentUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("last_execute_time", flattenOSConfigPatchDeploymentLastExecuteTime(res["lastExecuteTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("one_time_schedule", flattenOSConfigPatchDeploymentOneTimeSchedule(res["oneTimeSchedule"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("recurring_schedule", flattenOSConfigPatchDeploymentRecurringSchedule(res["recurringSchedule"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+	if err = d.Set("rollout", flattenOSConfigPatchDeploymentRollout(res["rollout"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PatchDeployment: %s", err)
+	}
+
 	return nil
 }

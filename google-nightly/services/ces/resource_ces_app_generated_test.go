@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/ces"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = ces.Product
 )
 
 func TestAccCESApp_cesAppBasicExample(t *testing.T) {
@@ -174,7 +177,7 @@ resource "google_ces_app" "ces_app_basic" {
   }
 
   model_settings {
-    model       = "gemini-1.5-flash"
+    model       = "gemini-3.0-flash-001"
     temperature = 0.5
   }
 
@@ -266,7 +269,6 @@ variable_declarations {
   client_certificate_settings {
     tls_certificate = file("test-fixtures/cert.pem")
     private_key = google_secret_manager_secret_version.fake_secret_version.name
-    passphrase = google_secret_manager_secret_version.fake_secret_version.name
   }
 
   # Root agent should not be specified when creating an app
@@ -376,7 +378,7 @@ resource "google_ces_app" "ces_app_ambient_sound_gcs_uri" {
   }
 
   model_settings {
-    model       = "gemini-1.5-flash"
+    model       = "gemini-3.0-flash-001"
     temperature = 0.5
   }
 
@@ -480,8 +482,7 @@ func testAccCheckCESAppDestroyProducer(t *testing.T) func(s *terraform.State) er
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(ces.Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -30,6 +30,12 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/memorystore"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkconnectivityv1"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/privateca"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +54,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = memorystore.Product
 )
 
 func TestAccMemorystoreInstance_memorystoreInstanceBasicExample(t *testing.T) {
@@ -149,7 +156,7 @@ data "google_project" "project" {
 
 func TestAccMemorystoreInstance_memorystoreInstanceFullExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-memorystore.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -160,7 +167,7 @@ func TestAccMemorystoreInstance_memorystoreInstanceFullExample(t *testing.T) {
 
 	context := map[string]interface{}{
 		"instance_name":   "tf-test-full-instance" + randomSuffix,
-		"kms_key_name":    acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name":    kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"network_name":    "tf-test-my-network" + randomSuffix,
 		"policy_name":     "tf-test-my-policy" + randomSuffix,
 		"prevent_destroy": false,
@@ -549,7 +556,7 @@ data "google_project" "project" {
 
 func TestAccMemorystoreInstance_memorystoreInstanceFlexibleCaExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-memorystore.iam.gserviceaccount.com",
 			Role:   "roles/privateca.certificateRequester",
@@ -703,8 +710,7 @@ func testAccCheckMemorystoreInstanceDestroyProducer(t *testing.T) func(s *terraf
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{MemorystoreBasePath}}projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(memorystore.Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance_id}}")
 			if err != nil {
 				return err
 			}

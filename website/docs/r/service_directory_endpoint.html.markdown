@@ -138,6 +138,12 @@ The following arguments are supported:
   (Optional)
   The URL to the network, such as projects/PROJECT_NUMBER/locations/global/networks/NETWORK_NAME.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 ## Attributes Reference
@@ -175,7 +181,6 @@ In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hash
 import {
   identity = {
     endpointId = "<-required value->"
-    project = "<-optional value->"
   }
   to = google_service_directory_endpoint.default
 }

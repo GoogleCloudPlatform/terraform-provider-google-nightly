@@ -117,6 +117,7 @@ func ResourceVertexAIReasoningEngine() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -714,17 +715,17 @@ projects/{project}/locations/{location}/reasoningEngines/{reasoningEngine}`,
 				Description: `The timestamp of when the Index was last updated in RFC3339 UTC "Zulu"
 format, with nanosecond resolution and up to nine fractional digits.`,
 			},
-			"deletion_policy": {
-				Type:         schema.TypeString,
-				Optional:     true,
-				ValidateFunc: verify.ValidateEnum([]string{"FORCE", ""}),
-				Description:  `Optional. The deletion policy for the reasoning engine. Setting this to FORCE allows the reasoning engine to be deleted regardless of child undeleted resources. Possible values: ["FORCE"]`,
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/vertex_ai_reasoning_engine.html.markdown for specifics`,
 			},
 		},
 		UseJSONNumber: true,
@@ -838,7 +839,7 @@ func resourceVertexAIReasoningEngineCreate(d *schema.ResourceData, meta interfac
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/reasoningEngines")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/reasoningEngines")
 	if err != nil {
 		return err
 	}
@@ -936,7 +937,7 @@ func resourceVertexAIReasoningEngineRead(d *schema.ResourceData, meta interface{
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/reasoningEngines/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/reasoningEngines/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -970,42 +971,25 @@ func resourceVertexAIReasoningEngineRead(d *schema.ResourceData, meta interface{
 	log.Printf("[DEBUG] Finished reading VertexAIReasoningEngine %q: %#v", d.Id(), res)
 
 	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
 	}
 
-	if err := d.Set("name", flattenVertexAIReasoningEngineName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("display_name", flattenVertexAIReasoningEngineDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("description", flattenVertexAIReasoningEngineDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("labels", flattenVertexAIReasoningEngineLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("create_time", flattenVertexAIReasoningEngineCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("update_time", flattenVertexAIReasoningEngineUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("encryption_spec", flattenVertexAIReasoningEngineEncryptionSpec(res["encryptionSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("spec", flattenVertexAIReasoningEngineSpec(res["spec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("context_spec", flattenVertexAIReasoningEngineContextSpec(res["contextSpec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenVertexAIReasoningEngineTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenVertexAIReasoningEngineEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	err = ResourceVertexAIReasoningEngineFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1036,6 +1020,19 @@ func resourceVertexAIReasoningEngineRead(d *schema.ResourceData, meta interface{
 }
 
 func resourceVertexAIReasoningEngineUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVertexAIReasoningEngine().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVertexAIReasoningEngineRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1102,7 +1099,7 @@ func resourceVertexAIReasoningEngineUpdate(d *schema.ResourceData, meta interfac
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/reasoningEngines/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/reasoningEngines/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1176,6 +1173,13 @@ func resourceVertexAIReasoningEngineUpdate(d *schema.ResourceData, meta interfac
 }
 
 func resourceVertexAIReasoningEngineDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VertexAIReasoningEngine without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ReasoningEngine %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1189,8 +1193,7 @@ func resourceVertexAIReasoningEngineDelete(d *schema.ResourceData, meta interfac
 		return fmt.Errorf("Error fetching project for ReasoningEngine: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/reasoningEngines/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/reasoningEngines/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2998,4 +3001,44 @@ func expandVertexAIReasoningEngineEffectiveLabels(v interface{}, d tpgresource.T
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceVertexAIReasoningEngineFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenVertexAIReasoningEngineName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("display_name", flattenVertexAIReasoningEngineDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("description", flattenVertexAIReasoningEngineDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("labels", flattenVertexAIReasoningEngineLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("create_time", flattenVertexAIReasoningEngineCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("update_time", flattenVertexAIReasoningEngineUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("encryption_spec", flattenVertexAIReasoningEngineEncryptionSpec(res["encryptionSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("spec", flattenVertexAIReasoningEngineSpec(res["spec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("context_spec", flattenVertexAIReasoningEngineContextSpec(res["contextSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenVertexAIReasoningEngineTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenVertexAIReasoningEngineEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ReasoningEngine: %s", err)
+	}
+
+	return nil
 }

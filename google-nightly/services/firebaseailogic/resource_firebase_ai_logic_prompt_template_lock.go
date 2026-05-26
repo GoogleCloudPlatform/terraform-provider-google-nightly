@@ -100,6 +100,7 @@ func ResourceFirebaseAILogicPromptTemplateLock() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceFirebaseAILogicPromptTemplateLockCreate,
 		Read:   resourceFirebaseAILogicPromptTemplateLockRead,
+		Update: resourceFirebaseAILogicPromptTemplateLockUpdate,
 		Delete: resourceFirebaseAILogicPromptTemplateLockDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +114,7 @@ func ResourceFirebaseAILogicPromptTemplateLock() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -168,6 +170,18 @@ This is verified against the server-side PromptTemplate resource.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -182,7 +196,7 @@ func resourceFirebaseAILogicPromptTemplateLockCreate(d *schema.ResourceData, met
 
 	obj := make(map[string]interface{})
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAILogicBasePath}}projects/{{project}}/locations/{{location}}/templates/{{template_id}}:modifyLock?locked=true")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/templates/{{template_id}}:modifyLock?locked=true")
 	if err != nil {
 		return err
 	}
@@ -256,7 +270,7 @@ func resourceFirebaseAILogicPromptTemplateLockRead(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAILogicBasePath}}projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/templates/{{template_id}}")
 	if err != nil {
 		return err
 	}
@@ -301,15 +315,26 @@ func resourceFirebaseAILogicPromptTemplateLockRead(d *schema.ResourceData, meta 
 	// and d.Set("name", ...) after this block because those fields are defined
 	// as output properties in the YAML and match the keys in 'res'.
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading PromptTemplateLock: %s", err)
 	}
 
-	if err := d.Set("name", flattenFirebaseAILogicPromptTemplateLockName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PromptTemplateLock: %s", err)
-	}
-	if err := d.Set("locked", flattenFirebaseAILogicPromptTemplateLockLocked(res["locked"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PromptTemplateLock: %s", err)
+	err = ResourceFirebaseAILogicPromptTemplateLockFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -339,7 +364,19 @@ func resourceFirebaseAILogicPromptTemplateLockRead(d *schema.ResourceData, meta 
 	return nil
 }
 
+func resourceFirebaseAILogicPromptTemplateLockUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceFirebaseAILogicPromptTemplateLockRead(d, meta)
+}
+
 func resourceFirebaseAILogicPromptTemplateLockDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy FirebaseAILogicPromptTemplateLock without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PromptTemplateLock %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -353,8 +390,7 @@ func resourceFirebaseAILogicPromptTemplateLockDelete(d *schema.ResourceData, met
 		return fmt.Errorf("Error fetching project for PromptTemplateLock: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAILogicBasePath}}projects/{{project}}/locations/{{location}}/templates/{{template_id}}:modifyLock?locked=false")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/templates/{{template_id}}:modifyLock?locked=false")
 	if err != nil {
 		return err
 	}
@@ -413,4 +449,17 @@ func flattenFirebaseAILogicPromptTemplateLockName(v interface{}, d *schema.Resou
 
 func flattenFirebaseAILogicPromptTemplateLockLocked(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
+}
+
+func ResourceFirebaseAILogicPromptTemplateLockFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenFirebaseAILogicPromptTemplateLockName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PromptTemplateLock: %s", err)
+	}
+	if err = d.Set("locked", flattenFirebaseAILogicPromptTemplateLockLocked(res["locked"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PromptTemplateLock: %s", err)
+	}
+
+	return nil
 }

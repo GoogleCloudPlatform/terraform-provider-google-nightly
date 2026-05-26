@@ -27,7 +27,13 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataflow"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 
+	compute_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 
 	compute "google.golang.org/api/compute/v0.beta"
@@ -60,6 +66,36 @@ func TestAccDataflowFlexTemplateJob_basic(t *testing.T) {
 				ImportState:             true,
 				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"on_delete", "parameters", "skip_wait_on_job_termination", "state", "container_spec_gcs_path", "labels", "terraform_labels", "machine_type", "sdk_container_image"},
+			},
+		},
+	})
+}
+
+func TestAccDataflowFlexTemplateJob_createIgnoreAlreadyExists(t *testing.T) {
+	acctest.SkipIfVcr(t)
+	t.Parallel()
+
+	randStr := acctest.RandString(t, 10)
+	job := "tf-test-dataflow-job-" + randStr
+	bucket := "tf-test-dataflow-bucket-" + randStr
+	topic := "tf-test-topic" + randStr
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckDataflowJobDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDataflowFlexTemplateJob_basic(job, bucket, topic),
+				Check: resource.ComposeTestCheckFunc(
+					testAccDataflowFlexJobExists(t, "google_dataflow_flex_template_job.flex_job", false),
+				),
+			},
+			{
+				Config: testAccDataflowFlexTemplateJob_duplicateIgnoreAlreadyExists(job, bucket, topic),
+				Check: resource.ComposeTestCheckFunc(
+					testAccDataflowFlexJobExists(t, "google_dataflow_flex_template_job.duplicate", false),
+				),
 			},
 		},
 	})
@@ -317,12 +353,12 @@ func TestAccDataflowFlexTemplateJob_withKmsKey(t *testing.T) {
 
 	randStr := acctest.RandString(t, 10)
 	job := "tf-test-dataflow-job-" + randStr
-	kms := acctest.BootstrapKMSKeyInLocation(t, "us-central1")
-	cryptoKey := kms.CryptoKey.Name
+	bootstrapped := kms.BootstrapKMSKeyInLocation(t, "us-central1")
+	cryptoKey := bootstrapped.CryptoKey.Name
 	bucket := "tf-test-dataflow-bucket-" + randStr
 	topic := "tf-test-topic" + randStr
 
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@compute-system.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -750,7 +786,7 @@ func testAccDataflowFlexTemplateJobHasAdditionalExperiments(t *testing.T, res st
 		}
 		config := acctest.GoogleProviderConfig(t)
 
-		job, err := config.NewDataflowClient(config.UserAgent).Projects.Jobs.Get(config.Project, rs.Primary.ID).View("JOB_VIEW_ALL").Do()
+		job, err := dataflow.NewClient(config, config.UserAgent).Projects.Jobs.Get(config.Project, rs.Primary.ID).View("JOB_VIEW_ALL").Do()
 		if err != nil {
 			return fmt.Errorf("dataflow job does not exist")
 		}
@@ -783,7 +819,7 @@ func testAccDataflowFlexTemplateJobHasAdditionalPipelineOptions(t *testing.T, re
 		}
 		config := acctest.GoogleProviderConfig(t)
 
-		job, err := config.NewDataflowClient(config.UserAgent).Projects.Jobs.Get(config.Project, rs.Primary.ID).View("JOB_VIEW_ALL").Do()
+		job, err := dataflow.NewClient(config, config.UserAgent).Projects.Jobs.Get(config.Project, rs.Primary.ID).View("JOB_VIEW_ALL").Do()
 		if err != nil {
 			return fmt.Errorf("dataflow job does not exist")
 		}
@@ -835,7 +871,7 @@ func testAccDataflowFlexTemplateGetGeneratedInstanceTemplate(t *testing.T, s *te
 	var instanceTemplate *compute.InstanceTemplate
 
 	err := resource.Retry(1*time.Minute, func() *resource.RetryError {
-		instanceTemplates, rerr := config.NewComputeClient(config.UserAgent).RegionInstanceTemplates.
+		instanceTemplates, rerr := compute_tpg.NewClient(config, config.UserAgent).RegionInstanceTemplates.
 			List(config.Project, config.Region).
 			Filter(filter).
 			MaxResults(2).
@@ -1950,7 +1986,7 @@ func testAccDataflowFlexJobHasOption(t *testing.T, res, option, expectedValue st
 		}
 		config := acctest.GoogleProviderConfig(t)
 
-		job, err := config.NewDataflowClient(config.UserAgent).Projects.Jobs.Get(config.Project, rs.Primary.ID).View("JOB_VIEW_ALL").Do()
+		job, err := dataflow.NewClient(config, config.UserAgent).Projects.Jobs.Get(config.Project, rs.Primary.ID).View("JOB_VIEW_ALL").Do()
 		if err != nil {
 			return fmt.Errorf("dataflow job does not exist")
 		}
@@ -1983,7 +2019,7 @@ func testAccDataflowFlexJobExists(t *testing.T, resource string, wait bool) reso
 		}
 
 		config := acctest.GoogleProviderConfig(t)
-		_, err := config.NewDataflowClient(config.UserAgent).Projects.Locations.Jobs.Get(config.Project, config.Region, rs.Primary.ID).Do()
+		_, err := dataflow.NewClient(config, config.UserAgent).Projects.Locations.Jobs.Get(config.Project, config.Region, rs.Primary.ID).Do()
 		if err != nil {
 			return fmt.Errorf("could not confirm Dataflow Job %q exists: %v", rs.Primary.ID, err)
 		}
@@ -2169,4 +2205,72 @@ resource "google_dataflow_flex_template_job" "flex_job" {
   subnetwork = google_compute_subnetwork.test-subnetwork.self_link
 }
 `, context)
+}
+
+func testAccDataflowFlexTemplateJob_duplicateIgnoreAlreadyExists(job, bucket, topicName string) string {
+	return fmt.Sprintf(`
+
+resource "google_pubsub_topic" "example" {
+  name = "%s"
+}
+
+data "google_storage_bucket_object" "flex_template" {
+  name   = "latest/flex/Streaming_Data_Generator"
+  bucket = "dataflow-templates"
+}
+
+resource "google_storage_bucket" "bucket" {
+  name = "%s"
+  location = "US-CENTRAL1"
+  force_destroy = true
+  uniform_bucket_level_access = true
+}
+
+resource "google_storage_bucket_object" "schema" {
+  name = "schema.json"
+  bucket = google_storage_bucket.bucket.name
+  content = <<EOF
+{
+	"eventId": "{{uuid()}}",
+	"eventTimestamp": {{timestamp()}},
+	"ipv4": "{{ipv4()}}",
+	"ipv6": "{{ipv6()}}",
+	"country": "{{country()}}",
+	"username": "{{username()}}",
+	"quest": "{{random("A Break In the Ice", "Ghosts of Perdition", "Survive the Low Road")}}",
+	"score": {{integer(100, 10000)}},
+	"completed": {{bool()}}
+}
+EOF
+}
+
+resource "google_dataflow_flex_template_job" "flex_job" {
+  name = "%s"
+  container_spec_gcs_path = "gs://${data.google_storage_bucket_object.flex_template.bucket}/${data.google_storage_bucket_object.flex_template.name}"
+  on_delete = "cancel"
+  parameters = {
+    schemaLocation = "gs://${google_storage_bucket_object.schema.bucket}/schema.json"
+    qps = "1"
+    topic = google_pubsub_topic.example.id
+  }
+  labels = {
+   "my_labels" = "value"
+  }
+}
+
+resource "google_dataflow_flex_template_job" "duplicate" {
+  name = "%s"
+  container_spec_gcs_path = "gs://${data.google_storage_bucket_object.flex_template.bucket}/${data.google_storage_bucket_object.flex_template.name}"
+  on_delete = "cancel"
+  parameters = {
+    schemaLocation = "gs://${google_storage_bucket_object.schema.bucket}/schema.json"
+    qps = "1"
+    topic = google_pubsub_topic.example.id
+  }
+  labels = {
+   "my_labels" = "value"
+  }
+  create_ignore_already_exists = true
+}
+`, topicName, bucket, job, job)
 }

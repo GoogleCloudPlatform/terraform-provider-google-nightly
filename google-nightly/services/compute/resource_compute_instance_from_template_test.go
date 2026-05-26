@@ -26,15 +26,14 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
-
-	compute "google.golang.org/api/compute/v0.beta"
-	"google.golang.org/api/googleapi"
+	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
 
 func TestAccComputeInstanceFromTemplate_basic(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
@@ -62,7 +61,7 @@ func TestAccComputeInstanceFromTemplate_basic(t *testing.T) {
 func TestAccComputeInstanceFromTemplate_self_link_unique(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
@@ -90,15 +89,12 @@ func TestAccComputeInstanceFromTemplate_self_link_unique(t *testing.T) {
 func TestAccComputeInstanceFromTemplate_maxRunDuration_onInstanceStopAction(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
 
-	var expectedMaxRunDuration = compute.Duration{}
-	// Define in testAccComputeInstanceFromTemplate_maxRunDuration_onInstanceStopAction
-	expectedMaxRunDuration.Nanos = 456
-	expectedMaxRunDuration.Seconds = 60
+	var expectedMaxRunDuration = map[string]interface{}{"nanos": float64(456), "seconds": "60"}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -121,14 +117,12 @@ func TestAccComputeInstanceFromTemplate_maxRunDuration_onInstanceStopAction(t *t
 func TestAccComputeInstanceFromTemplate_localSsdRecoveryTimeout(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
 
-	var expectedLocalSsdRecoveryTimeout = compute.Duration{}
-	expectedLocalSsdRecoveryTimeout.Nanos = 0
-	expectedLocalSsdRecoveryTimeout.Seconds = 3600
+	var expectedLocalSsdRecoveryTimeout = map[string]interface{}{"nanos": float64(0), "seconds": "3600"}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -151,14 +145,12 @@ func TestAccComputeInstanceFromTemplate_localSsdRecoveryTimeout(t *testing.T) {
 func TestAccComputeInstanceFromTemplateWithOverride_localSsdRecoveryTimeout(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
 
-	var expectedLocalSsdRecoveryTimeout = compute.Duration{}
-	expectedLocalSsdRecoveryTimeout.Nanos = 0
-	expectedLocalSsdRecoveryTimeout.Seconds = 7200
+	var expectedLocalSsdRecoveryTimeout = map[string]interface{}{"nanos": float64(0), "seconds": "7200"}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -181,7 +173,7 @@ func TestAccComputeInstanceFromTemplateWithOverride_localSsdRecoveryTimeout(t *t
 func TestAccComputeInstanceFromTemplate_diskResourcePolicies(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	suffix := acctest.RandString(t, 10)
 
@@ -213,14 +205,20 @@ func TestAccComputeInstanceFromTemplate_diskResourcePolicies(t *testing.T) {
 func TestAccComputeInstanceFromTemplate_partnerMetadata(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
 	var namespace = "test.compute.googleapis.com"
-	expectedPartnerMetadata := make(map[string]compute.StructuredEntries)
-	expectedPartnerMetadata[namespace] = compute.StructuredEntries{
-		Entries: googleapi.RawMessage(`{"key1": "value1", "key2": 2,"key3": {"key31":"value31"}}`),
+	expectedPartnerMetadata := make(map[string]map[string]interface{})
+	expectedPartnerMetadata[namespace] = map[string]interface{}{
+		"entries": map[string]interface{}{
+			"key1": "value1",
+			"key2": float64(2),
+			"key3": map[string]interface{}{
+				"key31": "value31",
+			},
+		},
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -244,14 +242,20 @@ func TestAccComputeInstanceFromTemplate_partnerMetadata(t *testing.T) {
 func TestAccComputeInstanceFromTemplateWithOverride_partnerMetadata(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
 	var namespace = "test.compute.googleapis.com"
-	expectedPartnerMetadata := make(map[string]compute.StructuredEntries)
-	expectedPartnerMetadata[namespace] = compute.StructuredEntries{
-		Entries: googleapi.RawMessage(`{"key1": "value1", "key2": 2,"key3": {"key31":"value31"}}`),
+	expectedPartnerMetadata := make(map[string]map[string]interface{})
+	expectedPartnerMetadata[namespace] = map[string]interface{}{
+		"entries": map[string]interface{}{
+			"key1": "value1",
+			"key2": float64(2),
+			"key3": map[string]interface{}{
+				"key31": "value31",
+			},
+		},
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -275,7 +279,7 @@ func TestAccComputeInstanceFromTemplateWithOverride_partnerMetadata(t *testing.T
 func TestAccComputeInstanceFromRegionTemplate_basic(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
@@ -303,7 +307,7 @@ func TestAccComputeInstanceFromRegionTemplate_basic(t *testing.T) {
 func TestAccComputeInstanceFromTemplate_overrideBootDisk(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateDisk := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
@@ -332,7 +336,7 @@ func TestAccComputeInstanceFromTemplate_overrideBootDisk(t *testing.T) {
 func TestAccComputeInstanceFromTemplate_overrideAttachedDisk(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateDisk := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
@@ -361,7 +365,7 @@ func TestAccComputeInstanceFromTemplate_overrideAttachedDisk(t *testing.T) {
 func TestAccComputeInstanceFromTemplate_overrideScratchDisk(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateDisk := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
@@ -392,7 +396,7 @@ func TestAccComputeInstanceFromTemplate_overrideScratchDisk(t *testing.T) {
 func TestAccComputeInstanceFromTemplate_overrideScheduling(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateDisk := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
@@ -418,7 +422,7 @@ func TestAccComputeInstanceFromTemplate_TerminationTime(t *testing.T) {
 	acctest.SkipIfVcr(t)
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateDisk := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
@@ -444,7 +448,7 @@ func TestAccComputeInstanceFromTemplate_TerminationTime(t *testing.T) {
 func TestAccComputeInstanceFromTemplate_schedulingPreemptionNoticeDuration(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
@@ -468,7 +472,7 @@ func TestAccComputeInstanceFromTemplate_schedulingPreemptionNoticeDuration(t *te
 }
 
 func TestAccComputeInstanceFromTemplate_overrideMetadataDotStartupScript(t *testing.T) {
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.inst"
@@ -492,7 +496,7 @@ func TestAccComputeInstanceFromTemplate_overrideMetadataDotStartupScript(t *test
 func TestAccComputeInstanceFromTemplate_useDiskSelfLink(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
@@ -521,8 +525,15 @@ func testAccCheckComputeInstanceFromTemplateDestroyProducer(t *testing.T) func(s
 				continue
 			}
 
-			_, err := config.NewComputeClient(config.UserAgent).Instances.Get(
-				config.Project, rs.Primary.Attributes["zone"], rs.Primary.ID).Do()
+			instanceURL := fmt.Sprintf("%sprojects/%s/zones/%s/instances/%s",
+				transport_tpg.BaseUrl(tpgcompute.Product, config), config.Project, rs.Primary.Attributes["zone"], rs.Primary.ID)
+			_, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+				Config:    config,
+				Method:    "GET",
+				Project:   config.Project,
+				RawURL:    instanceURL,
+				UserAgent: config.UserAgent,
+			})
 			if err == nil {
 				return fmt.Errorf("Instance still exists")
 			}
@@ -535,8 +546,8 @@ func testAccCheckComputeInstanceFromTemplateDestroyProducer(t *testing.T) func(s
 func TestAccComputeInstanceFromTemplate_confidentialInstanceConfigMain(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
-	var instance2 compute.Instance
+	var instance map[string]interface{}
+	var instance2 map[string]interface{}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
@@ -598,7 +609,7 @@ func TestAccComputeInstanceFromTemplate_confidentialInstanceConfigMain(t *testin
 func TestAccComputeInstanceFromTemplate_DiskForceAttach(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
@@ -620,6 +631,47 @@ func TestAccComputeInstanceFromTemplate_DiskForceAttach(t *testing.T) {
 					// Check that fields were set based on the template
 					resource.TestCheckResourceAttr(resourceName, "boot_disk.0.force_attach", "true"),
 					resource.TestCheckResourceAttr(resourceName, "attached_disk.0.force_attach", "true"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccComputeInstanceFromTemplate_VSSWindows(t *testing.T) {
+	t.Parallel()
+
+	var instance map[string]interface{}
+
+	context_1 := map[string]interface{}{
+		"bootdisk_name": fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10)),
+		"template_name": fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10)),
+		"instance_name": fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10)),
+		"vss_flag":      true,
+	}
+	context_2 := map[string]interface{}{
+		"bootdisk_name": fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10)),
+		"template_name": fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10)),
+		"instance_name": fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10)),
+		"vss_flag":      false,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		CheckDestroy:             testAccCheckComputeInstanceFromTemplateDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeInstanceFromTemplate_VSSWindows(context_1),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckComputeInstanceExists(
+						t, "google_compute_instance_from_template.foobar", &instance),
+				),
+			},
+			{
+				Config: testAccComputeInstanceFromTemplate_VSSWindows(context_2),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckComputeInstanceExists(
+						t, "google_compute_instance_from_template.foobar", &instance),
 				),
 			},
 		},
@@ -2130,7 +2182,7 @@ resource "google_compute_instance_from_template" "inst2" {
 func TestAccComputeInstanceFromTemplateWithOverride_interface(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	templateName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	resourceName := "google_compute_instance_from_template.foobar"
@@ -2154,7 +2206,7 @@ func TestAccComputeInstanceFromTemplateWithOverride_interface(t *testing.T) {
 func TestAccComputeInstanceFromTemplate_IgmpQuery_v2(t *testing.T) {
 	t.Parallel()
 
-	var instance compute.Instance
+	var instance map[string]interface{}
 	instanceName := fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 	suffix := acctest.RandString(t, 10)
 	envRegion := envvar.GetTestRegionFromEnv()
@@ -2431,6 +2483,14 @@ resource "google_compute_disk" "foobar" {
   zone  = "us-central1-a"
 }
 
+resource "google_compute_disk" "barbaz" {
+  name  = "%s-2"
+  image = data.google_compute_image.my_image.self_link
+  size  = 10
+  type  = "pd-ssd"
+  zone  = "us-central1-a"
+}
+
 resource "google_compute_instance_template" "foobar" {
   name         = "%s"
   machine_type = "n1-standard-1"  // can't be e2 because of local-ssd
@@ -2468,11 +2528,11 @@ resource "google_compute_instance_from_template" "foobar" {
     force_attach = true
   }
   attached_disk {
-    source       = google_compute_disk.foobar.name
+    source       = google_compute_disk.barbaz.name
     force_attach = true
   }
 }
-`, template, template, instance)
+`, template, template, template, instance)
 }
 
 func testAccComputeInstanceFromTemplate_DiskForceAttach(instance, template string) string {
@@ -2613,6 +2673,55 @@ resource "google_compute_instance_from_template" "foobar" {
 		subnetwork = google_compute_subnetwork.inst-test-subnetwork.id
 		igmp_query = "%{igmp_query}"
 	}
+}
+`, context)
+}
+
+func testAccComputeInstanceFromTemplate_VSSWindows(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+data "google_compute_image" "my_image" {
+  provider = google-beta
+
+  family  = "windows-2025"
+  project = "windows-cloud"
+}
+
+resource "google_compute_disk" "foobarboot" {
+  provider = google-beta
+
+  name  = "%{bootdisk_name}"
+  image = data.google_compute_image.my_image.self_link
+  size  = 50
+  type  = "pd-ssd"
+  zone  = "us-central1-a"
+}
+
+resource "google_compute_instance_template" "foobar" {
+  provider = google-beta
+
+  name          = "%{template_name}"
+  machine_type  = "e2-standard-2"
+
+  disk {
+    source      = google_compute_disk.foobarboot.name
+    boot        = true
+  }
+
+  network_interface {
+    network = "default"
+  }
+
+}
+
+resource "google_compute_instance_from_template" "foobar" {
+  provider = google-beta
+
+  name         = "%{instance_name}"
+  zone         = "us-central1-a"
+
+  source_instance_template = google_compute_instance_template.foobar.self_link
+
+  erase_windows_vss_signature = %{vss_flag}
 }
 `, context)
 }

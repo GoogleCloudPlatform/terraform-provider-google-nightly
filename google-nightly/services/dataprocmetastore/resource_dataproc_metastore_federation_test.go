@@ -26,6 +26,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataprocmetastore"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"strings"
 )
@@ -67,12 +69,12 @@ func TestAccMetastoreFederation_deletionprotection(t *testing.T) {
 
 func TestAccMetastoreFederation_tags(t *testing.T) {
 	t.Parallel()
-	tagKey := acctest.BootstrapSharedTestOrganizationTagKey(t, "metastore-fed-tagkey", map[string]interface{}{})
+	tagKey := tags.BootstrapSharedTestOrganizationTagKey(t, "metastore-fed-tagkey", map[string]interface{}{})
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
 		"org":           envvar.GetTestOrgFromEnv(t),
 		"tagKey":        tagKey,
-		"tagValue":      acctest.BootstrapSharedTestOrganizationTagValue(t, "metastore-fed-tagvalue", tagKey),
+		"tagValue":      tags.BootstrapSharedTestOrganizationTagValue(t, "metastore-fed-tagvalue", tagKey),
 	}
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },

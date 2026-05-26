@@ -116,6 +116,7 @@ func ResourceNetappBackupVault() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -206,6 +207,13 @@ func ResourceNetappBackupVault() *schema.Resource {
 				Optional:    true,
 				Description: `An optional description of this resource.`,
 			},
+			"kms_config": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Description: `Specifies the Key Management System (KMS) configuration to be used for
+backup encryption. Format:
+'projects/{{project}}/locations/{{location}}/kmsConfigs/{{kms_config}}'`,
+			},
 			"labels": {
 				Type:     schema.TypeMap,
 				Optional: true,
@@ -215,6 +223,13 @@ func ResourceNetappBackupVault() *schema.Resource {
 **Note**: This field is non-authoritative, and will only manage the labels present in your configuration.
 Please refer to the field 'effective_labels' for all of the labels present on the resource.`,
 				Elem: &schema.Schema{Type: schema.TypeString},
+			},
+			"backups_crypto_key_version": {
+				Type:     schema.TypeString,
+				Computed: true,
+				Description: `The crypto key version used to encrypt the backup vault.
+Format:
+'projects/{{project}}/locations/{{location}}/keyRings/{{key_ring}}/cryptoKeys/{{crypto_key}}/cryptoKeyVersions/{{crypto_key_version}}'`,
 			},
 			"create_time": {
 				Type:        schema.TypeString,
@@ -231,6 +246,11 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed:    true,
 				Description: `All of labels (key/value pairs) present on the resource in GCP, including the labels configured through Terraform, other clients and services.`,
 				Elem:        &schema.Schema{Type: schema.TypeString},
+			},
+			"encryption_state": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `Encryption state of customer-managed encryption keys (CMEK) backups.`,
 			},
 			"source_backup_vault": {
 				Type:        schema.TypeString,
@@ -259,6 +279,18 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
 			},
 		},
 		UseJSONNumber: true,
@@ -297,6 +329,12 @@ func resourceNetappBackupVaultCreate(d *schema.ResourceData, meta interface{}) e
 	} else if v, ok := d.GetOkExists("backup_retention_policy"); !tpgresource.IsEmptyValue(reflect.ValueOf(backupRetentionPolicyProp)) && (ok || !reflect.DeepEqual(v, backupRetentionPolicyProp)) {
 		obj["backupRetentionPolicy"] = backupRetentionPolicyProp
 	}
+	kmsConfigProp, err := expandNetappBackupVaultKmsConfig(d.Get("kms_config"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("kms_config"); !tpgresource.IsEmptyValue(reflect.ValueOf(kmsConfigProp)) && (ok || !reflect.DeepEqual(v, kmsConfigProp)) {
+		obj["kmsConfig"] = kmsConfigProp
+	}
 	effectiveLabelsProp, err := expandNetappBackupVaultEffectiveLabels(d.Get("effective_labels"), d, config)
 	if err != nil {
 		return err
@@ -304,7 +342,7 @@ func resourceNetappBackupVaultCreate(d *schema.ResourceData, meta interface{}) e
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/backupVaults?backupVaultId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backupVaults?backupVaultId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -388,7 +426,7 @@ func resourceNetappBackupVaultRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/backupVaults/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backupVaults/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -421,45 +459,26 @@ func resourceNetappBackupVaultRead(d *schema.ResourceData, meta interface{}) err
 
 	log.Printf("[DEBUG] Finished reading NetappBackupVault %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading BackupVault: %s", err)
 	}
 
-	if err := d.Set("state", flattenNetappBackupVaultState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetappBackupVaultCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("description", flattenNetappBackupVaultDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("labels", flattenNetappBackupVaultLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("backup_vault_type", flattenNetappBackupVaultBackupVaultType(res["backupVaultType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("backup_region", flattenNetappBackupVaultBackupRegion(res["backupRegion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("source_region", flattenNetappBackupVaultSourceRegion(res["sourceRegion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("source_backup_vault", flattenNetappBackupVaultSourceBackupVault(res["sourceBackupVault"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("destination_backup_vault", flattenNetappBackupVaultDestinationBackupVault(res["destinationBackupVault"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("backup_retention_policy", flattenNetappBackupVaultBackupRetentionPolicy(res["backupRetentionPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetappBackupVaultTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetappBackupVaultEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackupVault: %s", err)
+	err = ResourceNetappBackupVaultFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -490,6 +509,19 @@ func resourceNetappBackupVaultRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceNetappBackupVaultUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetappBackupVault().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetappBackupVaultRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -549,6 +581,12 @@ func resourceNetappBackupVaultUpdate(d *schema.ResourceData, meta interface{}) e
 	} else if v, ok := d.GetOkExists("backup_retention_policy"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, backupRetentionPolicyProp)) {
 		obj["backupRetentionPolicy"] = backupRetentionPolicyProp
 	}
+	kmsConfigProp, err := expandNetappBackupVaultKmsConfig(d.Get("kms_config"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("kms_config"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, kmsConfigProp)) {
+		obj["kmsConfig"] = kmsConfigProp
+	}
 	effectiveLabelsProp, err := expandNetappBackupVaultEffectiveLabels(d.Get("effective_labels"), d, config)
 	if err != nil {
 		return err
@@ -556,7 +594,7 @@ func resourceNetappBackupVaultUpdate(d *schema.ResourceData, meta interface{}) e
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/backupVaults/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backupVaults/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -579,6 +617,10 @@ func resourceNetappBackupVaultUpdate(d *schema.ResourceData, meta interface{}) e
 
 	if d.HasChange("backup_retention_policy") {
 		updateMask = append(updateMask, "backupRetentionPolicy")
+	}
+
+	if d.HasChange("kms_config") {
+		updateMask = append(updateMask, "kmsConfig")
 	}
 
 	if d.HasChange("effective_labels") {
@@ -628,6 +670,13 @@ func resourceNetappBackupVaultUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceNetappBackupVaultDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetappBackupVault without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing BackupVault %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -641,8 +690,7 @@ func resourceNetappBackupVaultDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for BackupVault: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/backupVaults/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backupVaults/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -804,6 +852,18 @@ func flattenNetappBackupVaultBackupRetentionPolicyManualBackupImmutable(v interf
 	return v
 }
 
+func flattenNetappBackupVaultKmsConfig(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenNetappBackupVaultEncryptionState(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenNetappBackupVaultBackupsCryptoKeyVersion(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenNetappBackupVaultTerraformLabels(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return v
@@ -905,6 +965,10 @@ func expandNetappBackupVaultBackupRetentionPolicyManualBackupImmutable(v interfa
 	return v, nil
 }
 
+func expandNetappBackupVaultKmsConfig(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandNetappBackupVaultEffectiveLabels(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
 	if v == nil {
 		return map[string]string{}, nil
@@ -914,4 +978,56 @@ func expandNetappBackupVaultEffectiveLabels(v interface{}, d tpgresource.Terrafo
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetappBackupVaultFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("state", flattenNetappBackupVaultState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetappBackupVaultCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("description", flattenNetappBackupVaultDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("labels", flattenNetappBackupVaultLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("backup_vault_type", flattenNetappBackupVaultBackupVaultType(res["backupVaultType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("backup_region", flattenNetappBackupVaultBackupRegion(res["backupRegion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("source_region", flattenNetappBackupVaultSourceRegion(res["sourceRegion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("source_backup_vault", flattenNetappBackupVaultSourceBackupVault(res["sourceBackupVault"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("destination_backup_vault", flattenNetappBackupVaultDestinationBackupVault(res["destinationBackupVault"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("backup_retention_policy", flattenNetappBackupVaultBackupRetentionPolicy(res["backupRetentionPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("kms_config", flattenNetappBackupVaultKmsConfig(res["kmsConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("encryption_state", flattenNetappBackupVaultEncryptionState(res["encryptionState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("backups_crypto_key_version", flattenNetappBackupVaultBackupsCryptoKeyVersion(res["backupsCryptoKeyVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetappBackupVaultTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetappBackupVaultEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackupVault: %s", err)
+	}
+
+	return nil
 }

@@ -614,6 +614,27 @@ func resourceBigQueryTableSchemaCustomizeDiffFunc(d tpgresource.TerraformResourc
 			}
 		}
 
+		if ignore, ok := d.Get("ignore_auto_generated_schema").(bool); ok && ignore {
+			oldSchemaObj, err1 := expandSchema(oldSchemaText, false)
+			newSchemaObj, err2 := expandSchema(newSchemaText, false)
+			if err1 == nil && err2 == nil && oldSchemaObj != nil && newSchemaObj != nil {
+				filteredOldSchema, autogenFields := filterLiveSchemaByConfig(oldSchemaObj, newSchemaObj)
+				if len(autogenFields) > 0 {
+					filteredOldJsonStr, err := flattenSchema(filteredOldSchema)
+					if err == nil {
+						if bigQueryTableSchemaDiffSuppress("schema", filteredOldJsonStr, newSchemaText, nil) {
+							// Suppress diff by setting new to old in diff
+							if err := d.SetNew("schema", oldSchemaText); err != nil {
+								return err
+							}
+							// Update local variable so reflect.DeepEqual returns true
+							new = old
+						}
+					}
+				}
+			}
+		}
+
 		// no is schema changeable check needed, if new schema is old schema
 		if reflect.DeepEqual(old, new) {
 			return nil
@@ -681,6 +702,7 @@ func ResourceBigQueryTable() *schema.Resource {
 			State: resourceBigQueryTableImport,
 		},
 		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 			tpgresource.DefaultProviderProject,
 			resourceBigQueryTableSchemaCustomizeDiff,
 			tpgresource.SetLabelsDiff,
@@ -1832,6 +1854,9 @@ func ResourceBigQueryTable() *schema.Resource {
 					},
 				},
 			},
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -2057,7 +2082,7 @@ func resourceBigQueryTableCreate(d *schema.ResourceData, meta interface{}) error
 
 		log.Printf("[INFO] Creating a replica materialized view with DDL: '%s'", replicationDDL)
 
-		_, err := config.NewBigQueryClient(userAgent).Jobs.Query(project, req).Do()
+		_, err := NewClient(config, userAgent).Jobs.Query(project, req).Do()
 
 		id := fmt.Sprintf("projects/%s/datasets/%s/tables/%s", project, datasetID, d.Get("table_id").(string))
 		if err != nil {
@@ -2084,7 +2109,7 @@ func resourceBigQueryTableCreate(d *schema.ResourceData, meta interface{}) error
 
 		log.Printf("[INFO] Creating BigQuery table: %s without schema", table.TableReference.TableId)
 
-		res, err := config.NewBigQueryClient(userAgent).Tables.Insert(project, datasetID, table).Do()
+		res, err := NewClient(config, userAgent).Tables.Insert(project, datasetID, table).Do()
 		if err != nil {
 			return err
 		}
@@ -2094,7 +2119,7 @@ func resourceBigQueryTableCreate(d *schema.ResourceData, meta interface{}) error
 
 		table.Schema = schemaBack
 		log.Printf("[INFO] Updating BigQuery table: %s with schema", table.TableReference.TableId)
-		if _, err = config.NewBigQueryClient(userAgent).Tables.Update(project, datasetID, res.TableReference.TableId, table).Do(); err != nil {
+		if _, err = NewClient(config, userAgent).Tables.Update(project, datasetID, res.TableReference.TableId, table).Do(); err != nil {
 			return err
 		}
 
@@ -2102,7 +2127,7 @@ func resourceBigQueryTableCreate(d *schema.ResourceData, meta interface{}) error
 	} else {
 		log.Printf("[INFO] Creating BigQuery table: %s", table.TableReference.TableId)
 
-		res, err := config.NewBigQueryClient(userAgent).Tables.Insert(project, datasetID, table).Do()
+		res, err := NewClient(config, userAgent).Tables.Insert(project, datasetID, table).Do()
 		if err != nil {
 			return err
 		}
@@ -2131,7 +2156,7 @@ func resourceBigQueryTableRead(d *schema.ResourceData, meta interface{}) error {
 	datasetID := d.Get("dataset_id").(string)
 	tableID := d.Get("table_id").(string)
 
-	client := config.NewBigQueryClient(userAgent).Tables.Get(project, datasetID, tableID)
+	client := NewClient(config, userAgent).Tables.Get(project, datasetID, tableID)
 	if tableMetadataViewRaw, ok := d.GetOk("table_metadata_view"); ok {
 		client = client.View(tableMetadataViewRaw.(string))
 	}
@@ -2378,6 +2403,10 @@ func resourceBigQueryTableRead(d *schema.ResourceData, meta interface{}) error {
 		}
 	}
 
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -2408,7 +2437,7 @@ func addAutoGenSchemaFields(d *schema.ResourceData, table *bigquery.Table) error
 
 func resourceBigQueryTableUpdate(d *schema.ResourceData, meta interface{}) error {
 	// If only client-side fields were modified, short-circuit the Update function to avoid sending an update API request.
-	clientSideFields := map[string]bool{"deletion_protection": true, "ignore_schema_changes": true, "ignore_auto_generated_schema": true, "table_metadata_view": true}
+	clientSideFields := map[string]bool{"deletion_protection": true, "ignore_schema_changes": true, "ignore_auto_generated_schema": true, "table_metadata_view": true, "deletion_policy": true}
 	clientSideOnly := true
 	for field := range ResourceBigQueryTable().Schema {
 		if d.HasChange(field) && !clientSideFields[field] {
@@ -2469,7 +2498,7 @@ func resourceBigQueryTableUpdate(d *schema.ResourceData, meta interface{}) error
 	var errOldTable error
 
 	if shouldDropColumns || shouldIgnoreDataPolicies {
-		client := config.NewBigQueryClient(userAgent).Tables.Get(project, datasetID, tableID)
+		client := NewClient(config, userAgent).Tables.Get(project, datasetID, tableID)
 		if len(tableMetadataView) > 0 {
 			client = client.View(tableMetadataView)
 		}
@@ -2498,7 +2527,7 @@ func resourceBigQueryTableUpdate(d *schema.ResourceData, meta interface{}) error
 		}
 	}
 
-	if _, err = config.NewBigQueryClient(userAgent).Tables.Update(project, datasetID, tableID, table).Do(); err != nil {
+	if _, err = NewClient(config, userAgent).Tables.Update(project, datasetID, tableID, table).Do(); err != nil {
 		return err
 	}
 
@@ -2538,7 +2567,7 @@ func resourceBigQueryTableColumnDrop(config *transport_tpg.Config, userAgent str
 			UseLegacySql: &useLegacySQL,
 		}
 
-		_, err := config.NewBigQueryClient(userAgent).Jobs.Query(tableReference.project, req).Do()
+		_, err := NewClient(config, userAgent).Jobs.Query(tableReference.project, req).Do()
 		if err != nil {
 			return err
 		}
@@ -2548,6 +2577,13 @@ func resourceBigQueryTableColumnDrop(config *transport_tpg.Config, userAgent str
 }
 
 func resourceBigQueryTableDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	if d.Get("deletion_protection").(bool) {
 		return fmt.Errorf("cannot destroy table %v without setting deletion_protection=false and running `terraform apply`", d.Id())
 	}
@@ -2568,7 +2604,7 @@ func resourceBigQueryTableDelete(d *schema.ResourceData, meta interface{}) error
 	datasetID := d.Get("dataset_id").(string)
 	tableID := d.Get("table_id").(string)
 
-	if err := config.NewBigQueryClient(userAgent).Tables.Delete(project, datasetID, tableID).Do(); err != nil {
+	if err := NewClient(config, userAgent).Tables.Delete(project, datasetID, tableID).Do(); err != nil {
 		return err
 	}
 

@@ -30,6 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudfunctions2"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudrunv2"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/firebasehosting"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +52,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = firebasehosting.Product
 )
 
 func TestAccFirebaseHostingVersion_firebasehostingVersionRedirectExample(t *testing.T) {

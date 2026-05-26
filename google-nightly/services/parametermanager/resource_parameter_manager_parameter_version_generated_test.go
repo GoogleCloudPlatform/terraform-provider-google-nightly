@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/parametermanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = parametermanager.Product
 )
 
 func TestAccParameterManagerParameterVersion_parameterVersionBasicExample(t *testing.T) {
@@ -142,7 +146,7 @@ resource "google_parameter_manager_parameter_version" "parameter-version-with-js
 
 func TestAccParameterManagerParameterVersion_parameterVersionWithKmsKeyExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-pm.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -152,7 +156,7 @@ func TestAccParameterManagerParameterVersion_parameterVersionWithKmsKeyExample(t
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"kms_key":              acctest.BootstrapKMSKey(t).CryptoKey.Name,
+		"kms_key":              kms.BootstrapKMSKey(t).CryptoKey.Name,
 		"parameter_id":         "parameter" + randomSuffix,
 		"parameter_version_id": "tf_test_parameter_version" + randomSuffix,
 		"random_suffix":        randomSuffix,
@@ -341,8 +345,7 @@ func testAccCheckParameterManagerParameterVersionDestroyProducer(t *testing.T) f
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ParameterManagerBasePath}}{{parameter}}/versions/{{parameter_version_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(parametermanager.Product, config)+"{{parameter}}/versions/{{parameter_version_id}}")
 			if err != nil {
 				return err
 			}

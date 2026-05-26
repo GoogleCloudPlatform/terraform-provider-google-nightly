@@ -150,6 +150,7 @@ func ResourcePubsubSubscription() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -767,6 +768,18 @@ resource.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -888,7 +901,7 @@ func resourcePubsubSubscriptionCreate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/subscriptions/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/subscriptions/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -959,8 +972,7 @@ func resourcePubsubSubscriptionPollRead(d *schema.ResourceData, meta interface{}
 	return func() (map[string]interface{}, error) {
 		config := meta.(*transport_tpg.Config)
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/subscriptions/{{name}}")
-
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/subscriptions/{{name}}")
 		if err != nil {
 			return nil, err
 		}
@@ -1004,7 +1016,7 @@ func resourcePubsubSubscriptionRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/subscriptions/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/subscriptions/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1037,63 +1049,26 @@ func resourcePubsubSubscriptionRead(d *schema.ResourceData, meta interface{}) er
 
 	log.Printf("[DEBUG] Finished reading PubsubSubscription %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Subscription: %s", err)
 	}
 
-	if err := d.Set("name", flattenPubsubSubscriptionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("topic", flattenPubsubSubscriptionTopic(res["topic"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("labels", flattenPubsubSubscriptionLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("bigquery_config", flattenPubsubSubscriptionBigqueryConfig(res["bigqueryConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("cloud_storage_config", flattenPubsubSubscriptionCloudStorageConfig(res["cloudStorageConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("push_config", flattenPubsubSubscriptionPushConfig(res["pushConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("ack_deadline_seconds", flattenPubsubSubscriptionAckDeadlineSeconds(res["ackDeadlineSeconds"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("message_retention_duration", flattenPubsubSubscriptionMessageRetentionDuration(res["messageRetentionDuration"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("retain_acked_messages", flattenPubsubSubscriptionRetainAckedMessages(res["retainAckedMessages"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("expiration_policy", flattenPubsubSubscriptionExpirationPolicy(res["expirationPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("filter", flattenPubsubSubscriptionFilter(res["filter"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("dead_letter_policy", flattenPubsubSubscriptionDeadLetterPolicy(res["deadLetterPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("retry_policy", flattenPubsubSubscriptionRetryPolicy(res["retryPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("enable_message_ordering", flattenPubsubSubscriptionEnableMessageOrdering(res["enableMessageOrdering"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("enable_exactly_once_delivery", flattenPubsubSubscriptionEnableExactlyOnceDelivery(res["enableExactlyOnceDelivery"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("message_transforms", flattenPubsubSubscriptionMessageTransforms(res["messageTransforms"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenPubsubSubscriptionTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenPubsubSubscriptionEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subscription: %s", err)
+	err = ResourcePubsubSubscriptionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1118,6 +1093,19 @@ func resourcePubsubSubscriptionRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourcePubsubSubscriptionUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourcePubsubSubscription().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourcePubsubSubscriptionRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1226,7 +1214,7 @@ func resourcePubsubSubscriptionUpdate(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/subscriptions/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/subscriptions/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1328,6 +1316,13 @@ func resourcePubsubSubscriptionUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourcePubsubSubscriptionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy PubsubSubscription without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Subscription %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1341,8 +1336,7 @@ func resourcePubsubSubscriptionDelete(d *schema.ResourceData, meta interface{}) 
 		return fmt.Errorf("Error fetching project for Subscription: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{PubsubBasePath}}projects/{{project}}/subscriptions/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/subscriptions/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2633,4 +2627,65 @@ func resourcePubsubSubscriptionUpdateEncoder(d *schema.ResourceData, meta interf
 	newObj := make(map[string]interface{})
 	newObj["subscription"] = obj
 	return newObj, nil
+}
+
+func ResourcePubsubSubscriptionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenPubsubSubscriptionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("topic", flattenPubsubSubscriptionTopic(res["topic"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("labels", flattenPubsubSubscriptionLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("bigquery_config", flattenPubsubSubscriptionBigqueryConfig(res["bigqueryConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("cloud_storage_config", flattenPubsubSubscriptionCloudStorageConfig(res["cloudStorageConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("push_config", flattenPubsubSubscriptionPushConfig(res["pushConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("ack_deadline_seconds", flattenPubsubSubscriptionAckDeadlineSeconds(res["ackDeadlineSeconds"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("message_retention_duration", flattenPubsubSubscriptionMessageRetentionDuration(res["messageRetentionDuration"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("retain_acked_messages", flattenPubsubSubscriptionRetainAckedMessages(res["retainAckedMessages"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("expiration_policy", flattenPubsubSubscriptionExpirationPolicy(res["expirationPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("filter", flattenPubsubSubscriptionFilter(res["filter"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("dead_letter_policy", flattenPubsubSubscriptionDeadLetterPolicy(res["deadLetterPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("retry_policy", flattenPubsubSubscriptionRetryPolicy(res["retryPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("enable_message_ordering", flattenPubsubSubscriptionEnableMessageOrdering(res["enableMessageOrdering"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("enable_exactly_once_delivery", flattenPubsubSubscriptionEnableExactlyOnceDelivery(res["enableExactlyOnceDelivery"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("message_transforms", flattenPubsubSubscriptionMessageTransforms(res["messageTransforms"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenPubsubSubscriptionTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenPubsubSubscriptionEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subscription: %s", err)
+	}
+
+	return nil
 }

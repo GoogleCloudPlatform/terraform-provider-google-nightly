@@ -115,6 +115,7 @@ func ResourceNetworkSecurityFirewallEndpoint() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -141,11 +142,6 @@ func ResourceNetworkSecurityFirewallEndpoint() *schema.Resource {
 		},
 
 		Schema: map[string]*schema.Schema{
-			"billing_project_id": {
-				Type:        schema.TypeString,
-				Required:    true,
-				Description: `Project to bill on endpoint uptime usage.`,
-			},
 			"location": {
 				Type:        schema.TypeString,
 				Required:    true,
@@ -163,7 +159,16 @@ func ResourceNetworkSecurityFirewallEndpoint() *schema.Resource {
 				Required: true,
 				ForceNew: true,
 				Description: `The name of the parent this firewall endpoint belongs to.
-Format: organizations/{organization_id}.`,
+Format: 'organizations/{organization_id}' or 'projects/{project_id}'.`,
+			},
+			"billing_project_id": {
+				Type:     schema.TypeString,
+				Computed: true,
+				Optional: true,
+				Description: `Project to charge for the deployed firewall endpoint.
+This field is required for organization-scoped endpoints.
+For project-scoped endpoints, it is optional but must match the
+endpoint's project if specified.`,
 			},
 			"endpoint_settings": {
 				Type:        schema.TypeList,
@@ -240,6 +245,19 @@ fully configured. Format: projects/{project}/global/networks/{name}.`,
 				Computed:    true,
 				Description: `Time the firewall endpoint was updated in UTC.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -273,7 +291,7 @@ func resourceNetworkSecurityFirewallEndpointCreate(d *schema.ResourceData, meta 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}{{parent}}/locations/{{location}}/firewallEndpoints?firewallEndpointId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/firewallEndpoints?firewallEndpointId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -351,7 +369,7 @@ func resourceNetworkSecurityFirewallEndpointRead(d *schema.ResourceData, meta in
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}{{parent}}/locations/{{location}}/firewallEndpoints/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/firewallEndpoints/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -378,38 +396,23 @@ func resourceNetworkSecurityFirewallEndpointRead(d *schema.ResourceData, meta in
 
 	log.Printf("[DEBUG] Finished reading NetworkSecurityFirewallEndpoint %q: %#v", d.Id(), res)
 
-	if err := d.Set("labels", flattenNetworkSecurityFirewallEndpointLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("self_link", flattenNetworkSecurityFirewallEndpointSelfLink(res["selfLink"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetworkSecurityFirewallEndpointCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkSecurityFirewallEndpointUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
-	}
-	if err := d.Set("reconciling", flattenNetworkSecurityFirewallEndpointReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
-	}
-	if err := d.Set("associated_networks", flattenNetworkSecurityFirewallEndpointAssociatedNetworks(res["associatedNetworks"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
-	}
-	if err := d.Set("state", flattenNetworkSecurityFirewallEndpointState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
-	}
-	if err := d.Set("billing_project_id", flattenNetworkSecurityFirewallEndpointBillingProjectId(res["billingProjectId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
-	}
-	if err := d.Set("endpoint_settings", flattenNetworkSecurityFirewallEndpointEndpointSettings(res["endpointSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkSecurityFirewallEndpointTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkSecurityFirewallEndpointEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+
+	err = ResourceNetworkSecurityFirewallEndpointFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -440,6 +443,18 @@ func resourceNetworkSecurityFirewallEndpointRead(d *schema.ResourceData, meta in
 }
 
 func resourceNetworkSecurityFirewallEndpointUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkSecurityFirewallEndpoint().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkSecurityFirewallEndpointRead(d, meta)
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -489,7 +504,7 @@ func resourceNetworkSecurityFirewallEndpointUpdate(d *schema.ResourceData, meta 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}{{parent}}/locations/{{location}}/firewallEndpoints/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/firewallEndpoints/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -553,6 +568,13 @@ func resourceNetworkSecurityFirewallEndpointUpdate(d *schema.ResourceData, meta 
 }
 
 func resourceNetworkSecurityFirewallEndpointDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkSecurityFirewallEndpoint without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing FirewallEndpoint %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -562,7 +584,7 @@ func resourceNetworkSecurityFirewallEndpointDelete(d *schema.ResourceData, meta 
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkSecurityBasePath}}{{parent}}/locations/{{location}}/firewallEndpoints/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/firewallEndpoints/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -739,4 +761,44 @@ func expandNetworkSecurityFirewallEndpointEffectiveLabels(v interface{}, d tpgre
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkSecurityFirewallEndpointFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("labels", flattenNetworkSecurityFirewallEndpointLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("self_link", flattenNetworkSecurityFirewallEndpointSelfLink(res["selfLink"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetworkSecurityFirewallEndpointCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkSecurityFirewallEndpointUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("reconciling", flattenNetworkSecurityFirewallEndpointReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("associated_networks", flattenNetworkSecurityFirewallEndpointAssociatedNetworks(res["associatedNetworks"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("state", flattenNetworkSecurityFirewallEndpointState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("billing_project_id", flattenNetworkSecurityFirewallEndpointBillingProjectId(res["billingProjectId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("endpoint_settings", flattenNetworkSecurityFirewallEndpointEndpointSettings(res["endpointSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkSecurityFirewallEndpointTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkSecurityFirewallEndpointEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallEndpoint: %s", err)
+	}
+
+	return nil
 }

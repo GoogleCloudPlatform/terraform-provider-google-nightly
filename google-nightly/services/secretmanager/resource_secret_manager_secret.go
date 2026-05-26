@@ -144,6 +144,7 @@ func ResourceSecretManagerSecret() *schema.Resource {
 			tpgresource.SetLabelsDiff,
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -431,6 +432,18 @@ or 'terraform destroy' that would delete the secret will fail.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -505,7 +518,7 @@ func resourceSecretManagerSecretCreate(d *schema.ResourceData, meta interface{})
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerBasePath}}projects/{{project}}/secrets?secretId={{secret_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/secrets?secretId={{secret_id}}")
 	if err != nil {
 		return err
 	}
@@ -574,7 +587,7 @@ func resourceSecretManagerSecretRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerBasePath}}projects/{{project}}/secrets/{{secret_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/secrets/{{secret_id}}")
 	if err != nil {
 		return err
 	}
@@ -613,48 +626,25 @@ func resourceSecretManagerSecretRead(d *schema.ResourceData, meta interface{}) e
 			return fmt.Errorf("Error setting deletion_protection: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Secret: %s", err)
 	}
 
-	if err := d.Set("name", flattenSecretManagerSecretName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecretManagerSecretCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("labels", flattenSecretManagerSecretLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("annotations", flattenSecretManagerSecretAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("version_aliases", flattenSecretManagerSecretVersionAliases(res["versionAliases"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("version_destroy_ttl", flattenSecretManagerSecretVersionDestroyTtl(res["versionDestroyTtl"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("replication", flattenSecretManagerSecretReplication(res["replication"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("topics", flattenSecretManagerSecretTopics(res["topics"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("expire_time", flattenSecretManagerSecretExpireTime(res["expireTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("rotation", flattenSecretManagerSecretRotation(res["rotation"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenSecretManagerSecretTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenSecretManagerSecretEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenSecretManagerSecretEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Secret: %s", err)
+	err = ResourceSecretManagerSecretFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -679,6 +669,19 @@ func resourceSecretManagerSecretRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceSecretManagerSecretUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecretManagerSecret().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecretManagerSecretRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -758,7 +761,7 @@ func resourceSecretManagerSecretUpdate(d *schema.ResourceData, meta interface{})
 		obj["annotations"] = effectiveAnnotationsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerBasePath}}projects/{{project}}/secrets/{{secret_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/secrets/{{secret_id}}")
 	if err != nil {
 		return err
 	}
@@ -858,6 +861,13 @@ func resourceSecretManagerSecretUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceSecretManagerSecretDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecretManagerSecret without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Secret %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -871,8 +881,7 @@ func resourceSecretManagerSecretDelete(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error fetching project for Secret: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecretManagerBasePath}}projects/{{project}}/secrets/{{secret_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/secrets/{{secret_id}}")
 	if err != nil {
 		return err
 	}
@@ -1432,4 +1441,50 @@ func expandSecretManagerSecretEffectiveAnnotations(v interface{}, d tpgresource.
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceSecretManagerSecretFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecretManagerSecretName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecretManagerSecretCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("labels", flattenSecretManagerSecretLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("annotations", flattenSecretManagerSecretAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("version_aliases", flattenSecretManagerSecretVersionAliases(res["versionAliases"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("version_destroy_ttl", flattenSecretManagerSecretVersionDestroyTtl(res["versionDestroyTtl"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("replication", flattenSecretManagerSecretReplication(res["replication"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("topics", flattenSecretManagerSecretTopics(res["topics"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("expire_time", flattenSecretManagerSecretExpireTime(res["expireTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("rotation", flattenSecretManagerSecretRotation(res["rotation"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenSecretManagerSecretTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenSecretManagerSecretEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenSecretManagerSecretEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Secret: %s", err)
+	}
+
+	return nil
 }

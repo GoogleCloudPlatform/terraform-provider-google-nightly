@@ -24,6 +24,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/backupdr"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -32,7 +34,7 @@ func TestAccDataSourceGoogleBackupDRManagementServer_basic(t *testing.T) {
 	t.Parallel()
 
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "backupdr-managementserver-basic"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "backupdr-managementserver-basic"),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -64,7 +66,7 @@ func testAccCheckBackupDRManagementServerDestroyProducer(t *testing.T) func(s *t
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, `{{BackupDRBasePath}}projects/{{project}}/locations/{{location}}/managementServers/{{name}}`)
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(backupdr.Product, config)+`projects/{{project}}/locations/{{location}}/managementServers/{{name}}`)
 			if err != nil {
 				return err
 			}
@@ -104,11 +106,11 @@ resource "google_backup_dr_management_server" "foo" {
     network      = data.google_compute_network.default.id
     peering_mode = "PRIVATE_SERVICE_ACCESS"
   }
-  depends_on = [ google_backup_dr_management_server.foo ]
 }
 
 data "google_backup_dr_management_server" "foo" {
   location =  "us-central1"
+  depends_on = [ google_backup_dr_management_server.foo ]
 }
 `, context)
 }

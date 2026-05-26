@@ -116,6 +116,7 @@ func ResourceOracleDatabaseDbSystem() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -364,6 +365,20 @@ not permitted.`,
 													Optional:    true,
 													ForceNew:    true,
 													Description: `The national character set for the database. The default is AL16UTF16.`,
+												},
+												"pluggable_database_id": {
+													Type:        schema.TypeString,
+													Computed:    true,
+													Optional:    true,
+													ForceNew:    true,
+													Description: `The ID of the pluggable database associated with Database. The ID must be unique within the project and location.`,
+												},
+												"pluggable_database_name": {
+													Type:        schema.TypeString,
+													Computed:    true,
+													Optional:    true,
+													ForceNew:    true,
+													Description: `The pluggable dataabse associated with the Database. The name must begin with an alphabetic character and can contain a maximum of thirty alphanumeric characters.`,
 												},
 												"properties": {
 													Type:        schema.TypeList,
@@ -765,6 +780,18 @@ projects/{project}/locations/{region}/dbSystems/{db_system}`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -815,7 +842,7 @@ func resourceOracleDatabaseDbSystemCreate(d *schema.ResourceData, meta interface
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OracleDatabaseBasePath}}projects/{{project}}/locations/{{location}}/dbSystems?dbSystemId={{db_system_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dbSystems?dbSystemId={{db_system_id}}")
 	if err != nil {
 		return err
 	}
@@ -899,7 +926,7 @@ func resourceOracleDatabaseDbSystemRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{OracleDatabaseBasePath}}projects/{{project}}/locations/{{location}}/dbSystems/{{db_system_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dbSystems/{{db_system_id}}")
 	if err != nil {
 		return err
 	}
@@ -938,45 +965,25 @@ func resourceOracleDatabaseDbSystemRead(d *schema.ResourceData, meta interface{}
 			return fmt.Errorf("Error setting deletion_protection: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading DbSystem: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenOracleDatabaseDbSystemCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("display_name", flattenOracleDatabaseDbSystemDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("entitlement_id", flattenOracleDatabaseDbSystemEntitlementId(res["entitlementId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("gcp_oracle_zone", flattenOracleDatabaseDbSystemGcpOracleZone(res["gcpOracleZone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("labels", flattenOracleDatabaseDbSystemLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("name", flattenOracleDatabaseDbSystemName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("oci_url", flattenOracleDatabaseDbSystemOciUrl(res["ociUrl"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("odb_network", flattenOracleDatabaseDbSystemOdbNetwork(res["odbNetwork"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("odb_subnet", flattenOracleDatabaseDbSystemOdbSubnet(res["odbSubnet"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("properties", flattenOracleDatabaseDbSystemProperties(res["properties"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenOracleDatabaseDbSystemTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenOracleDatabaseDbSystemEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DbSystem: %s", err)
+	err = ResourceOracleDatabaseDbSystemFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1007,11 +1014,18 @@ func resourceOracleDatabaseDbSystemRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceOracleDatabaseDbSystemUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceOracleDatabaseDbSystemRead(d, meta)
 }
 
 func resourceOracleDatabaseDbSystemDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy OracleDatabaseDbSystem without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing DbSystem %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1025,8 +1039,7 @@ func resourceOracleDatabaseDbSystemDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for DbSystem: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{OracleDatabaseBasePath}}projects/{{project}}/locations/{{location}}/dbSystems/{{db_system_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dbSystems/{{db_system_id}}")
 	if err != nil {
 		return err
 	}
@@ -1296,6 +1309,10 @@ func flattenOracleDatabaseDbSystemPropertiesDbHomeDatabase(v interface{}, d *sch
 		flattenOracleDatabaseDbSystemPropertiesDbHomeDatabaseOciUrl(original["ociUrl"], d, config)
 	transformed["ops_insights_status"] =
 		flattenOracleDatabaseDbSystemPropertiesDbHomeDatabaseOpsInsightsStatus(original["opsInsightsStatus"], d, config)
+	transformed["pluggable_database_id"] =
+		flattenOracleDatabaseDbSystemPropertiesDbHomeDatabasePluggableDatabaseId(original["pluggableDatabaseId"], d, config)
+	transformed["pluggable_database_name"] =
+		flattenOracleDatabaseDbSystemPropertiesDbHomeDatabasePluggableDatabaseName(original["pluggableDatabaseName"], d, config)
 	transformed["properties"] =
 		flattenOracleDatabaseDbSystemPropertiesDbHomeDatabaseProperties(original["properties"], d, config)
 	transformed["tde_wallet_password"] =
@@ -1347,6 +1364,14 @@ func flattenOracleDatabaseDbSystemPropertiesDbHomeDatabaseOciUrl(v interface{}, 
 }
 
 func flattenOracleDatabaseDbSystemPropertiesDbHomeDatabaseOpsInsightsStatus(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenOracleDatabaseDbSystemPropertiesDbHomeDatabasePluggableDatabaseId(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenOracleDatabaseDbSystemPropertiesDbHomeDatabasePluggableDatabaseName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -2014,6 +2039,20 @@ func expandOracleDatabaseDbSystemPropertiesDbHomeDatabase(v interface{}, d tpgre
 		transformed["opsInsightsStatus"] = transformedOpsInsightsStatus
 	}
 
+	transformedPluggableDatabaseId, err := expandOracleDatabaseDbSystemPropertiesDbHomeDatabasePluggableDatabaseId(original["pluggable_database_id"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedPluggableDatabaseId); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["pluggableDatabaseId"] = transformedPluggableDatabaseId
+	}
+
+	transformedPluggableDatabaseName, err := expandOracleDatabaseDbSystemPropertiesDbHomeDatabasePluggableDatabaseName(original["pluggable_database_name"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedPluggableDatabaseName); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["pluggableDatabaseName"] = transformedPluggableDatabaseName
+	}
+
 	transformedProperties, err := expandOracleDatabaseDbSystemPropertiesDbHomeDatabaseProperties(original["properties"], d, config)
 	if err != nil {
 		return nil, err
@@ -2076,6 +2115,14 @@ func expandOracleDatabaseDbSystemPropertiesDbHomeDatabaseOciUrl(v interface{}, d
 }
 
 func expandOracleDatabaseDbSystemPropertiesDbHomeDatabaseOpsInsightsStatus(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandOracleDatabaseDbSystemPropertiesDbHomeDatabasePluggableDatabaseId(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandOracleDatabaseDbSystemPropertiesDbHomeDatabasePluggableDatabaseName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -2413,4 +2460,47 @@ func expandOracleDatabaseDbSystemEffectiveLabels(v interface{}, d tpgresource.Te
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceOracleDatabaseDbSystemFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenOracleDatabaseDbSystemCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("display_name", flattenOracleDatabaseDbSystemDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("entitlement_id", flattenOracleDatabaseDbSystemEntitlementId(res["entitlementId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("gcp_oracle_zone", flattenOracleDatabaseDbSystemGcpOracleZone(res["gcpOracleZone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("labels", flattenOracleDatabaseDbSystemLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("name", flattenOracleDatabaseDbSystemName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("oci_url", flattenOracleDatabaseDbSystemOciUrl(res["ociUrl"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("odb_network", flattenOracleDatabaseDbSystemOdbNetwork(res["odbNetwork"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("odb_subnet", flattenOracleDatabaseDbSystemOdbSubnet(res["odbSubnet"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("properties", flattenOracleDatabaseDbSystemProperties(res["properties"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenOracleDatabaseDbSystemTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenOracleDatabaseDbSystemEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DbSystem: %s", err)
+	}
+
+	return nil
 }

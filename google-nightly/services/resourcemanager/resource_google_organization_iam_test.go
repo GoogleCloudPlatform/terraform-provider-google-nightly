@@ -25,6 +25,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	rmClient "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager/client"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgiamresource"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -196,7 +198,7 @@ func testAccCheckGoogleOrganizationIamBindingExists(t *testing.T, bindingResourc
 		}
 
 		config := acctest.GoogleProviderConfig(t)
-		p, err := config.NewResourceManagerClient(config.UserAgent).Organizations.GetIamPolicy(
+		p, err := rmClient.NewClient(config, config.UserAgent).Organizations.GetIamPolicy(
 			"organizations/"+bindingRs.Primary.Attributes["org_id"],
 			&cloudresourcemanager.GetIamPolicyRequest{
 				Options: &cloudresourcemanager.GetPolicyOptions{
@@ -233,7 +235,7 @@ func testAccCheckGoogleOrganizationIamMemberExists(t *testing.T, n, role, member
 		}
 
 		config := acctest.GoogleProviderConfig(t)
-		p, err := config.NewResourceManagerClient(config.UserAgent).Organizations.GetIamPolicy(
+		p, err := rmClient.NewClient(config, config.UserAgent).Organizations.GetIamPolicy(
 			"organizations/"+rs.Primary.Attributes["org_id"],
 			&cloudresourcemanager.GetIamPolicyRequest{
 				Options: &cloudresourcemanager.GetPolicyOptions{

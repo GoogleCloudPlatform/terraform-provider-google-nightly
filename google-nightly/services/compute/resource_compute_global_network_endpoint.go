@@ -100,6 +100,7 @@ func ResourceComputeGlobalNetworkEndpoint() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceComputeGlobalNetworkEndpointCreate,
 		Read:   resourceComputeGlobalNetworkEndpointRead,
+		Update: resourceComputeGlobalNetworkEndpointUpdate,
 		Delete: resourceComputeGlobalNetworkEndpointDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -113,6 +114,7 @@ func ResourceComputeGlobalNetworkEndpoint() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -181,6 +183,18 @@ This can only be specified when network_endpoint_type of the NEG is INTERNET_FQD
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -225,7 +239,7 @@ func resourceComputeGlobalNetworkEndpointCreate(d *schema.ResourceData, meta int
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/networkEndpointGroups/{{global_network_endpoint_group}}/attachNetworkEndpoints")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/networkEndpointGroups/{{global_network_endpoint_group}}/attachNetworkEndpoints")
 	if err != nil {
 		return err
 	}
@@ -320,7 +334,7 @@ func resourceComputeGlobalNetworkEndpointRead(d *schema.ResourceData, meta inter
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/networkEndpointGroups/{{global_network_endpoint_group}}/listNetworkEndpoints")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/networkEndpointGroups/{{global_network_endpoint_group}}/listNetworkEndpoints")
 	if err != nil {
 		return err
 	}
@@ -377,18 +391,26 @@ func resourceComputeGlobalNetworkEndpointRead(d *schema.ResourceData, meta inter
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading GlobalNetworkEndpoint: %s", err)
 	}
 
-	if err := d.Set("port", flattenNestedComputeGlobalNetworkEndpointPort(res["port"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GlobalNetworkEndpoint: %s", err)
-	}
-	if err := d.Set("ip_address", flattenNestedComputeGlobalNetworkEndpointIpAddress(res["ipAddress"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GlobalNetworkEndpoint: %s", err)
-	}
-	if err := d.Set("fqdn", flattenNestedComputeGlobalNetworkEndpointFqdn(res["fqdn"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GlobalNetworkEndpoint: %s", err)
+	err = ResourceComputeGlobalNetworkEndpointFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -430,7 +452,19 @@ func resourceComputeGlobalNetworkEndpointRead(d *schema.ResourceData, meta inter
 	return nil
 }
 
+func resourceComputeGlobalNetworkEndpointUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceComputeGlobalNetworkEndpointRead(d, meta)
+}
+
 func resourceComputeGlobalNetworkEndpointDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeGlobalNetworkEndpoint without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing GlobalNetworkEndpoint %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -451,8 +485,7 @@ func resourceComputeGlobalNetworkEndpointDelete(d *schema.ResourceData, meta int
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/networkEndpointGroups/{{global_network_endpoint_group}}/detachNetworkEndpoints")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/networkEndpointGroups/{{global_network_endpoint_group}}/detachNetworkEndpoints")
 	if err != nil {
 		return err
 	}
@@ -668,4 +701,20 @@ func resourceComputeGlobalNetworkEndpointDecoder(d *schema.ResourceData, meta in
 	}
 
 	return v.(map[string]interface{}), nil
+}
+
+func ResourceComputeGlobalNetworkEndpointFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("port", flattenNestedComputeGlobalNetworkEndpointPort(res["port"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GlobalNetworkEndpoint: %s", err)
+	}
+	if err = d.Set("ip_address", flattenNestedComputeGlobalNetworkEndpointIpAddress(res["ipAddress"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GlobalNetworkEndpoint: %s", err)
+	}
+	if err = d.Set("fqdn", flattenNestedComputeGlobalNetworkEndpointFqdn(res["fqdn"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GlobalNetworkEndpoint: %s", err)
+	}
+
+	return nil
 }

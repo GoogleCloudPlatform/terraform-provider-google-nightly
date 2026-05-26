@@ -115,6 +115,7 @@ func ResourceComputeBackendBucket() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -368,6 +369,18 @@ and values are in the format tagValues/456.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -447,7 +460,7 @@ func resourceComputeBackendBucketCreate(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendBuckets")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/backendBuckets")
 	if err != nil {
 		return err
 	}
@@ -505,16 +518,32 @@ func resourceComputeBackendBucketCreate(d *schema.ResourceData, meta interface{}
 			return errwrap.Wrapf("Error parsing Backend Service security policy: {{err}}", err)
 		}
 
-		spr := emptySecurityPolicyReference()
-		spr.SecurityPolicy = pol.RelativeLink()
-		op, err := config.NewComputeClient(userAgent).BackendBuckets.SetEdgeSecurityPolicy(project, obj["name"].(string), spr).Do()
+		sBody := emptySecurityPolicyReference()
+		if link := pol.RelativeLink(); link != "" {
+			sBody["securityPolicy"] = link
+		}
+
+		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendBuckets/{{name}}/setEdgeSecurityPolicy")
+		if err != nil {
+			return err
+		}
+
+		res, err = transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+			Config:    config,
+			Method:    "POST",
+			Project:   project,
+			RawURL:    url,
+			UserAgent: userAgent,
+			Body:      sBody,
+			Headers:   headers,
+		})
 		if err != nil {
 			return errwrap.Wrapf("Error setting Backend Service security policy: {{err}}", err)
 		}
 		// This uses the create timeout for simplicity, though technically this code appears in both create and update
-		waitErr := ComputeOperationWaitTime(config, op, project, "Setting Backend Service Security Policy", userAgent, d.Timeout(schema.TimeoutCreate))
-		if waitErr != nil {
-			return waitErr
+		err = ComputeOperationWaitTime(config, res, project, "Setting Backend Service Security Policy", userAgent, d.Timeout(schema.TimeoutCreate))
+		if err != nil {
+			return err
 		}
 	}
 
@@ -546,7 +575,7 @@ func resourceComputeBackendBucketRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendBuckets/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/backendBuckets/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -579,42 +608,26 @@ func resourceComputeBackendBucketRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading ComputeBackendBucket %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading BackendBucket: %s", err)
 	}
 
-	if err := d.Set("bucket_name", flattenComputeBackendBucketBucketName(res["bucketName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("cdn_policy", flattenComputeBackendBucketCdnPolicy(res["cdnPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("compression_mode", flattenComputeBackendBucketCompressionMode(res["compressionMode"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("edge_security_policy", flattenComputeBackendBucketEdgeSecurityPolicy(res["edgeSecurityPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("custom_response_headers", flattenComputeBackendBucketCustomResponseHeaders(res["customResponseHeaders"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeBackendBucketCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("description", flattenComputeBackendBucketDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("enable_cdn", flattenComputeBackendBucketEnableCdn(res["enableCdn"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("name", flattenComputeBackendBucketName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("load_balancing_scheme", flattenComputeBackendBucketLoadBalancingScheme(res["loadBalancingScheme"], d, config)); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	err = ResourceComputeBackendBucketFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -639,6 +652,19 @@ func resourceComputeBackendBucketRead(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceComputeBackendBucketUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeBackendBucket().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeBackendBucketRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -735,7 +761,7 @@ func resourceComputeBackendBucketUpdate(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendBuckets/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/backendBuckets/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -780,22 +806,45 @@ func resourceComputeBackendBucketUpdate(d *schema.ResourceData, meta interface{}
 			return errwrap.Wrapf("Error parsing Backend Service security policy: {{err}}", err)
 		}
 
-		spr := emptySecurityPolicyReference()
-		spr.SecurityPolicy = pol.RelativeLink()
-		op, err := config.NewComputeClient(userAgent).BackendBuckets.SetEdgeSecurityPolicy(project, obj["name"].(string), spr).Do()
+		sBody := emptySecurityPolicyReference()
+		if link := pol.RelativeLink(); link != "" {
+			sBody["securityPolicy"] = link
+		}
+
+		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendBuckets/{{name}}/setEdgeSecurityPolicy")
+		if err != nil {
+			return err
+		}
+
+		res, err = transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+			Config:    config,
+			Method:    "POST",
+			Project:   project,
+			RawURL:    url,
+			UserAgent: userAgent,
+			Body:      sBody,
+			Headers:   headers,
+		})
 		if err != nil {
 			return errwrap.Wrapf("Error setting Backend Service security policy: {{err}}", err)
 		}
 		// This uses the create timeout for simplicity, though technically this code appears in both create and update
-		waitErr := ComputeOperationWaitTime(config, op, project, "Setting Backend Service Security Policy", userAgent, d.Timeout(schema.TimeoutCreate))
-		if waitErr != nil {
-			return waitErr
+		err = ComputeOperationWaitTime(config, res, project, "Setting Backend Service Security Policy", userAgent, d.Timeout(schema.TimeoutCreate))
+		if err != nil {
+			return err
 		}
 	}
 	return resourceComputeBackendBucketRead(d, meta)
 }
 
 func resourceComputeBackendBucketDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeBackendBucket without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing BackendBucket %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -809,8 +858,7 @@ func resourceComputeBackendBucketDelete(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error fetching project for BackendBucket: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/backendBuckets/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/backendBuckets/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1475,4 +1523,43 @@ func resourceComputeBackendBucketEncoder(d *schema.ResourceData, meta interface{
 	}
 
 	return obj, nil
+}
+
+func ResourceComputeBackendBucketFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("bucket_name", flattenComputeBackendBucketBucketName(res["bucketName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("cdn_policy", flattenComputeBackendBucketCdnPolicy(res["cdnPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("compression_mode", flattenComputeBackendBucketCompressionMode(res["compressionMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("edge_security_policy", flattenComputeBackendBucketEdgeSecurityPolicy(res["edgeSecurityPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("custom_response_headers", flattenComputeBackendBucketCustomResponseHeaders(res["customResponseHeaders"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeBackendBucketCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("description", flattenComputeBackendBucketDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("enable_cdn", flattenComputeBackendBucketEnableCdn(res["enableCdn"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("name", flattenComputeBackendBucketName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("load_balancing_scheme", flattenComputeBackendBucketLoadBalancingScheme(res["loadBalancingScheme"], d, config)); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading BackendBucket: %s", err)
+	}
+	return nil
 }

@@ -30,6 +30,11 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vertexai"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +53,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = vertexai.Product
 )
 
 func TestAccVertexAIIndexEndpointDeployedIndex_vertexAiIndexEndpointDeployedIndexBasicExample(t *testing.T) {
@@ -56,13 +62,13 @@ func TestAccVertexAIIndexEndpointDeployedIndex_vertexAiIndexEndpointDeployedInde
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"address_name":       acctest.BootstrapSharedTestGlobalAddress(t, "vpc-network-1", acctest.AddressWithPrefixLength(8)),
+		"address_name":       compute.BootstrapSharedTestGlobalAddress(t, "vpc-network-1", compute.AddressWithPrefixLength(8)),
 		"bucket_name":        "tf-test-bucket-name" + randomSuffix,
 		"deployed_index_id":  "tf_test_deployed_index_id" + randomSuffix,
 		"display_name":       "tf-test-vertex-deployed-index" + randomSuffix,
 		"display_name_index": "tf-test-test-index" + randomSuffix,
 		"endpoint_name":      "tf-test-endpoint-name" + randomSuffix,
-		"network_name":       acctest.BootstrapSharedServiceNetworkingConnection(t, "vpc-network-1"),
+		"network_name":       servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "vpc-network-1"),
 		"service_account_id": "tf-test-vertex-sa" + randomSuffix,
 		"random_suffix":      randomSuffix,
 	}
@@ -179,13 +185,13 @@ func TestAccVertexAIIndexEndpointDeployedIndex_vertexAiIndexEndpointDeployedInde
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"address_name":       acctest.BootstrapSharedTestGlobalAddress(t, "vpc-network-1", acctest.AddressWithPrefixLength(8)),
+		"address_name":       compute.BootstrapSharedTestGlobalAddress(t, "vpc-network-1", compute.AddressWithPrefixLength(8)),
 		"bucket_name":        "tf-test-bucket-name" + randomSuffix,
 		"deployed_index_id":  "tf_test_deployed_index_id" + randomSuffix,
 		"display_name":       "tf-test-vertex-deployed-index" + randomSuffix,
 		"display_name_index": "tf-test-test-index" + randomSuffix,
 		"endpoint_name":      "tf-test-endpoint-name" + randomSuffix,
-		"network_name":       acctest.BootstrapSharedServiceNetworkingConnection(t, "vpc-network-1"),
+		"network_name":       servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "vpc-network-1"),
 		"service_account_id": "tf-test-vertex-sa" + randomSuffix,
 		"random_suffix":      randomSuffix,
 	}
@@ -527,8 +533,7 @@ func testAccCheckVertexAIIndexEndpointDeployedIndexDestroyProducer(t *testing.T)
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{VertexAIBasePath}}{{index_endpoint}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(vertexai.Product, config)+"{{index_endpoint}}")
 			if err != nil {
 				return err
 			}

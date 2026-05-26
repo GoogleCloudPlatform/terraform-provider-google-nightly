@@ -25,6 +25,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dns"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/siteverification"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -154,7 +157,7 @@ func testAccCheckSiteVerificationWebResourceDestroyProducer(t *testing.T) func(s
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{SiteVerificationBasePath}}webResource/{{id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(siteverification.Product, config)+"webResource/{{id}}")
 			if err != nil {
 				return err
 			}

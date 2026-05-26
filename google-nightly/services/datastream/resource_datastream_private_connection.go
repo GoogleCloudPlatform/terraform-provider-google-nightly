@@ -157,6 +157,7 @@ func ResourceDatastreamPrivateConnection() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("FORCE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -318,6 +319,12 @@ Format: projects/{project}/global/{networks}/{name}`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/datastream_private_connection.html.markdown for specifics`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -356,7 +363,7 @@ func resourceDatastreamPrivateConnectionCreate(d *schema.ResourceData, meta inte
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatastreamBasePath}}projects/{{project}}/locations/{{location}}/privateConnections?privateConnectionId={{private_connection_id}}&force={{create_without_validation}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateConnections?privateConnectionId={{private_connection_id}}&force={{create_without_validation}}")
 	if err != nil {
 		return err
 	}
@@ -444,7 +451,7 @@ func resourceDatastreamPrivateConnectionRead(d *schema.ResourceData, meta interf
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatastreamBasePath}}projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -477,36 +484,26 @@ func resourceDatastreamPrivateConnectionRead(d *schema.ResourceData, meta interf
 
 	log.Printf("[DEBUG] Finished reading DatastreamPrivateConnection %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "FORCE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading PrivateConnection: %s", err)
 	}
 
-	if err := d.Set("name", flattenDatastreamPrivateConnectionName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("labels", flattenDatastreamPrivateConnectionLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("display_name", flattenDatastreamPrivateConnectionDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("state", flattenDatastreamPrivateConnectionState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("error", flattenDatastreamPrivateConnectionError(res["error"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("vpc_peering_config", flattenDatastreamPrivateConnectionVpcPeeringConfig(res["vpcPeeringConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("psc_interface_config", flattenDatastreamPrivateConnectionPscInterfaceConfig(res["pscInterfaceConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDatastreamPrivateConnectionTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDatastreamPrivateConnectionEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	err = ResourceDatastreamPrivateConnectionFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -537,11 +534,18 @@ func resourceDatastreamPrivateConnectionRead(d *schema.ResourceData, meta interf
 }
 
 func resourceDatastreamPrivateConnectionUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceDatastreamPrivateConnectionRead(d, meta)
 }
 
 func resourceDatastreamPrivateConnectionDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DatastreamPrivateConnection without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PrivateConnection %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -555,8 +559,7 @@ func resourceDatastreamPrivateConnectionDelete(d *schema.ResourceData, meta inte
 		return fmt.Errorf("Error fetching project for PrivateConnection: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DatastreamBasePath}}projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/privateConnections/{{private_connection_id}}")
 	if err != nil {
 		return err
 	}
@@ -569,10 +572,12 @@ func resourceDatastreamPrivateConnectionDelete(d *schema.ResourceData, meta inte
 	}
 
 	headers := make(http.Header)
-	// Add force=true query param to force deletion of private connection sub resources like Routes
-	url, err = transport_tpg.AddQueryParams(url, map[string]string{"force": strconv.FormatBool(true)})
-	if err != nil {
-		return err
+	// Add force=true query param if deletion_policy is FORCE to delete child routes
+	if deletionPolicy := d.Get("deletion_policy"); deletionPolicy == "FORCE" {
+		url, err = transport_tpg.AddQueryParams(url, map[string]string{"force": strconv.FormatBool(true)})
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Printf("[DEBUG] Deleting PrivateConnection %q", d.Id())
@@ -619,6 +624,7 @@ func resourceDatastreamPrivateConnectionImport(d *schema.ResourceData, meta inte
 	}
 	d.SetId(id)
 
+	// Explicitly set virtual fields to default values on import
 	if err := waitForPrivateConnectionReady(d, config, d.Timeout(schema.TimeoutCreate)-time.Minute); err != nil {
 		return nil, fmt.Errorf("Error waiting for PrivateConnection %q to be CREATED during importing: %q", d.Get("name").(string), err)
 	}
@@ -927,4 +933,38 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 
 func ResourceDatastreamPrivateConnectionUpgradeV0(_ context.Context, rawState map[string]interface{}, meta interface{}) (map[string]interface{}, error) {
 	return tpgresource.TerraformLabelsStateUpgrade(rawState)
+}
+
+func ResourceDatastreamPrivateConnectionFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenDatastreamPrivateConnectionName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("labels", flattenDatastreamPrivateConnectionLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("display_name", flattenDatastreamPrivateConnectionDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("state", flattenDatastreamPrivateConnectionState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("error", flattenDatastreamPrivateConnectionError(res["error"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("vpc_peering_config", flattenDatastreamPrivateConnectionVpcPeeringConfig(res["vpcPeeringConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("psc_interface_config", flattenDatastreamPrivateConnectionPscInterfaceConfig(res["pscInterfaceConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDatastreamPrivateConnectionTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDatastreamPrivateConnectionEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PrivateConnection: %s", err)
+	}
+
+	return nil
 }

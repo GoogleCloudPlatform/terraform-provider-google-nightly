@@ -30,6 +30,10 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +52,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = compute.Product
 )
 
 func TestAccComputeMachineImage_machineImageBasicExample(t *testing.T) {
@@ -73,7 +78,7 @@ func TestAccComputeMachineImage_machineImageBasicExample(t *testing.T) {
 				ResourceName:            "google_compute_machine_image.image",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"source_instance"},
+				ImportStateVerifyIgnore: []string{"params", "source_instance"},
 			},
 			{
 				ResourceName:       "google_compute_machine_image.image",
@@ -113,7 +118,7 @@ resource "google_compute_machine_image" "image" {
 
 func TestAccComputeMachineImage_computeMachineImageKmsExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@compute-system.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -142,7 +147,7 @@ func TestAccComputeMachineImage_computeMachineImageKmsExample(t *testing.T) {
 				ResourceName:            "google_compute_machine_image.image",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"source_instance"},
+				ImportStateVerifyIgnore: []string{"params", "source_instance"},
 			},
 			{
 				ResourceName:       "google_compute_machine_image.image",
@@ -195,6 +200,90 @@ resource "google_kms_key_ring" "key_ring" {
 `, context)
 }
 
+func TestAccComputeMachineImage_machineImageResourceManagerTagsExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"image_name":    "tf-test-my-image" + randomSuffix,
+		"tag_key":       "tf-test-key-" + acctest.RandString(t, 10),
+		"tag_value":     "tf-test-value-" + acctest.RandString(t, 10),
+		"vm_name":       "tf-test-my-vm" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		CheckDestroy:             testAccCheckComputeMachineImageDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeMachineImage_machineImageResourceManagerTagsExample(context),
+			},
+			{
+				ResourceName:            "google_compute_machine_image.image",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"params", "source_instance"},
+			},
+			{
+				ResourceName:       "google_compute_machine_image.image",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccComputeMachineImage_machineImageResourceManagerTagsExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+data "google_project" "project" {
+  provider = google-beta
+}
+
+resource "google_tags_tag_key" "tag_key1" {
+  provider   = google-beta
+  parent     = "projects/${data.google_project.project.number}"
+  short_name = "%{tag_key}"
+}
+
+resource "google_tags_tag_value" "tag_value1" {
+  provider   = google-beta
+  parent     = google_tags_tag_key.tag_key1.id
+  short_name = "%{tag_value}"
+}
+
+resource "google_compute_instance" "vm" {
+  provider     = google-beta
+  name         = "%{vm_name}"
+  machine_type = "e2-medium"
+
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-11"
+    }
+  }
+
+  network_interface {
+    network = "default"
+  }
+}
+
+resource "google_compute_machine_image" "image" {
+  provider        = google-beta
+  name            = "%{image_name}"
+  source_instance = google_compute_instance.vm.self_link
+  params {
+    resource_manager_tags = {
+      (google_tags_tag_key.tag_key1.id) = (google_tags_tag_value.tag_value1.id)
+    }
+  }
+}
+`, context)
+}
+
 func testAccCheckComputeMachineImageDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {
@@ -206,8 +295,7 @@ func testAccCheckComputeMachineImageDestroyProducer(t *testing.T) func(s *terraf
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/global/machineImages/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(compute.Product, config)+"projects/{{project}}/global/machineImages/{{name}}")
 			if err != nil {
 				return err
 			}

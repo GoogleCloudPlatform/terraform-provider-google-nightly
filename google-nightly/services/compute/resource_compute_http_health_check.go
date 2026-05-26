@@ -115,6 +115,7 @@ func ResourceComputeHttpHealthCheck() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -220,6 +221,18 @@ consecutive failures. The default value is 2.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -288,7 +301,7 @@ func resourceComputeHttpHealthCheckCreate(d *schema.ResourceData, meta interface
 		obj["unhealthyThreshold"] = unhealthyThresholdProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/httpHealthChecks")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/httpHealthChecks")
 	if err != nil {
 		return err
 	}
@@ -367,7 +380,7 @@ func resourceComputeHttpHealthCheckRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/httpHealthChecks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/httpHealthChecks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -400,42 +413,26 @@ func resourceComputeHttpHealthCheckRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading ComputeHttpHealthCheck %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
 	}
 
-	if err := d.Set("check_interval_sec", flattenComputeHttpHealthCheckCheckIntervalSec(res["checkIntervalSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeHttpHealthCheckCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("description", flattenComputeHttpHealthCheckDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("healthy_threshold", flattenComputeHttpHealthCheckHealthyThreshold(res["healthyThreshold"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("host", flattenComputeHttpHealthCheckHost(res["host"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("name", flattenComputeHttpHealthCheckName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("port", flattenComputeHttpHealthCheckPort(res["port"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("request_path", flattenComputeHttpHealthCheckRequestPath(res["requestPath"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("timeout_sec", flattenComputeHttpHealthCheckTimeoutSec(res["timeoutSec"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("unhealthy_threshold", flattenComputeHttpHealthCheckUnhealthyThreshold(res["unhealthyThreshold"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	err = ResourceComputeHttpHealthCheckFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -460,6 +457,19 @@ func resourceComputeHttpHealthCheckRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceComputeHttpHealthCheckUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeHttpHealthCheck().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeHttpHealthCheckRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -545,7 +555,7 @@ func resourceComputeHttpHealthCheckUpdate(d *schema.ResourceData, meta interface
 		obj["unhealthyThreshold"] = unhealthyThresholdProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/httpHealthChecks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/httpHealthChecks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -587,6 +597,13 @@ func resourceComputeHttpHealthCheckUpdate(d *schema.ResourceData, meta interface
 }
 
 func resourceComputeHttpHealthCheckDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeHttpHealthCheck without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing HttpHealthCheck %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -600,8 +617,7 @@ func resourceComputeHttpHealthCheckDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for HttpHealthCheck: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/httpHealthChecks/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/httpHealthChecks/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -801,4 +817,43 @@ func expandComputeHttpHealthCheckTimeoutSec(v interface{}, d tpgresource.Terrafo
 
 func expandComputeHttpHealthCheckUnhealthyThreshold(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceComputeHttpHealthCheckFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("check_interval_sec", flattenComputeHttpHealthCheckCheckIntervalSec(res["checkIntervalSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeHttpHealthCheckCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("description", flattenComputeHttpHealthCheckDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("healthy_threshold", flattenComputeHttpHealthCheckHealthyThreshold(res["healthyThreshold"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("host", flattenComputeHttpHealthCheckHost(res["host"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("name", flattenComputeHttpHealthCheckName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("port", flattenComputeHttpHealthCheckPort(res["port"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("request_path", flattenComputeHttpHealthCheckRequestPath(res["requestPath"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("timeout_sec", flattenComputeHttpHealthCheckTimeoutSec(res["timeoutSec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("unhealthy_threshold", flattenComputeHttpHealthCheckUnhealthyThreshold(res["unhealthyThreshold"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading HttpHealthCheck: %s", err)
+	}
+	return nil
 }

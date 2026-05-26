@@ -53,7 +53,7 @@ func init() {
 		Name:        "google_iap_agent_registry_agent_iam_member",
 		ProductName: "Iap",
 		Type:        registry.SchemaTypeIAMResource,
-		Schema:      tpgiamresource.ResourceIamMember(IapAgentRegistryAgentIamSchema, IapAgentRegistryAgentIamUpdaterProducer, IapAgentRegistryAgentIdParseFunc),
+		Schema:      tpgiamresource.ResourceIamMember(IapAgentRegistryAgentIamSchema, IapAgentRegistryAgentIamUpdaterProducer, IapAgentRegistryAgentIdParseFunc, tpgiamresource.IamWithParentResourceIdentity(IapAgentRegistryAgentIamParentParentResourceIdentityParser)),
 	}.Register()
 	registry.Schema{
 		Name:        "google_iap_agent_registry_agent_iam_policy",
@@ -279,6 +279,17 @@ func (u *IapAgentRegistryAgentIamUpdater) qualifyAgentRegistryAgentUrl(methodIde
 
 func (u *IapAgentRegistryAgentIamUpdater) GetResourceId() string {
 	return fmt.Sprintf("projects/%s/locations/%s/iap_web/agentRegistry/agents/%s", u.project, u.location, u.agentId)
+}
+
+func IapAgentRegistryAgentIamParentParentResourceIdentityParser(d *schema.ResourceData, identity *schema.IdentityData, transportConfig *transport_tpg.Config) (string, error) {
+	return tpgiamresource.ParseIamResourceIdentity(d, identity, transportConfig, tpgiamresource.IamResourceIdentityConfig{
+		Params: []tpgiamresource.IamIdentityParam{
+			{Key: "project", IdentityKey: "project"},
+			{Key: "location", IdentityKey: "location"},
+			{Key: "agentId", IdentityKey: "agent_id"},
+		},
+		UriFormat: "projects/%s/locations/%s/iap_web/agentRegistry/agents/%s",
+	})
 }
 
 func (u *IapAgentRegistryAgentIamUpdater) GetMutexKey() string {

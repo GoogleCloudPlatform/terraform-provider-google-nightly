@@ -30,6 +30,12 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/colab"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataform"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +54,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = colab.Product
 )
 
 func TestAccColabSchedule_colabScheduleBasicExample(t *testing.T) {
@@ -316,7 +323,7 @@ resource "google_colab_schedule" "schedule" {
 
 func TestAccColabSchedule_colabScheduleFullExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-dataform.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -333,7 +340,7 @@ func TestAccColabSchedule_colabScheduleFullExample(t *testing.T) {
 		"dataform_repository":   "tf-test-dataform-repository" + randomSuffix,
 		"display_name":          "tf-test-full-schedule" + randomSuffix,
 		"end_time":              time.Date(time.Now().Year(), 12, 31, 0, 0, 0, 0, time.Now().Location()).AddDate(0, 0, 10).Format(time.RFC3339),
-		"key_name":              acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"key_name":              kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"network_name":          "tf-test-colab-test-default" + randomSuffix,
 		"runtime_template_name": "tf-test-runtime-template" + randomSuffix,
 		"secret":                "secret" + randomSuffix,
@@ -480,8 +487,7 @@ func testAccCheckColabScheduleDestroyProducer(t *testing.T) func(s *terraform.St
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ColabBasePath}}projects/{{project}}/locations/{{location}}/schedules/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(colab.Product, config)+"projects/{{project}}/locations/{{location}}/schedules/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -321,7 +321,7 @@ func resourceCloudQuotasQuotaPreferenceCreate(d *schema.ResourceData, meta inter
 		obj["contactEmail"] = contactEmailProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudQuotasBasePath}}{{parent}}/locations/global/quotaPreferences?quotaPreferenceId={{name}}&ignoreSafetyChecks={{ignore_safety_checks}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/global/quotaPreferences?quotaPreferenceId={{name}}&ignoreSafetyChecks={{ignore_safety_checks}}")
 	if err != nil {
 		return err
 	}
@@ -390,7 +390,7 @@ func resourceCloudQuotasQuotaPreferenceRead(d *schema.ResourceData, meta interfa
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudQuotasBasePath}}{{parent}}/locations/global/quotaPreferences/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/global/quotaPreferences/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -417,32 +417,9 @@ func resourceCloudQuotasQuotaPreferenceRead(d *schema.ResourceData, meta interfa
 
 	log.Printf("[DEBUG] Finished reading CloudQuotasQuotaPreference %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenCloudQuotasQuotaPreferenceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaPreference: %s", err)
-	}
-	if err := d.Set("service", flattenCloudQuotasQuotaPreferenceService(res["service"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaPreference: %s", err)
-	}
-	if err := d.Set("quota_id", flattenCloudQuotasQuotaPreferenceQuotaId(res["quotaId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaPreference: %s", err)
-	}
-	if err := d.Set("quota_config", flattenCloudQuotasQuotaPreferenceQuotaConfig(res["quotaConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaPreference: %s", err)
-	}
-	if err := d.Set("dimensions", flattenCloudQuotasQuotaPreferenceDimensions(res["dimensions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaPreference: %s", err)
-	}
-	if err := d.Set("etag", flattenCloudQuotasQuotaPreferenceEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaPreference: %s", err)
-	}
-	if err := d.Set("create_time", flattenCloudQuotasQuotaPreferenceCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaPreference: %s", err)
-	}
-	if err := d.Set("update_time", flattenCloudQuotasQuotaPreferenceUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaPreference: %s", err)
-	}
-	if err := d.Set("reconciling", flattenCloudQuotasQuotaPreferenceReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	err = ResourceCloudQuotasQuotaPreferenceFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -467,6 +444,7 @@ func resourceCloudQuotasQuotaPreferenceRead(d *schema.ResourceData, meta interfa
 }
 
 func resourceCloudQuotasQuotaPreferenceUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -534,7 +512,7 @@ func resourceCloudQuotasQuotaPreferenceUpdate(d *schema.ResourceData, meta inter
 		obj["contactEmail"] = contactEmailProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudQuotasBasePath}}{{parent}}/locations/global/quotaPreferences/{{name}}?ignoreSafetyChecks={{ignore_safety_checks}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/global/quotaPreferences/{{name}}?ignoreSafetyChecks={{ignore_safety_checks}}")
 	if err != nil {
 		return err
 	}
@@ -843,5 +821,39 @@ func resourceCloudQuotasQuotaPreferencePostCreateSetComputedFields(d *schema.Res
 			return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 		}
 	}
+	return nil
+}
+
+func ResourceCloudQuotasQuotaPreferenceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenCloudQuotasQuotaPreferenceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	}
+	if err = d.Set("service", flattenCloudQuotasQuotaPreferenceService(res["service"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	}
+	if err = d.Set("quota_id", flattenCloudQuotasQuotaPreferenceQuotaId(res["quotaId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	}
+	if err = d.Set("quota_config", flattenCloudQuotasQuotaPreferenceQuotaConfig(res["quotaConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	}
+	if err = d.Set("dimensions", flattenCloudQuotasQuotaPreferenceDimensions(res["dimensions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	}
+	if err = d.Set("etag", flattenCloudQuotasQuotaPreferenceEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	}
+	if err = d.Set("create_time", flattenCloudQuotasQuotaPreferenceCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	}
+	if err = d.Set("update_time", flattenCloudQuotasQuotaPreferenceUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	}
+	if err = d.Set("reconciling", flattenCloudQuotasQuotaPreferenceReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaPreference: %s", err)
+	}
+
 	return nil
 }

@@ -117,6 +117,7 @@ func ResourceDeveloperConnectAccountConnector() *schema.Resource {
 			tpgresource.SetAnnotationsDiff,
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -368,6 +369,18 @@ behalf of the user configured under the account connector.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -418,7 +431,7 @@ func resourceDeveloperConnectAccountConnectorCreate(d *schema.ResourceData, meta
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeveloperConnectBasePath}}projects/{{project}}/locations/{{location}}/accountConnectors?accountConnectorId={{account_connector_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/accountConnectors?accountConnectorId={{account_connector_id}}")
 	if err != nil {
 		return err
 	}
@@ -502,7 +515,7 @@ func resourceDeveloperConnectAccountConnectorRead(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeveloperConnectBasePath}}projects/{{project}}/locations/{{location}}/accountConnectors/{{account_connector_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/accountConnectors/{{account_connector_id}}")
 	if err != nil {
 		return err
 	}
@@ -535,48 +548,26 @@ func resourceDeveloperConnectAccountConnectorRead(d *schema.ResourceData, meta i
 
 	log.Printf("[DEBUG] Finished reading DeveloperConnectAccountConnector %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading AccountConnector: %s", err)
 	}
 
-	if err := d.Set("annotations", flattenDeveloperConnectAccountConnectorAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("create_time", flattenDeveloperConnectAccountConnectorCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("custom_oauth_config", flattenDeveloperConnectAccountConnectorCustomOauthConfig(res["customOauthConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("etag", flattenDeveloperConnectAccountConnectorEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("labels", flattenDeveloperConnectAccountConnectorLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("name", flattenDeveloperConnectAccountConnectorName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("oauth_start_uri", flattenDeveloperConnectAccountConnectorOauthStartUri(res["oauthStartUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("provider_oauth_config", flattenDeveloperConnectAccountConnectorProviderOauthConfig(res["providerOauthConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("proxy_config", flattenDeveloperConnectAccountConnectorProxyConfig(res["proxyConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("update_time", flattenDeveloperConnectAccountConnectorUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("effective_annotations", flattenDeveloperConnectAccountConnectorEffectiveAnnotations(res["annotations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenDeveloperConnectAccountConnectorTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenDeveloperConnectAccountConnectorEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	err = ResourceDeveloperConnectAccountConnectorFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -607,6 +598,19 @@ func resourceDeveloperConnectAccountConnectorRead(d *schema.ResourceData, meta i
 }
 
 func resourceDeveloperConnectAccountConnectorUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceDeveloperConnectAccountConnector().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceDeveloperConnectAccountConnectorRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -679,7 +683,7 @@ func resourceDeveloperConnectAccountConnectorUpdate(d *schema.ResourceData, meta
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeveloperConnectBasePath}}projects/{{project}}/locations/{{location}}/accountConnectors/{{account_connector_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/accountConnectors/{{account_connector_id}}")
 	if err != nil {
 		return err
 	}
@@ -755,6 +759,13 @@ func resourceDeveloperConnectAccountConnectorUpdate(d *schema.ResourceData, meta
 }
 
 func resourceDeveloperConnectAccountConnectorDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy DeveloperConnectAccountConnector without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing AccountConnector %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -768,8 +779,7 @@ func resourceDeveloperConnectAccountConnectorDelete(d *schema.ResourceData, meta
 		return fmt.Errorf("Error fetching project for AccountConnector: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{DeveloperConnectBasePath}}projects/{{project}}/locations/{{location}}/accountConnectors/{{account_connector_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/accountConnectors/{{account_connector_id}}")
 	if err != nil {
 		return err
 	}
@@ -1278,4 +1288,50 @@ func expandDeveloperConnectAccountConnectorEffectiveLabels(v interface{}, d tpgr
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceDeveloperConnectAccountConnectorFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("annotations", flattenDeveloperConnectAccountConnectorAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("create_time", flattenDeveloperConnectAccountConnectorCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("custom_oauth_config", flattenDeveloperConnectAccountConnectorCustomOauthConfig(res["customOauthConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("etag", flattenDeveloperConnectAccountConnectorEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("labels", flattenDeveloperConnectAccountConnectorLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("name", flattenDeveloperConnectAccountConnectorName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("oauth_start_uri", flattenDeveloperConnectAccountConnectorOauthStartUri(res["oauthStartUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("provider_oauth_config", flattenDeveloperConnectAccountConnectorProviderOauthConfig(res["providerOauthConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("proxy_config", flattenDeveloperConnectAccountConnectorProxyConfig(res["proxyConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("update_time", flattenDeveloperConnectAccountConnectorUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("effective_annotations", flattenDeveloperConnectAccountConnectorEffectiveAnnotations(res["annotations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenDeveloperConnectAccountConnectorTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenDeveloperConnectAccountConnectorEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AccountConnector: %s", err)
+	}
+
+	return nil
 }

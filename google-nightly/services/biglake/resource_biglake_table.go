@@ -240,6 +240,19 @@ RFC3339 UTC "Zulu" format, with nanosecond resolution and up to nine
 fractional digits. Examples: "2014-10-02T15:01:23Z" and
 "2014-10-02T15:01:23.045123456Z".`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -266,7 +279,7 @@ func resourceBiglakeTableCreate(d *schema.ResourceData, meta interface{}) error 
 		obj["hiveOptions"] = hiveOptionsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeBasePath}}{{database}}/tables?tableId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{database}}/tables?tableId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -329,7 +342,7 @@ func resourceBiglakeTableRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeBasePath}}{{database}}/tables/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{database}}/tables/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -356,26 +369,23 @@ func resourceBiglakeTableRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading BiglakeTable %q: %#v", d.Id(), res)
 
-	if err := d.Set("create_time", flattenBiglakeTableCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Table: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("update_time", flattenBiglakeTableUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Table: %s", err)
-	}
-	if err := d.Set("delete_time", flattenBiglakeTableDeleteTime(res["deleteTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Table: %s", err)
-	}
-	if err := d.Set("expire_time", flattenBiglakeTableExpireTime(res["expireTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Table: %s", err)
-	}
-	if err := d.Set("etag", flattenBiglakeTableEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Table: %s", err)
-	}
-	if err := d.Set("type", flattenBiglakeTableType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Table: %s", err)
-	}
-	if err := d.Set("hive_options", flattenBiglakeTableHiveOptions(res["hiveOptions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Table: %s", err)
+
+	err = ResourceBiglakeTableFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -400,6 +410,19 @@ func resourceBiglakeTableRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceBiglakeTableUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceBiglakeTable().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceBiglakeTableRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -437,7 +460,7 @@ func resourceBiglakeTableUpdate(d *schema.ResourceData, meta interface{}) error 
 		obj["hiveOptions"] = hiveOptionsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeBasePath}}{{database}}/tables/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{database}}/tables/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -490,6 +513,13 @@ func resourceBiglakeTableUpdate(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceBiglakeTableDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy BiglakeTable without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Table %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -498,7 +528,7 @@ func resourceBiglakeTableDelete(d *schema.ResourceData, meta interface{}) error 
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{BiglakeBasePath}}{{database}}/tables/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{database}}/tables/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -728,4 +758,32 @@ func expandBiglakeTableHiveOptionsStorageDescriptorInputFormat(v interface{}, d 
 
 func expandBiglakeTableHiveOptionsStorageDescriptorOutputFormat(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceBiglakeTableFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenBiglakeTableCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Table: %s", err)
+	}
+	if err = d.Set("update_time", flattenBiglakeTableUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Table: %s", err)
+	}
+	if err = d.Set("delete_time", flattenBiglakeTableDeleteTime(res["deleteTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Table: %s", err)
+	}
+	if err = d.Set("expire_time", flattenBiglakeTableExpireTime(res["expireTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Table: %s", err)
+	}
+	if err = d.Set("etag", flattenBiglakeTableEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Table: %s", err)
+	}
+	if err = d.Set("type", flattenBiglakeTableType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Table: %s", err)
+	}
+	if err = d.Set("hive_options", flattenBiglakeTableHiveOptions(res["hiveOptions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Table: %s", err)
+	}
+
+	return nil
 }

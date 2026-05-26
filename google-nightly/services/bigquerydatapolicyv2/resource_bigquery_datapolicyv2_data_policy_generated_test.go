@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquery"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/bigquerydatapolicyv2"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = bigquerydatapolicyv2.Product
 )
 
 func TestAccBigqueryDatapolicyv2DataPolicy_bigqueryDatapolicyv2DatapolicyBasicExample(t *testing.T) {
@@ -267,8 +270,7 @@ func testAccCheckBigqueryDatapolicyv2DataPolicyDestroyProducer(t *testing.T) fun
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{BigqueryDatapolicyv2BasePath}}projects/{{project}}/locations/{{location}}/dataPolicies/{{data_policy_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(bigquerydatapolicyv2.Product, config)+"projects/{{project}}/locations/{{location}}/dataPolicies/{{data_policy_id}}")
 			if err != nil {
 				return err
 			}

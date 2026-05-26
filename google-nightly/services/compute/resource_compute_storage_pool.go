@@ -116,6 +116,7 @@ func ResourceComputeStoragePool() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -200,6 +201,30 @@ following are valid values:
 **Note**: This field is non-authoritative, and will only manage the labels present in your configuration.
 Please refer to the field 'effective_labels' for all of the labels present on the resource.`,
 				Elem: &schema.Schema{Type: schema.TypeString},
+			},
+			"params": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				ForceNew:    true,
+				Description: `Additional params passed with the request, but not persisted as part of resource payload`,
+				MaxItems:    1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"resource_manager_tags": {
+							Type:     schema.TypeMap,
+							Optional: true,
+							ForceNew: true,
+							Description: `Resource manager tags to be bound to the storage pool. Tag keys and values have the
+same definition as resource manager tags. Keys and values can be either in numeric format,
+such as tagKeys/{tag_key_id} and tagValues/{tag_value_id} or in namespaced format such as
+{org_id|projectId}/{tag_key_short_name} and {tag_value_short_name}. The field is ignored when empty.
+The field is immutable and causes resource replacement when mutated. This field is only
+set at create time and modifying this field after creation will trigger recreation.
+To apply tags to an existing resource, see the google_tags_tag_binding resource.`,
+							Elem: &schema.Schema{Type: schema.TypeString},
+						},
+					},
+				},
 			},
 			"performance_provisioning_type": {
 				Type:         schema.TypeString,
@@ -398,6 +423,18 @@ When the field is set to false, deleting the StoragePool is allowed.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -465,6 +502,12 @@ func resourceComputeStoragePoolCreate(d *schema.ResourceData, meta interface{}) 
 	} else if v, ok := d.GetOkExists("performance_provisioning_type"); !tpgresource.IsEmptyValue(reflect.ValueOf(performanceProvisioningTypeProp)) && (ok || !reflect.DeepEqual(v, performanceProvisioningTypeProp)) {
 		obj["performanceProvisioningType"] = performanceProvisioningTypeProp
 	}
+	paramsProp, err := expandComputeStoragePoolParams(d.Get("params"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("params"); !tpgresource.IsEmptyValue(reflect.ValueOf(paramsProp)) && (ok || !reflect.DeepEqual(v, paramsProp)) {
+		obj["params"] = paramsProp
+	}
 	effectiveLabelsProp, err := expandComputeStoragePoolEffectiveLabels(d.Get("effective_labels"), d, config)
 	if err != nil {
 		return err
@@ -478,7 +521,7 @@ func resourceComputeStoragePoolCreate(d *schema.ResourceData, meta interface{}) 
 		obj["zone"] = zoneProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/storagePools")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/storagePools")
 	if err != nil {
 		return err
 	}
@@ -562,7 +605,7 @@ func resourceComputeStoragePoolRead(d *schema.ResourceData, meta interface{}) er
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/storagePools/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/storagePools/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -601,63 +644,25 @@ func resourceComputeStoragePoolRead(d *schema.ResourceData, meta interface{}) er
 			return fmt.Errorf("Error setting deletion_protection: %s", err)
 		}
 	}
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading StoragePool: %s", err)
 	}
 
-	if err := d.Set("kind", flattenComputeStoragePoolKind(res["kind"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("id", flattenComputeStoragePoolId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("creation_timestamp", flattenComputeStoragePoolCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("name", flattenComputeStoragePoolName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("description", flattenComputeStoragePoolDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("pool_provisioned_capacity_gb", flattenComputeStoragePoolPoolProvisionedCapacityGb(res["poolProvisionedCapacityGb"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("pool_provisioned_iops", flattenComputeStoragePoolPoolProvisionedIops(res["poolProvisionedIops"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("pool_provisioned_throughput", flattenComputeStoragePoolPoolProvisionedThroughput(res["poolProvisionedThroughput"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("label_fingerprint", flattenComputeStoragePoolLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("resource_status", flattenComputeStoragePoolResourceStatus(res["resourceStatus"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("storage_pool_type", flattenComputeStoragePoolStoragePoolType(res["storagePoolType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("status", flattenComputeStoragePoolStatus(res["status"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("capacity_provisioning_type", flattenComputeStoragePoolCapacityProvisioningType(res["capacityProvisioningType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("performance_provisioning_type", flattenComputeStoragePoolPerformanceProvisioningType(res["performanceProvisioningType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("labels", flattenComputeStoragePoolLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenComputeStoragePoolTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenComputeStoragePoolEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
-	}
-	if err := d.Set("zone", flattenComputeStoragePoolZone(res["zone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading StoragePool: %s", err)
+	err = ResourceComputeStoragePoolFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -688,6 +693,19 @@ func resourceComputeStoragePoolRead(d *schema.ResourceData, meta interface{}) er
 }
 
 func resourceComputeStoragePoolUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeStoragePool().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeStoragePoolRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -760,7 +778,7 @@ func resourceComputeStoragePoolUpdate(d *schema.ResourceData, meta interface{}) 
 		obj["zone"] = zoneProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/storagePools/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/storagePools/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -802,6 +820,13 @@ func resourceComputeStoragePoolUpdate(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceComputeStoragePoolDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeStoragePool without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing StoragePool %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -815,8 +840,7 @@ func resourceComputeStoragePoolDelete(d *schema.ResourceData, meta interface{}) 
 		return fmt.Errorf("Error fetching project for StoragePool: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/storagePools/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/zones/{{zone}}/storagePools/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1160,6 +1184,39 @@ func expandComputeStoragePoolPerformanceProvisioningType(v interface{}, d tpgres
 	return v, nil
 }
 
+func expandComputeStoragePoolParams(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedResourceManagerTags, err := expandComputeStoragePoolParamsResourceManagerTags(original["resource_manager_tags"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedResourceManagerTags); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["resourceManagerTags"] = transformedResourceManagerTags
+	}
+
+	return transformed, nil
+}
+
+func expandComputeStoragePoolParamsResourceManagerTags(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
+	if v == nil {
+		return map[string]string{}, nil
+	}
+	m := make(map[string]string)
+	for k, val := range v.(map[string]interface{}) {
+		m[k] = val.(string)
+	}
+	return m, nil
+}
+
 func expandComputeStoragePoolEffectiveLabels(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
 	if v == nil {
 		return map[string]string{}, nil
@@ -1177,4 +1234,65 @@ func expandComputeStoragePoolZone(v interface{}, d tpgresource.TerraformResource
 		return nil, fmt.Errorf("Invalid value for zone: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeStoragePoolFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("kind", flattenComputeStoragePoolKind(res["kind"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("id", flattenComputeStoragePoolId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeStoragePoolCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("name", flattenComputeStoragePoolName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("description", flattenComputeStoragePoolDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("pool_provisioned_capacity_gb", flattenComputeStoragePoolPoolProvisionedCapacityGb(res["poolProvisionedCapacityGb"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("pool_provisioned_iops", flattenComputeStoragePoolPoolProvisionedIops(res["poolProvisionedIops"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("pool_provisioned_throughput", flattenComputeStoragePoolPoolProvisionedThroughput(res["poolProvisionedThroughput"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("label_fingerprint", flattenComputeStoragePoolLabelFingerprint(res["labelFingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("resource_status", flattenComputeStoragePoolResourceStatus(res["resourceStatus"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("storage_pool_type", flattenComputeStoragePoolStoragePoolType(res["storagePoolType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("status", flattenComputeStoragePoolStatus(res["status"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("capacity_provisioning_type", flattenComputeStoragePoolCapacityProvisioningType(res["capacityProvisioningType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("performance_provisioning_type", flattenComputeStoragePoolPerformanceProvisioningType(res["performanceProvisioningType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("labels", flattenComputeStoragePoolLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenComputeStoragePoolTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenComputeStoragePoolEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+	if err = d.Set("zone", flattenComputeStoragePoolZone(res["zone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading StoragePool: %s", err)
+	}
+
+	return nil
 }

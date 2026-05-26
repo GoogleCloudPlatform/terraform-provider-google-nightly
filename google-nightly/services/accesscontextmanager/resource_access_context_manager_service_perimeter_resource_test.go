@@ -24,6 +24,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/accesscontextmanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -33,7 +34,7 @@ import (
 
 func testAccAccessContextManagerServicePerimeterResource_basicTest(t *testing.T) {
 	org := envvar.GetTestOrgFromEnv(t)
-	projects := acctest.BootstrapServicePerimeterProjects(t, 2)
+	projects := BootstrapServicePerimeterProjects(t, 2)
 	policyTitle := "my policy"
 	perimeterTitle := "perimeter"
 
@@ -72,7 +73,7 @@ func testAccCheckAccessContextManagerServicePerimeterResourceDestroyProducer(t *
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{AccessContextManagerBasePath}}{{perimeter_name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(accesscontextmanager.Product, config)+"{{perimeter_name}}")
 			if err != nil {
 				return err
 			}

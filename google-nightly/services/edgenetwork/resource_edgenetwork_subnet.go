@@ -116,6 +116,7 @@ func ResourceEdgenetworkSubnet() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -258,6 +259,18 @@ fractional digits. Examples: '2014-10-02T15:01:23Z' and '2014-10-02T15:01:23.045
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -308,7 +321,7 @@ func resourceEdgenetworkSubnetCreate(d *schema.ResourceData, meta interface{}) e
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{EdgenetworkBasePath}}projects/{{project}}/locations/{{location}}/zones/{{zone}}/subnets?subnetId={{subnet_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/zones/{{zone}}/subnets?subnetId={{subnet_id}}")
 	if err != nil {
 		return err
 	}
@@ -397,7 +410,7 @@ func resourceEdgenetworkSubnetRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{EdgenetworkBasePath}}projects/{{project}}/locations/{{location}}/zones/{{zone}}/subnets/{{subnet_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/zones/{{zone}}/subnets/{{subnet_id}}")
 	if err != nil {
 		return err
 	}
@@ -430,45 +443,26 @@ func resourceEdgenetworkSubnetRead(d *schema.ResourceData, meta interface{}) err
 
 	log.Printf("[DEBUG] Finished reading EdgenetworkSubnet %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Subnet: %s", err)
 	}
 
-	if err := d.Set("name", flattenEdgenetworkSubnetName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("labels", flattenEdgenetworkSubnetLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("description", flattenEdgenetworkSubnetDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("create_time", flattenEdgenetworkSubnetCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("update_time", flattenEdgenetworkSubnetUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("network", flattenEdgenetworkSubnetNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("ipv4_cidr", flattenEdgenetworkSubnetIpv4Cidr(res["ipv4Cidr"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("ipv6_cidr", flattenEdgenetworkSubnetIpv6Cidr(res["ipv6Cidr"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("vlan_id", flattenEdgenetworkSubnetVlanId(res["vlanId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("state", flattenEdgenetworkSubnetState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenEdgenetworkSubnetTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenEdgenetworkSubnetEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Subnet: %s", err)
+	err = ResourceEdgenetworkSubnetFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -505,11 +499,18 @@ func resourceEdgenetworkSubnetRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceEdgenetworkSubnetUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "labels", "terraform_labels", and virtual fields are mutable
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
 	return resourceEdgenetworkSubnetRead(d, meta)
 }
 
 func resourceEdgenetworkSubnetDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy EdgenetworkSubnet without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Subnet %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -523,8 +524,7 @@ func resourceEdgenetworkSubnetDelete(d *schema.ResourceData, meta interface{}) e
 		return fmt.Errorf("Error fetching project for Subnet: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{EdgenetworkBasePath}}projects/{{project}}/locations/{{location}}/zones/{{zone}}/subnets/{{subnet_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/zones/{{zone}}/subnets/{{subnet_id}}")
 	if err != nil {
 		return err
 	}
@@ -706,4 +706,47 @@ func expandEdgenetworkSubnetEffectiveLabels(v interface{}, d tpgresource.Terrafo
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceEdgenetworkSubnetFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenEdgenetworkSubnetName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("labels", flattenEdgenetworkSubnetLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("description", flattenEdgenetworkSubnetDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("create_time", flattenEdgenetworkSubnetCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("update_time", flattenEdgenetworkSubnetUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("network", flattenEdgenetworkSubnetNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("ipv4_cidr", flattenEdgenetworkSubnetIpv4Cidr(res["ipv4Cidr"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("ipv6_cidr", flattenEdgenetworkSubnetIpv6Cidr(res["ipv6Cidr"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("vlan_id", flattenEdgenetworkSubnetVlanId(res["vlanId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("state", flattenEdgenetworkSubnetState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenEdgenetworkSubnetTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenEdgenetworkSubnetEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Subnet: %s", err)
+	}
+
+	return nil
 }

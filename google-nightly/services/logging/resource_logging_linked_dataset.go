@@ -100,6 +100,7 @@ func ResourceLoggingLinkedDataset() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceLoggingLinkedDatasetCreate,
 		Read:   resourceLoggingLinkedDatasetRead,
+		Update: resourceLoggingLinkedDatasetUpdate,
 		Delete: resourceLoggingLinkedDatasetDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -211,6 +212,19 @@ and "2014-10-02T15:01:23.045123456Z".`,
 				Description: `The resource name of the linked dataset. The name can have up to 100 characters. A valid link id
 (at the end of the link name) must only have alphanumeric characters and underscores within it.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -236,7 +250,7 @@ func resourceLoggingLinkedDatasetCreate(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}{{parent}}/locations/{{location}}/buckets/{{bucket}}/links?linkId={{link_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/buckets/{{bucket}}/links?linkId={{link_id}}")
 	if err != nil {
 		return err
 	}
@@ -319,7 +333,7 @@ func resourceLoggingLinkedDatasetRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}{{parent}}/locations/{{location}}/buckets/{{bucket}}/links/{{link_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/buckets/{{bucket}}/links/{{link_id}}")
 	if err != nil {
 		return err
 	}
@@ -346,20 +360,23 @@ func resourceLoggingLinkedDatasetRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading LoggingLinkedDataset %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenLoggingLinkedDatasetName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading LinkedDataset: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("description", flattenLoggingLinkedDatasetDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading LinkedDataset: %s", err)
-	}
-	if err := d.Set("create_time", flattenLoggingLinkedDatasetCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading LinkedDataset: %s", err)
-	}
-	if err := d.Set("lifecycle_state", flattenLoggingLinkedDatasetLifecycleState(res["lifecycleState"], d, config)); err != nil {
-		return fmt.Errorf("Error reading LinkedDataset: %s", err)
-	}
-	if err := d.Set("bigquery_dataset", flattenLoggingLinkedDatasetBigqueryDataset(res["bigqueryDataset"], d, config)); err != nil {
-		return fmt.Errorf("Error reading LinkedDataset: %s", err)
+
+	err = ResourceLoggingLinkedDatasetFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -395,7 +412,19 @@ func resourceLoggingLinkedDatasetRead(d *schema.ResourceData, meta interface{}) 
 	return nil
 }
 
+func resourceLoggingLinkedDatasetUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceLoggingLinkedDatasetRead(d, meta)
+}
+
 func resourceLoggingLinkedDatasetDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy LoggingLinkedDataset without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing LinkedDataset %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -404,7 +433,7 @@ func resourceLoggingLinkedDatasetDelete(d *schema.ResourceData, meta interface{}
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{LoggingBasePath}}{{parent}}/locations/{{location}}/buckets/{{bucket}}/links/{{link_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/buckets/{{bucket}}/links/{{link_id}}")
 	if err != nil {
 		return err
 	}
@@ -523,4 +552,26 @@ func resourceLoggingLinkedDatasetEncoder(d *schema.ResourceData, meta interface{
 	d.Set("bucket", bucket)
 	d.Set("name", name)
 	return obj, nil
+}
+
+func ResourceLoggingLinkedDatasetFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenLoggingLinkedDatasetName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading LinkedDataset: %s", err)
+	}
+	if err = d.Set("description", flattenLoggingLinkedDatasetDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading LinkedDataset: %s", err)
+	}
+	if err = d.Set("create_time", flattenLoggingLinkedDatasetCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading LinkedDataset: %s", err)
+	}
+	if err = d.Set("lifecycle_state", flattenLoggingLinkedDatasetLifecycleState(res["lifecycleState"], d, config)); err != nil {
+		return fmt.Errorf("Error reading LinkedDataset: %s", err)
+	}
+	if err = d.Set("bigquery_dataset", flattenLoggingLinkedDatasetBigqueryDataset(res["bigqueryDataset"], d, config)); err != nil {
+		return fmt.Errorf("Error reading LinkedDataset: %s", err)
+	}
+
+	return nil
 }

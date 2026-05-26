@@ -116,6 +116,7 @@ func ResourceNetappActiveDirectory() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -300,6 +301,18 @@ Use when Active Directory domain controllers in multiple regions are configured.
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -422,7 +435,7 @@ func resourceNetappActiveDirectoryCreate(d *schema.ResourceData, meta interface{
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/activeDirectories?activeDirectoryId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/activeDirectories?activeDirectoryId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -506,7 +519,7 @@ func resourceNetappActiveDirectoryRead(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/activeDirectories/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/activeDirectories/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -539,75 +552,26 @@ func resourceNetappActiveDirectoryRead(d *schema.ResourceData, meta interface{})
 
 	log.Printf("[DEBUG] Finished reading NetappActiveDirectory %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenNetappActiveDirectoryCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("state", flattenNetappActiveDirectoryState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("domain", flattenNetappActiveDirectoryDomain(res["domain"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("site", flattenNetappActiveDirectorySite(res["site"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("dns", flattenNetappActiveDirectoryDns(res["dns"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("net_bios_prefix", flattenNetappActiveDirectoryNetBiosPrefix(res["netBiosPrefix"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("organizational_unit", flattenNetappActiveDirectoryOrganizationalUnit(res["organizationalUnit"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("aes_encryption", flattenNetappActiveDirectoryAesEncryption(res["aesEncryption"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("username", flattenNetappActiveDirectoryUsername(res["username"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("backup_operators", flattenNetappActiveDirectoryBackupOperators(res["backupOperators"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("administrators", flattenNetappActiveDirectoryAdministrators(res["administrators"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("security_operators", flattenNetappActiveDirectorySecurityOperators(res["securityOperators"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("kdc_hostname", flattenNetappActiveDirectoryKdcHostname(res["kdcHostname"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("kdc_ip", flattenNetappActiveDirectoryKdcIp(res["kdcIp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("nfs_users_with_ldap", flattenNetappActiveDirectoryNfsUsersWithLdap(res["nfsUsersWithLdap"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("description", flattenNetappActiveDirectoryDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("ldap_signing", flattenNetappActiveDirectoryLdapSigning(res["ldapSigning"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("encrypt_dc_connections", flattenNetappActiveDirectoryEncryptDcConnections(res["encryptDcConnections"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("labels", flattenNetappActiveDirectoryLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("state_details", flattenNetappActiveDirectoryStateDetails(res["stateDetails"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetappActiveDirectoryTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetappActiveDirectoryEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	err = ResourceNetappActiveDirectoryFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -638,6 +602,19 @@ func resourceNetappActiveDirectoryRead(d *schema.ResourceData, meta interface{})
 }
 
 func resourceNetappActiveDirectoryUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetappActiveDirectory().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetappActiveDirectoryRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -782,7 +759,7 @@ func resourceNetappActiveDirectoryUpdate(d *schema.ResourceData, meta interface{
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/activeDirectories/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/activeDirectories/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -906,6 +883,13 @@ func resourceNetappActiveDirectoryUpdate(d *schema.ResourceData, meta interface{
 }
 
 func resourceNetappActiveDirectoryDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetappActiveDirectory without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ActiveDirectory %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -919,8 +903,7 @@ func resourceNetappActiveDirectoryDelete(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error fetching project for ActiveDirectory: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/activeDirectories/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/activeDirectories/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1168,4 +1151,77 @@ func expandNetappActiveDirectoryEffectiveLabels(v interface{}, d tpgresource.Ter
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetappActiveDirectoryFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenNetappActiveDirectoryCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("state", flattenNetappActiveDirectoryState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("domain", flattenNetappActiveDirectoryDomain(res["domain"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("site", flattenNetappActiveDirectorySite(res["site"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("dns", flattenNetappActiveDirectoryDns(res["dns"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("net_bios_prefix", flattenNetappActiveDirectoryNetBiosPrefix(res["netBiosPrefix"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("organizational_unit", flattenNetappActiveDirectoryOrganizationalUnit(res["organizationalUnit"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("aes_encryption", flattenNetappActiveDirectoryAesEncryption(res["aesEncryption"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("username", flattenNetappActiveDirectoryUsername(res["username"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("backup_operators", flattenNetappActiveDirectoryBackupOperators(res["backupOperators"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("administrators", flattenNetappActiveDirectoryAdministrators(res["administrators"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("security_operators", flattenNetappActiveDirectorySecurityOperators(res["securityOperators"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("kdc_hostname", flattenNetappActiveDirectoryKdcHostname(res["kdcHostname"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("kdc_ip", flattenNetappActiveDirectoryKdcIp(res["kdcIp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("nfs_users_with_ldap", flattenNetappActiveDirectoryNfsUsersWithLdap(res["nfsUsersWithLdap"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("description", flattenNetappActiveDirectoryDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("ldap_signing", flattenNetappActiveDirectoryLdapSigning(res["ldapSigning"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("encrypt_dc_connections", flattenNetappActiveDirectoryEncryptDcConnections(res["encryptDcConnections"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("labels", flattenNetappActiveDirectoryLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("state_details", flattenNetappActiveDirectoryStateDetails(res["stateDetails"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetappActiveDirectoryTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetappActiveDirectoryEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ActiveDirectory: %s", err)
+	}
+
+	return nil
 }

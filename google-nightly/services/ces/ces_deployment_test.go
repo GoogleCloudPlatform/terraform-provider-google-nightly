@@ -22,6 +22,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/plancheck" // Add this import
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/ces"
 )
 
 func TestAccCESDeployment_update(t *testing.T) {
@@ -90,6 +91,12 @@ resource "google_ces_deployment" "my-deployment" {
             modality = "CHAT_AND_VOICE"
             theme = "DARK"
             web_widget_title = "temp_webwidget_title"
+            security_settings {
+                enable_public_access = true
+                enable_origin_check = true
+                allowed_origins = ["https://example.com", "https://test.com"]
+                enable_recaptcha = true
+            }
         }
     }
 }
@@ -123,6 +130,12 @@ resource "google_ces_deployment" "my-deployment" {
             modality = "CHAT_ONLY"
             theme = "LIGHT"
             web_widget_title = "temp_webwidget_title"
+            security_settings {
+                enable_public_access = false
+                enable_origin_check = false
+                allowed_origins = ["https://updated.com"]
+                enable_recaptcha = false
+            }
         }
     }
 }

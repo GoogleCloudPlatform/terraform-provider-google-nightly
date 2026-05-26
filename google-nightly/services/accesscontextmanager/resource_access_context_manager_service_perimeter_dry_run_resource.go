@@ -100,6 +100,7 @@ func ResourceAccessContextManagerServicePerimeterDryRunResource() *schema.Resour
 	return &schema.Resource{
 		Create: resourceAccessContextManagerServicePerimeterDryRunResourceCreate,
 		Read:   resourceAccessContextManagerServicePerimeterDryRunResourceRead,
+		Update: resourceAccessContextManagerServicePerimeterDryRunResourceUpdate,
 		Delete: resourceAccessContextManagerServicePerimeterDryRunResourceDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -156,6 +157,19 @@ Format: projects/{project_number}`,
 				Computed:    true,
 				Description: `The perimeter etag is internally used to prevent overwriting the list of perimeter resources on PATCH calls. It is retrieved from the same GET perimeter API call that's used to get the current list of resources. The resource to add or remove is merged into that list and then this etag is sent with the PATCH call along with the updated resource list.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -188,7 +202,7 @@ func resourceAccessContextManagerServicePerimeterDryRunResourceCreate(d *schema.
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{perimeter_name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{perimeter_name}}")
 	if err != nil {
 		return err
 	}
@@ -287,7 +301,7 @@ func resourceAccessContextManagerServicePerimeterDryRunResourceRead(d *schema.Re
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{perimeter_name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{perimeter_name}}")
 	if err != nil {
 		return err
 	}
@@ -329,11 +343,23 @@ func resourceAccessContextManagerServicePerimeterDryRunResourceRead(d *schema.Re
 		return nil
 	}
 
-	if err := d.Set("resource", flattenNestedAccessContextManagerServicePerimeterDryRunResourceResource(res["resource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServicePerimeterDryRunResource: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("etag", flattenNestedAccessContextManagerServicePerimeterDryRunResourceEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading ServicePerimeterDryRunResource: %s", err)
+
+	err = ResourceAccessContextManagerServicePerimeterDryRunResourceFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -357,7 +383,19 @@ func resourceAccessContextManagerServicePerimeterDryRunResourceRead(d *schema.Re
 	return nil
 }
 
+func resourceAccessContextManagerServicePerimeterDryRunResourceUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceAccessContextManagerServicePerimeterDryRunResourceRead(d, meta)
+}
+
 func resourceAccessContextManagerServicePerimeterDryRunResourceDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy AccessContextManagerServicePerimeterDryRunResource without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing ServicePerimeterDryRunResource %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -372,8 +410,7 @@ func resourceAccessContextManagerServicePerimeterDryRunResourceDelete(d *schema.
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{perimeter_name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{perimeter_name}}")
 	if err != nil {
 		return err
 	}
@@ -384,6 +421,7 @@ func resourceAccessContextManagerServicePerimeterDryRunResourceDelete(d *schema.
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, "ServicePerimeterDryRunResource")
 	}
+
 	url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": "spec.resources"})
 	if err != nil {
 		return err
@@ -647,4 +685,17 @@ func resourceAccessContextManagerServicePerimeterDryRunResourceListForPatch(d *s
 		return ls, nil
 	}
 	return nil, nil
+}
+
+func ResourceAccessContextManagerServicePerimeterDryRunResourceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("resource", flattenNestedAccessContextManagerServicePerimeterDryRunResourceResource(res["resource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServicePerimeterDryRunResource: %s", err)
+	}
+	if err = d.Set("etag", flattenNestedAccessContextManagerServicePerimeterDryRunResourceEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading ServicePerimeterDryRunResource: %s", err)
+	}
+
+	return nil
 }

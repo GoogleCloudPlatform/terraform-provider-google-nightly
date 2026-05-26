@@ -48,6 +48,7 @@ func ResourceDataprocJob() *schema.Resource {
 		},
 
 		CustomizeDiff: customdiff.All(
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 			tpgresource.DefaultProviderProject,
 			tpgresource.SetLabelsDiff,
 		),
@@ -229,6 +230,9 @@ func ResourceDataprocJob() *schema.Resource {
 			"pig_config":      pigSchema,
 			"sparksql_config": sparkSqlSchema,
 			"presto_config":   prestoSchema,
+			//UDP schema start
+			"deletion_policy": tpgresource.DeletionPolicySchemaEntry("DELETE"),
+			//UDP schema end
 		},
 		UseJSONNumber: true,
 	}
@@ -316,7 +320,7 @@ func resourceDataprocJobCreate(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	// Submit the job
-	job, err := config.NewDataprocClient(userAgent).Projects.Regions.Jobs.Submit(
+	job, err := NewClient(config, userAgent).Projects.Regions.Jobs.Submit(
 		project, region, submitReq).Do()
 	if err != nil {
 		return err
@@ -349,7 +353,7 @@ func resourceDataprocJobRead(d *schema.ResourceData, meta interface{}) error {
 
 	parts := strings.Split(d.Id(), "/")
 	jobId := parts[len(parts)-1]
-	job, err := config.NewDataprocClient(userAgent).Projects.Regions.Jobs.Get(
+	job, err := NewClient(config, userAgent).Projects.Regions.Jobs.Get(
 		project, region, jobId).Do()
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, fmt.Sprintf("Dataproc Job %q", jobId))
@@ -429,10 +433,22 @@ func resourceDataprocJobRead(d *schema.ResourceData, meta interface{}) error {
 			return fmt.Errorf("Error setting presto_config: %s", err)
 		}
 	}
+
+	if err := tpgresource.DeletionPolicyReadDefault(d, config, "DELETE"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func resourceDataprocJobDelete(d *schema.ResourceData, meta interface{}) error {
+
+	if ok, err := tpgresource.DeletionPolicyPreDelete(d); err != nil {
+		return err
+	} else if ok {
+		return nil
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -455,7 +471,7 @@ func resourceDataprocJobDelete(d *schema.ResourceData, meta interface{}) error {
 		// ignore error if we get one - job may be finished already and not need to
 		// be cancelled. We do however wait for the state to be one that is
 		// at least not active
-		_, _ = config.NewDataprocClient(userAgent).Projects.Regions.Jobs.Cancel(project, region, jobId, &dataproc.CancelJobRequest{}).Do()
+		_, _ = NewClient(config, userAgent).Projects.Regions.Jobs.Cancel(project, region, jobId, &dataproc.CancelJobRequest{}).Do()
 
 		waitErr := DataprocJobOperationWait(config, region, project, jobId,
 			"Cancelling Dataproc job", userAgent, d.Timeout(schema.TimeoutDelete), true)
@@ -466,7 +482,7 @@ func resourceDataprocJobDelete(d *schema.ResourceData, meta interface{}) error {
 	}
 
 	log.Printf("[DEBUG] Deleting Dataproc job %s", d.Id())
-	_, err = config.NewDataprocClient(userAgent).Projects.Regions.Jobs.Delete(
+	_, err = NewClient(config, userAgent).Projects.Regions.Jobs.Delete(
 		project, region, jobId).Do()
 	if err != nil {
 		return err

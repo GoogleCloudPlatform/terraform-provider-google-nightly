@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/netapp"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = netapp.Product
 )
 
 func TestAccNetappVolumeQuotaRule_netappVolumeQuotaRuleBasicExample(t *testing.T) {
@@ -56,7 +59,7 @@ func TestAccNetappVolumeQuotaRule_netappVolumeQuotaRuleBasicExample(t *testing.T
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"network_name":    acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":    servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"pool_name":       "tf-test-test-pool" + randomSuffix,
 		"quota_rule_name": "tf-test-test-volume-quota-rule" + randomSuffix,
 		"volume_name":     "tf-test-test-volume" + randomSuffix,
@@ -132,8 +135,7 @@ func testAccCheckNetappVolumeQuotaRuleDestroyProducer(t *testing.T) func(s *terr
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/volumes/{{volume_name}}/quotaRules/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(netapp.Product, config)+"projects/{{project}}/locations/{{location}}/volumes/{{volume_name}}/quotaRules/{{name}}")
 			if err != nil {
 				return err
 			}

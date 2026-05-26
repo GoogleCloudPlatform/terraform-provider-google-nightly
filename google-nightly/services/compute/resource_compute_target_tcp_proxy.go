@@ -115,6 +115,7 @@ func ResourceComputeTargetTcpProxy() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -209,6 +210,18 @@ the backend. Default value: "NONE" Possible values: ["NONE", "PROXY_V1"]`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -259,7 +272,7 @@ func resourceComputeTargetTcpProxyCreate(d *schema.ResourceData, meta interface{
 		obj["loadBalancingScheme"] = loadBalancingSchemeProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/targetTcpProxies")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/targetTcpProxies")
 	if err != nil {
 		return err
 	}
@@ -338,7 +351,7 @@ func resourceComputeTargetTcpProxyRead(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/targetTcpProxies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/targetTcpProxies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -371,36 +384,26 @@ func resourceComputeTargetTcpProxyRead(d *schema.ResourceData, meta interface{})
 
 	log.Printf("[DEBUG] Finished reading ComputeTargetTcpProxy %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeTargetTcpProxyCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
-	}
-	if err := d.Set("description", flattenComputeTargetTcpProxyDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
-	}
-	if err := d.Set("proxy_id", flattenComputeTargetTcpProxyProxyId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
-	}
-	if err := d.Set("name", flattenComputeTargetTcpProxyName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
-	}
-	if err := d.Set("proxy_header", flattenComputeTargetTcpProxyProxyHeader(res["proxyHeader"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
-	}
-	if err := d.Set("backend_service", flattenComputeTargetTcpProxyBackendService(res["service"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
-	}
-	if err := d.Set("proxy_bind", flattenComputeTargetTcpProxyProxyBind(res["proxyBind"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
-	}
-	if err := d.Set("load_balancing_scheme", flattenComputeTargetTcpProxyLoadBalancingScheme(res["loadBalancingScheme"], d, config)); err != nil {
-		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	err = ResourceComputeTargetTcpProxyFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -425,6 +428,19 @@ func resourceComputeTargetTcpProxyRead(d *schema.ResourceData, meta interface{})
 }
 
 func resourceComputeTargetTcpProxyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeTargetTcpProxy().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeTargetTcpProxyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -466,7 +482,7 @@ func resourceComputeTargetTcpProxyUpdate(d *schema.ResourceData, meta interface{
 			obj["proxyHeader"] = proxyHeaderProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/targetTcpProxies/{{name}}/setProxyHeader")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/targetTcpProxies/{{name}}/setProxyHeader")
 		if err != nil {
 			return err
 		}
@@ -511,7 +527,7 @@ func resourceComputeTargetTcpProxyUpdate(d *schema.ResourceData, meta interface{
 			obj["service"] = serviceProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/targetTcpProxies/{{name}}/setBackendService")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/targetTcpProxies/{{name}}/setBackendService")
 		if err != nil {
 			return err
 		}
@@ -553,6 +569,13 @@ func resourceComputeTargetTcpProxyUpdate(d *schema.ResourceData, meta interface{
 }
 
 func resourceComputeTargetTcpProxyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeTargetTcpProxy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing TargetTcpProxy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -566,8 +589,7 @@ func resourceComputeTargetTcpProxyDelete(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error fetching project for TargetTcpProxy: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/global/targetTcpProxies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/global/targetTcpProxies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -702,4 +724,37 @@ func expandComputeTargetTcpProxyProxyBind(v interface{}, d tpgresource.Terraform
 
 func expandComputeTargetTcpProxyLoadBalancingScheme(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceComputeTargetTcpProxyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeTargetTcpProxyCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	}
+	if err = d.Set("description", flattenComputeTargetTcpProxyDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	}
+	if err = d.Set("proxy_id", flattenComputeTargetTcpProxyProxyId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	}
+	if err = d.Set("name", flattenComputeTargetTcpProxyName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	}
+	if err = d.Set("proxy_header", flattenComputeTargetTcpProxyProxyHeader(res["proxyHeader"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	}
+	if err = d.Set("backend_service", flattenComputeTargetTcpProxyBackendService(res["service"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	}
+	if err = d.Set("proxy_bind", flattenComputeTargetTcpProxyProxyBind(res["proxyBind"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	}
+	if err = d.Set("load_balancing_scheme", flattenComputeTargetTcpProxyLoadBalancingScheme(res["loadBalancingScheme"], d, config)); err != nil {
+		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading TargetTcpProxy: %s", err)
+	}
+	return nil
 }

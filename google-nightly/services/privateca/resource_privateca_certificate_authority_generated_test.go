@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/privateca"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = privateca.Product
 )
 
 func TestAccPrivatecaCertificateAuthority_privatecaCertificateAuthorityBasicExample(t *testing.T) {
@@ -59,7 +61,7 @@ func TestAccPrivatecaCertificateAuthority_privatecaCertificateAuthorityBasicExam
 		"certificate_authority_id": "tf-test-my-certificate-authority" + randomSuffix,
 		"deletion_protection":      false,
 		"pool_location":            "us-central1",
-		"pool_name":                acctest.BootstrapSharedCaPoolInLocation(t, "us-central1"),
+		"pool_name":                BootstrapSharedCaPoolInLocation(t, "us-central1"),
 		"random_suffix":            randomSuffix,
 	}
 
@@ -137,7 +139,7 @@ func TestAccPrivatecaCertificateAuthority_privatecaCertificateAuthorityBasicNoOr
 		"certificate_authority_id": "tf-test-my-certificate-authority" + randomSuffix,
 		"deletion_protection":      false,
 		"pool_location":            "us-central1",
-		"pool_name":                acctest.BootstrapSharedCaPoolInLocation(t, "us-central1"),
+		"pool_name":                BootstrapSharedCaPoolInLocation(t, "us-central1"),
 		"random_suffix":            randomSuffix,
 	}
 
@@ -215,7 +217,7 @@ func TestAccPrivatecaCertificateAuthority_privatecaCertificateAuthoritySubordina
 		"certificate_authority_id": "tf-test-my-certificate-authority" + randomSuffix,
 		"deletion_protection":      false,
 		"pool_location":            "us-central1",
-		"pool_name":                acctest.BootstrapSharedCaPoolInLocation(t, "us-central1"),
+		"pool_name":                BootstrapSharedCaPoolInLocation(t, "us-central1"),
 		"random_suffix":            randomSuffix,
 	}
 
@@ -337,7 +339,7 @@ func TestAccPrivatecaCertificateAuthority_privatecaCertificateAuthorityBasicWith
 		"certificate_authority_id": "tf-test-my-certificate-authority" + randomSuffix,
 		"deletion_protection":      false,
 		"pool_location":            "us-central1",
-		"pool_name":                acctest.BootstrapSharedCaPoolInLocation(t, "us-central1"),
+		"pool_name":                BootstrapSharedCaPoolInLocation(t, "us-central1"),
 		"random_suffix":            randomSuffix,
 	}
 

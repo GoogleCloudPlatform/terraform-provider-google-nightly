@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/backupdr"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = backupdr.Product
 )
 
 func TestAccBackupDRBackupVault_backupDrBackupVaultSimpleExample(t *testing.T) {
@@ -112,7 +116,7 @@ resource "google_backup_dr_backup_vault" "backup-vault-test" {
 
 func TestAccBackupDRBackupVault_backupDrBackupVaultCmekExample(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-backupdr.iam.gserviceaccount.com",
 			Role:   "roles/cloudkms.cryptoKeyEncrypterDecrypter",
@@ -124,7 +128,7 @@ func TestAccBackupDRBackupVault_backupDrBackupVaultCmekExample(t *testing.T) {
 	context := map[string]interface{}{
 		"project":         envvar.GetTestProjectFromEnv(),
 		"backup_vault_id": "tf-test-backup-vault-cmek" + randomSuffix,
-		"kms_key_name":    acctest.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
+		"kms_key_name":    kms.BootstrapKMSKeyInLocation(t, "us-central1").CryptoKey.Name,
 		"random_suffix":   randomSuffix,
 	}
 
@@ -195,8 +199,7 @@ func testAccCheckBackupDRBackupVaultDestroyProducer(t *testing.T) func(s *terraf
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{BackupDRBasePath}}projects/{{project}}/locations/{{location}}/backupVaults/{{backup_vault_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(backupdr.Product, config)+"projects/{{project}}/locations/{{location}}/backupVaults/{{backup_vault_id}}")
 			if err != nil {
 				return err
 			}

@@ -25,9 +25,12 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/filestore"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vmwareengine"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -37,7 +40,7 @@ func TestAccVmwareengineCluster_vmwareEngineClusterUpdate(t *testing.T) {
 	acctest.SkipIfVcr(t)
 	t.Parallel()
 
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-vmwareengine.iam.gserviceaccount.com",
 			Role:   "roles/file.viewer",
@@ -51,7 +54,7 @@ func TestAccVmwareengineCluster_vmwareEngineClusterUpdate(t *testing.T) {
 		"org_id":               envvar.GetTestOrgFromEnv(t),
 		"billing_account":      envvar.GetTestBillingAccountFromEnv(t),
 		"vmwareengine_project": os.Getenv("GOOGLE_VMWAREENGINE_PROJECT"),
-		"fs_network_name":      acctest.BootstrapSharedServiceNetworkingConnection(t, "tf-test-cluster"),
+		"fs_network_name":      servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "tf-test-cluster"),
 		"svc_ip_cidr":          "10.0.0.0/24",
 		"zone":                 region_id + "-b",
 		"pc_name":              "tf-test-cluster-pc" + random_suffix,
@@ -409,7 +412,7 @@ func testAccCheckVmwareengineClusterDestroyProducer(t *testing.T) func(s *terraf
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{VmwareengineBasePath}}{{parent}}/clusters/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(vmwareengine.Product, config)+"{{parent}}/clusters/{{name}}")
 			if err != nil {
 				return err
 			}

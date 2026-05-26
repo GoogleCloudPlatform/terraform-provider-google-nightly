@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networksecurity"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkservices"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = networksecurity.Product
 )
 
 func TestAccNetworkSecurityAuthzPolicy_networkSecurityAuthzPolicyAdvancedExample(t *testing.T) {
@@ -421,8 +425,7 @@ func testAccCheckNetworkSecurityAuthzPolicyDestroyProducer(t *testing.T) func(s 
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{NetworkSecurityBasePath}}projects/{{project}}/locations/{{location}}/authzPolicies/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(networksecurity.Product, config)+"projects/{{project}}/locations/{{location}}/authzPolicies/{{name}}")
 			if err != nil {
 				return err
 			}

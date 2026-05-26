@@ -115,6 +115,7 @@ func ResourceCESDeployment() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -176,7 +177,9 @@ WEB_UI
 API
 TWILIO
 GOOGLE_TELEPHONY_PLATFORM
-CONTACT_CENTER_AS_A_SERVICE`,
+CONTACT_CENTER_AS_A_SERVICE
+FIVE9
+CONTACT_CENTER_INTEGRATION`,
 						},
 						"disable_barge_in_control": {
 							Type:     schema.TypeBool,
@@ -227,17 +230,51 @@ CHATTY`,
 										Optional: true,
 										Description: `The modality of the web widget.
 Possible values:
-UNKNOWN_MODALITY
+MODALITY_UNSPECIFIED
 CHAT_AND_VOICE
 VOICE_ONLY
-CHAT_ONLY`,
+CHAT_ONLY
+CHAT_VOICE_AND_VIDEO`,
+									},
+									"security_settings": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `The security settings of the web widget.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"allowed_origins": {
+													Type:        schema.TypeList,
+													Optional:    true,
+													Description: `The origins that are allowed to host the web widget. An origin is defined by RFC 6454. If empty, all origins are allowed. A maximum of 100 origins is allowed. Example: "https://example.com"`,
+													Elem: &schema.Schema{
+														Type: schema.TypeString,
+													},
+												},
+												"enable_origin_check": {
+													Type:        schema.TypeBool,
+													Optional:    true,
+													Description: `Indicates whether origin check for the web widget is enabled. If true, the web widget will check the origin of the website that loads the web widget and only allow it to be loaded in the same origin or any of the allowed origins.`,
+												},
+												"enable_public_access": {
+													Type:        schema.TypeBool,
+													Optional:    true,
+													Description: `Indicates whether public access to the web widget is enabled. If true, the web widget will be publicly accessible. If false, the web widget must be integrated with your own authentication and authorization system to return valid credentials for accessing the CES agent.`,
+												},
+												"enable_recaptcha": {
+													Type:        schema.TypeBool,
+													Optional:    true,
+													Description: `Indicates whether reCAPTCHA verification for the web widget is enabled.`,
+												},
+											},
+										},
 									},
 									"theme": {
 										Type:     schema.TypeString,
 										Optional: true,
 										Description: `The theme of the web widget.
 Possible values:
-UNKNOWN_THEME
+THEME_UNSPECIFIED
 LIGHT
 DARK`,
 									},
@@ -293,6 +330,18 @@ projects/{project}/locations/{location}/apps/{app}/deployments/{deployment}`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -325,7 +374,7 @@ func resourceCESDeploymentCreate(d *schema.ResourceData, meta interface{}) error
 		obj["displayName"] = displayNameProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/deployments")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/deployments")
 	if err != nil {
 		return err
 	}
@@ -410,7 +459,7 @@ func resourceCESDeploymentRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/deployments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/deployments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -443,27 +492,26 @@ func resourceCESDeploymentRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading CESDeployment %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Deployment: %s", err)
 	}
 
-	if err := d.Set("channel_profile", flattenCESDeploymentChannelProfile(res["channelProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("create_time", flattenCESDeploymentCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("display_name", flattenCESDeploymentDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("etag", flattenCESDeploymentEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("name", flattenCESDeploymentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
-	}
-	if err := d.Set("update_time", flattenCESDeploymentUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Deployment: %s", err)
+	err = ResourceCESDeploymentFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -500,6 +548,19 @@ func resourceCESDeploymentRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceCESDeploymentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCESDeployment().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCESDeploymentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -559,7 +620,7 @@ func resourceCESDeploymentUpdate(d *schema.ResourceData, meta interface{}) error
 		obj["displayName"] = displayNameProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/deployments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/deployments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -616,6 +677,13 @@ func resourceCESDeploymentUpdate(d *schema.ResourceData, meta interface{}) error
 }
 
 func resourceCESDeploymentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CESDeployment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Deployment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -629,8 +697,7 @@ func resourceCESDeploymentDelete(d *schema.ResourceData, meta interface{}) error
 		return fmt.Errorf("Error fetching project for Deployment: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/deployments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/deployments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -754,6 +821,8 @@ func flattenCESDeploymentChannelProfileWebWidgetConfig(v interface{}, d *schema.
 		flattenCESDeploymentChannelProfileWebWidgetConfigTheme(original["theme"], d, config)
 	transformed["web_widget_title"] =
 		flattenCESDeploymentChannelProfileWebWidgetConfigWebWidgetTitle(original["webWidgetTitle"], d, config)
+	transformed["security_settings"] =
+		flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettings(original["securitySettings"], d, config)
 	return []interface{}{transformed}
 }
 func flattenCESDeploymentChannelProfileWebWidgetConfigModality(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -765,6 +834,41 @@ func flattenCESDeploymentChannelProfileWebWidgetConfigTheme(v interface{}, d *sc
 }
 
 func flattenCESDeploymentChannelProfileWebWidgetConfigWebWidgetTitle(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettings(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["enable_public_access"] =
+		flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnablePublicAccess(original["enablePublicAccess"], d, config)
+	transformed["enable_origin_check"] =
+		flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnableOriginCheck(original["enableOriginCheck"], d, config)
+	transformed["allowed_origins"] =
+		flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsAllowedOrigins(original["allowedOrigins"], d, config)
+	transformed["enable_recaptcha"] =
+		flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnableRecaptcha(original["enableRecaptcha"], d, config)
+	return []interface{}{transformed}
+}
+func flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnablePublicAccess(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnableOriginCheck(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsAllowedOrigins(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnableRecaptcha(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -927,6 +1031,13 @@ func expandCESDeploymentChannelProfileWebWidgetConfig(v interface{}, d tpgresour
 		transformed["webWidgetTitle"] = transformedWebWidgetTitle
 	}
 
+	transformedSecuritySettings, err := expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettings(original["security_settings"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedSecuritySettings); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["securitySettings"] = transformedSecuritySettings
+	}
+
 	return transformed, nil
 }
 
@@ -942,6 +1053,65 @@ func expandCESDeploymentChannelProfileWebWidgetConfigWebWidgetTitle(v interface{
 	return v, nil
 }
 
+func expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettings(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedEnablePublicAccess, err := expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnablePublicAccess(original["enable_public_access"], d, config)
+	if err != nil {
+		return nil, err
+	} else {
+		transformed["enablePublicAccess"] = transformedEnablePublicAccess
+	}
+
+	transformedEnableOriginCheck, err := expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnableOriginCheck(original["enable_origin_check"], d, config)
+	if err != nil {
+		return nil, err
+	} else {
+		transformed["enableOriginCheck"] = transformedEnableOriginCheck
+	}
+
+	transformedAllowedOrigins, err := expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsAllowedOrigins(original["allowed_origins"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedAllowedOrigins); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["allowedOrigins"] = transformedAllowedOrigins
+	}
+
+	transformedEnableRecaptcha, err := expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnableRecaptcha(original["enable_recaptcha"], d, config)
+	if err != nil {
+		return nil, err
+	} else {
+		transformed["enableRecaptcha"] = transformedEnableRecaptcha
+	}
+
+	return transformed, nil
+}
+
+func expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnablePublicAccess(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnableOriginCheck(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsAllowedOrigins(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandCESDeploymentChannelProfileWebWidgetConfigSecuritySettingsEnableRecaptcha(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandCESDeploymentDisplayName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
@@ -951,5 +1121,30 @@ func resourceCESDeploymentPostCreateSetComputedFields(d *schema.ResourceData, me
 	if err := d.Set("name", flattenCESDeploymentName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceCESDeploymentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("channel_profile", flattenCESDeploymentChannelProfile(res["channelProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("create_time", flattenCESDeploymentCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("display_name", flattenCESDeploymentDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("etag", flattenCESDeploymentEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("name", flattenCESDeploymentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+	if err = d.Set("update_time", flattenCESDeploymentUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Deployment: %s", err)
+	}
+
 	return nil
 }

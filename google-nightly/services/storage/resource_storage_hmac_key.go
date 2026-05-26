@@ -115,6 +115,7 @@ func ResourceStorageHmacKey() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -177,6 +178,18 @@ func ResourceStorageHmacKey() *schema.Resource {
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -203,7 +216,7 @@ func resourceStorageHmacKeyCreate(d *schema.ResourceData, meta interface{}) erro
 		obj["state"] = stateProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}projects/{{project}}/hmacKeys?serviceAccountEmail={{service_account_email}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/hmacKeys?serviceAccountEmail={{service_account_email}}")
 	if err != nil {
 		return err
 	}
@@ -308,8 +321,7 @@ func resourceStorageHmacKeyPollRead(d *schema.ResourceData, meta interface{}) tr
 	return func() (map[string]interface{}, error) {
 		config := meta.(*transport_tpg.Config)
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}projects/{{project}}/hmacKeys/{{access_id}}")
-
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/hmacKeys/{{access_id}}")
 		if err != nil {
 			return nil, err
 		}
@@ -361,7 +373,7 @@ func resourceStorageHmacKeyRead(d *schema.ResourceData, meta interface{}) error 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}projects/{{project}}/hmacKeys/{{access_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/hmacKeys/{{access_id}}")
 	if err != nil {
 		return err
 	}
@@ -406,24 +418,26 @@ func resourceStorageHmacKeyRead(d *schema.ResourceData, meta interface{}) error 
 		return nil
 	}
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading HmacKey: %s", err)
 	}
 
-	if err := d.Set("service_account_email", flattenStorageHmacKeyServiceAccountEmail(res["serviceAccountEmail"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HmacKey: %s", err)
-	}
-	if err := d.Set("state", flattenStorageHmacKeyState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HmacKey: %s", err)
-	}
-	if err := d.Set("access_id", flattenStorageHmacKeyAccessId(res["accessId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HmacKey: %s", err)
-	}
-	if err := d.Set("time_created", flattenStorageHmacKeyTimeCreated(res["timeCreated"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HmacKey: %s", err)
-	}
-	if err := d.Set("updated", flattenStorageHmacKeyUpdated(res["updated"], d, config)); err != nil {
-		return fmt.Errorf("Error reading HmacKey: %s", err)
+	err = ResourceStorageHmacKeyFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -448,6 +462,19 @@ func resourceStorageHmacKeyRead(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceStorageHmacKeyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceStorageHmacKey().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceStorageHmacKeyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -482,7 +509,7 @@ func resourceStorageHmacKeyUpdate(d *schema.ResourceData, meta interface{}) erro
 	if d.HasChange("state") {
 		obj := make(map[string]interface{})
 
-		getUrl, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}projects/{{project}}/hmacKeys/{{access_id}}")
+		getUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/hmacKeys/{{access_id}}")
 		if err != nil {
 			return err
 		}
@@ -512,7 +539,7 @@ func resourceStorageHmacKeyUpdate(d *schema.ResourceData, meta interface{}) erro
 			obj["state"] = stateProp
 		}
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}projects/{{project}}/hmacKeys/{{access_id}}")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/hmacKeys/{{access_id}}")
 		if err != nil {
 			return err
 		}
@@ -548,6 +575,13 @@ func resourceStorageHmacKeyUpdate(d *schema.ResourceData, meta interface{}) erro
 }
 
 func resourceStorageHmacKeyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy StorageHmacKey without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing HmacKey %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -561,8 +595,7 @@ func resourceStorageHmacKeyDelete(d *schema.ResourceData, meta interface{}) erro
 		return fmt.Errorf("Error fetching project for HmacKey: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{StorageBasePath}}projects/{{project}}/hmacKeys/{{access_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/hmacKeys/{{access_id}}")
 	if err != nil {
 		return err
 	}
@@ -694,5 +727,27 @@ func resourceStorageHmacKeyPostCreateSetComputedFields(d *schema.ResourceData, m
 	if err := d.Set("access_id", flattenStorageHmacKeyAccessId(res["accessId"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "access_id": %s`, err)
 	}
+	return nil
+}
+
+func ResourceStorageHmacKeyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("service_account_email", flattenStorageHmacKeyServiceAccountEmail(res["serviceAccountEmail"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HmacKey: %s", err)
+	}
+	if err = d.Set("state", flattenStorageHmacKeyState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HmacKey: %s", err)
+	}
+	if err = d.Set("access_id", flattenStorageHmacKeyAccessId(res["accessId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HmacKey: %s", err)
+	}
+	if err = d.Set("time_created", flattenStorageHmacKeyTimeCreated(res["timeCreated"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HmacKey: %s", err)
+	}
+	if err = d.Set("updated", flattenStorageHmacKeyUpdated(res["updated"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HmacKey: %s", err)
+	}
+
 	return nil
 }

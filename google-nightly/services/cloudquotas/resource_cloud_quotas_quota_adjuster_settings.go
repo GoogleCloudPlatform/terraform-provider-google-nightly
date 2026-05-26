@@ -188,7 +188,7 @@ func resourceCloudQuotasQuotaAdjusterSettingsCreate(d *schema.ResourceData, meta
 		obj["enablement"] = enablementProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudQuotasBasePath}}{{parent}}/locations/global/quotaAdjusterSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/global/quotaAdjusterSettings")
 	if err != nil {
 		return err
 	}
@@ -246,7 +246,7 @@ func resourceCloudQuotasQuotaAdjusterSettingsRead(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudQuotasBasePath}}{{parent}}/locations/global/quotaAdjusterSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/global/quotaAdjusterSettings")
 	if err != nil {
 		return err
 	}
@@ -273,20 +273,9 @@ func resourceCloudQuotasQuotaAdjusterSettingsRead(d *schema.ResourceData, meta i
 
 	log.Printf("[DEBUG] Finished reading CloudQuotasQuotaAdjusterSettings %q: %#v", d.Id(), res)
 
-	if err := d.Set("enablement", flattenCloudQuotasQuotaAdjusterSettingsEnablement(res["enablement"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
-	}
-	if err := d.Set("effective_container", flattenCloudQuotasQuotaAdjusterSettingsEffectiveContainer(res["effectiveContainer"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
-	}
-	if err := d.Set("effective_enablement", flattenCloudQuotasQuotaAdjusterSettingsEffectiveEnablement(res["effectiveEnablement"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
-	}
-	if err := d.Set("inherited", flattenCloudQuotasQuotaAdjusterSettingsInherited(res["inherited"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
-	}
-	if err := d.Set("inherited_from", flattenCloudQuotasQuotaAdjusterSettingsInheritedFrom(res["inheritedFrom"], d, config)); err != nil {
-		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
+	err = ResourceCloudQuotasQuotaAdjusterSettingsFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -305,6 +294,7 @@ func resourceCloudQuotasQuotaAdjusterSettingsRead(d *schema.ResourceData, meta i
 }
 
 func resourceCloudQuotasQuotaAdjusterSettingsUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -331,7 +321,7 @@ func resourceCloudQuotasQuotaAdjusterSettingsUpdate(d *schema.ResourceData, meta
 		obj["enablement"] = enablementProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CloudQuotasBasePath}}{{parent}}/locations/global/quotaAdjusterSettings")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/global/quotaAdjusterSettings")
 	if err != nil {
 		return err
 	}
@@ -413,4 +403,26 @@ func flattenCloudQuotasQuotaAdjusterSettingsInheritedFrom(v interface{}, d *sche
 
 func expandCloudQuotasQuotaAdjusterSettingsEnablement(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceCloudQuotasQuotaAdjusterSettingsFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("enablement", flattenCloudQuotasQuotaAdjusterSettingsEnablement(res["enablement"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
+	}
+	if err = d.Set("effective_container", flattenCloudQuotasQuotaAdjusterSettingsEffectiveContainer(res["effectiveContainer"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
+	}
+	if err = d.Set("effective_enablement", flattenCloudQuotasQuotaAdjusterSettingsEffectiveEnablement(res["effectiveEnablement"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
+	}
+	if err = d.Set("inherited", flattenCloudQuotasQuotaAdjusterSettingsInherited(res["inherited"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
+	}
+	if err = d.Set("inherited_from", flattenCloudQuotasQuotaAdjusterSettingsInheritedFrom(res["inheritedFrom"], d, config)); err != nil {
+		return fmt.Errorf("Error reading QuotaAdjusterSettings: %s", err)
+	}
+
+	return nil
 }

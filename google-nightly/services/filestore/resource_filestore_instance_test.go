@@ -27,7 +27,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/filestore"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkconnectivityv1"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 )
 
 func testResourceFilestoreInstanceStateDataV0() map[string]interface{} {
@@ -426,11 +429,11 @@ resource "google_filestore_instance" "instance" {
 func TestAccFilestoreInstance_tags(t *testing.T) {
 	t.Parallel()
 
-	tagKey := acctest.BootstrapSharedTestOrganizationTagKey(t, "filestore-instances-tagkey", nil)
+	tagKey := tags.BootstrapSharedTestOrganizationTagKey(t, "filestore-instances-tagkey", nil)
 	context := map[string]interface{}{
 		"org":           envvar.GetTestOrgFromEnv(t),
 		"tagKey":        tagKey,
-		"tagValue":      acctest.BootstrapSharedTestOrganizationTagValue(t, "filestore-instances-tagvalue", tagKey),
+		"tagValue":      tags.BootstrapSharedTestOrganizationTagValue(t, "filestore-instances-tagvalue", tagKey),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 

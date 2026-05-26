@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/contactcenterinsights"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = contactcenterinsights.Product
 )
 
 func TestAccContactCenterInsightsAutoLabelingRule_contactCenterInsightsAutoLabelingRuleBasicExample(t *testing.T) {
@@ -114,8 +116,7 @@ func testAccCheckContactCenterInsightsAutoLabelingRuleDestroyProducer(t *testing
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ContactCenterInsightsBasePath}}projects/{{project}}/locations/{{location}}/autoLabelingRules/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(contactcenterinsights.Product, config)+"projects/{{project}}/locations/{{location}}/autoLabelingRules/{{name}}")
 			if err != nil {
 				return err
 			}

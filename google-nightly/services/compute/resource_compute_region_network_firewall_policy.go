@@ -115,6 +115,7 @@ func ResourceComputeRegionNetworkFirewallPolicy() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -205,6 +206,18 @@ Different policy types may support some of the Firewall Rules features. Possible
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -243,7 +256,7 @@ func resourceComputeRegionNetworkFirewallPolicyCreate(d *schema.ResourceData, me
 		obj["fingerprint"] = fingerprintProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/firewallPolicies")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/firewallPolicies")
 	if err != nil {
 		return err
 	}
@@ -327,7 +340,7 @@ func resourceComputeRegionNetworkFirewallPolicyRead(d *schema.ResourceData, meta
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/firewallPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/firewallPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -360,36 +373,26 @@ func resourceComputeRegionNetworkFirewallPolicyRead(d *schema.ResourceData, meta
 
 	log.Printf("[DEBUG] Finished reading ComputeRegionNetworkFirewallPolicy %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeRegionNetworkFirewallPolicyCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
-	}
-	if err := d.Set("name", flattenComputeRegionNetworkFirewallPolicyName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
-	}
-	if err := d.Set("region_network_firewall_policy_id", flattenComputeRegionNetworkFirewallPolicyRegionNetworkFirewallPolicyId(res["id"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
-	}
-	if err := d.Set("description", flattenComputeRegionNetworkFirewallPolicyDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
-	}
-	if err := d.Set("policy_type", flattenComputeRegionNetworkFirewallPolicyPolicyType(res["policyType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
-	}
-	if err := d.Set("fingerprint", flattenComputeRegionNetworkFirewallPolicyFingerprint(res["fingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
-	}
-	if err := d.Set("self_link", flattenComputeRegionNetworkFirewallPolicySelfLink(res["selfLink"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
-	}
-	if err := d.Set("self_link_with_id", flattenComputeRegionNetworkFirewallPolicySelfLinkWithId(res["selfLinkWithId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
-	}
-	if err := d.Set("rule_tuple_count", flattenComputeRegionNetworkFirewallPolicyRuleTupleCount(res["ruleTupleCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	err = ResourceComputeRegionNetworkFirewallPolicyFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -420,6 +423,19 @@ func resourceComputeRegionNetworkFirewallPolicyRead(d *schema.ResourceData, meta
 }
 
 func resourceComputeRegionNetworkFirewallPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeRegionNetworkFirewallPolicy().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeRegionNetworkFirewallPolicyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -468,7 +484,7 @@ func resourceComputeRegionNetworkFirewallPolicyUpdate(d *schema.ResourceData, me
 		obj["fingerprint"] = fingerprintProp
 	}
 
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/firewallPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/firewallPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -510,6 +526,13 @@ func resourceComputeRegionNetworkFirewallPolicyUpdate(d *schema.ResourceData, me
 }
 
 func resourceComputeRegionNetworkFirewallPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeRegionNetworkFirewallPolicy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RegionNetworkFirewallPolicy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -523,8 +546,7 @@ func resourceComputeRegionNetworkFirewallPolicyDelete(d *schema.ResourceData, me
 		return fmt.Errorf("Error fetching project for RegionNetworkFirewallPolicy: %s", err)
 	}
 	billingProject = strings.TrimPrefix(project, "projects/")
-
-	url, err := tpgresource.ReplaceVarsForId(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/firewallPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVarsForId(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/firewallPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -649,4 +671,38 @@ func expandComputeRegionNetworkFirewallPolicyPolicyType(v interface{}, d tpgreso
 
 func expandComputeRegionNetworkFirewallPolicyFingerprint(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceComputeRegionNetworkFirewallPolicyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeRegionNetworkFirewallPolicyCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	}
+	if err = d.Set("name", flattenComputeRegionNetworkFirewallPolicyName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	}
+	if err = d.Set("region_network_firewall_policy_id", flattenComputeRegionNetworkFirewallPolicyRegionNetworkFirewallPolicyId(res["id"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	}
+	if err = d.Set("description", flattenComputeRegionNetworkFirewallPolicyDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	}
+	if err = d.Set("policy_type", flattenComputeRegionNetworkFirewallPolicyPolicyType(res["policyType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	}
+	if err = d.Set("fingerprint", flattenComputeRegionNetworkFirewallPolicyFingerprint(res["fingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	}
+	if err = d.Set("self_link", flattenComputeRegionNetworkFirewallPolicySelfLink(res["selfLink"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	}
+	if err = d.Set("self_link_with_id", flattenComputeRegionNetworkFirewallPolicySelfLinkWithId(res["selfLinkWithId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	}
+	if err = d.Set("rule_tuple_count", flattenComputeRegionNetworkFirewallPolicyRuleTupleCount(res["ruleTupleCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionNetworkFirewallPolicy: %s", err)
+	}
+
+	return nil
 }

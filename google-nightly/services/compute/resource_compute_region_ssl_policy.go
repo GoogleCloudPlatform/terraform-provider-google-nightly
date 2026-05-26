@@ -133,6 +133,7 @@ func ResourceComputeRegionSslPolicy() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			regionSslPolicyCustomizeDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -202,6 +203,20 @@ to establish a connection with the load balancer. When set to
 'TLS_1_3', the profile field must be set to 'RESTRICTED'. Default value: "TLS_1_0" Possible values: ["TLS_1_0", "TLS_1_1", "TLS_1_2", "TLS_1_3"]`,
 				Default: "TLS_1_0",
 			},
+			"post_quantum_key_exchange": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ValidateFunc: verify.ValidateEnum([]string{"DEFAULT", "ENABLED", "DEFERRED", ""}),
+				Description: `One of 'DEFAULT', 'ENABLED', or 'DEFERRED'. Controls whether the load balancer negotiates
+X25519MLKEM768 key exchange when clients advertise support for it.
+When set to 'DEFAULT', or if no SSL Policy is attached to
+the target proxy, the load balancer disallows X25519MLKEM768 key
+exchange before October 2026, and allows it afterward. When set to
+'ENABLED', the load balancer allows X25519MLKEM768 key
+exchange. When set to 'DEFERRED', the load balancer
+disallows X25519MLKEM768 key exchange until October 2027, and allows
+it afterward. Possible values: ["DEFAULT", "ENABLED", "DEFERRED"]`,
+			},
 			"profile": {
 				Type:         schema.TypeString,
 				Optional:     true,
@@ -256,6 +271,18 @@ object. This field is used in optimistic locking.`,
 				Type:     schema.TypeString,
 				Computed: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -299,6 +326,12 @@ func resourceComputeRegionSslPolicyCreate(d *schema.ResourceData, meta interface
 	} else if v, ok := d.GetOkExists("custom_features"); ok || !reflect.DeepEqual(v, customFeaturesProp) {
 		obj["customFeatures"] = customFeaturesProp
 	}
+	postQuantumKeyExchangeProp, err := expandComputeRegionSslPolicyPostQuantumKeyExchange(d.Get("post_quantum_key_exchange"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("post_quantum_key_exchange"); !tpgresource.IsEmptyValue(reflect.ValueOf(postQuantumKeyExchangeProp)) && (ok || !reflect.DeepEqual(v, postQuantumKeyExchangeProp)) {
+		obj["postQuantumKeyExchange"] = postQuantumKeyExchangeProp
+	}
 	fingerprintProp, err := expandComputeRegionSslPolicyFingerprint(d.Get("fingerprint"), d, config)
 	if err != nil {
 		return err
@@ -312,7 +345,7 @@ func resourceComputeRegionSslPolicyCreate(d *schema.ResourceData, meta interface
 		obj["region"] = regionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/sslPolicies")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/sslPolicies")
 	if err != nil {
 		return err
 	}
@@ -396,7 +429,7 @@ func resourceComputeRegionSslPolicyRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/sslPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/sslPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -429,39 +462,26 @@ func resourceComputeRegionSslPolicyRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading ComputeRegionSslPolicy %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
 	}
 
-	if err := d.Set("creation_timestamp", flattenComputeRegionSslPolicyCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
-	}
-	if err := d.Set("description", flattenComputeRegionSslPolicyDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
-	}
-	if err := d.Set("name", flattenComputeRegionSslPolicyName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
-	}
-	if err := d.Set("profile", flattenComputeRegionSslPolicyProfile(res["profile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
-	}
-	if err := d.Set("min_tls_version", flattenComputeRegionSslPolicyMinTlsVersion(res["minTlsVersion"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
-	}
-	if err := d.Set("enabled_features", flattenComputeRegionSslPolicyEnabledFeatures(res["enabledFeatures"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
-	}
-	if err := d.Set("custom_features", flattenComputeRegionSslPolicyCustomFeatures(res["customFeatures"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
-	}
-	if err := d.Set("fingerprint", flattenComputeRegionSslPolicyFingerprint(res["fingerprint"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
-	}
-	if err := d.Set("region", flattenComputeRegionSslPolicyRegion(res["region"], d, config)); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
-	}
-	if err := d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
-		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	err = ResourceComputeRegionSslPolicyFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -492,6 +512,19 @@ func resourceComputeRegionSslPolicyRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceComputeRegionSslPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeRegionSslPolicy().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeRegionSslPolicyRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -545,6 +578,12 @@ func resourceComputeRegionSslPolicyUpdate(d *schema.ResourceData, meta interface
 	} else if v, ok := d.GetOkExists("custom_features"); ok || !reflect.DeepEqual(v, customFeaturesProp) {
 		obj["customFeatures"] = customFeaturesProp
 	}
+	postQuantumKeyExchangeProp, err := expandComputeRegionSslPolicyPostQuantumKeyExchange(d.Get("post_quantum_key_exchange"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("post_quantum_key_exchange"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, postQuantumKeyExchangeProp)) {
+		obj["postQuantumKeyExchange"] = postQuantumKeyExchangeProp
+	}
 	fingerprintProp, err := expandComputeRegionSslPolicyFingerprint(d.Get("fingerprint"), d, config)
 	if err != nil {
 		return err
@@ -552,7 +591,7 @@ func resourceComputeRegionSslPolicyUpdate(d *schema.ResourceData, meta interface
 		obj["fingerprint"] = fingerprintProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/sslPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/sslPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -594,6 +633,13 @@ func resourceComputeRegionSslPolicyUpdate(d *schema.ResourceData, meta interface
 }
 
 func resourceComputeRegionSslPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeRegionSslPolicy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing RegionSslPolicy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -607,8 +653,7 @@ func resourceComputeRegionSslPolicyDelete(d *schema.ResourceData, meta interface
 		return fmt.Errorf("Error fetching project for RegionSslPolicy: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/sslPolicies/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/sslPolicies/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -704,6 +749,10 @@ func flattenComputeRegionSslPolicyCustomFeatures(v interface{}, d *schema.Resour
 	return schema.NewSet(schema.HashString, v.([]interface{}))
 }
 
+func flattenComputeRegionSslPolicyPostQuantumKeyExchange(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenComputeRegionSslPolicyFingerprint(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
@@ -736,6 +785,10 @@ func expandComputeRegionSslPolicyCustomFeatures(v interface{}, d tpgresource.Ter
 	return v, nil
 }
 
+func expandComputeRegionSslPolicyPostQuantumKeyExchange(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandComputeRegionSslPolicyFingerprint(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
@@ -746,4 +799,43 @@ func expandComputeRegionSslPolicyRegion(v interface{}, d tpgresource.TerraformRe
 		return nil, fmt.Errorf("Invalid value for region: %s", err)
 	}
 	return f.RelativeLink(), nil
+}
+
+func ResourceComputeRegionSslPolicyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("creation_timestamp", flattenComputeRegionSslPolicyCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("description", flattenComputeRegionSslPolicyDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("name", flattenComputeRegionSslPolicyName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("profile", flattenComputeRegionSslPolicyProfile(res["profile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("min_tls_version", flattenComputeRegionSslPolicyMinTlsVersion(res["minTlsVersion"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("enabled_features", flattenComputeRegionSslPolicyEnabledFeatures(res["enabledFeatures"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("custom_features", flattenComputeRegionSslPolicyCustomFeatures(res["customFeatures"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("post_quantum_key_exchange", flattenComputeRegionSslPolicyPostQuantumKeyExchange(res["postQuantumKeyExchange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("fingerprint", flattenComputeRegionSslPolicyFingerprint(res["fingerprint"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("region", flattenComputeRegionSslPolicyRegion(res["region"], d, config)); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	if err = d.Set("self_link", tpgresource.ConvertSelfLinkToV1(res["selfLink"].(string))); err != nil {
+		return fmt.Errorf("Error reading RegionSslPolicy: %s", err)
+	}
+	return nil
 }

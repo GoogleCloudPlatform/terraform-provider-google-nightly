@@ -27,6 +27,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/filestore"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/netapp"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vmwareengine"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -91,7 +96,7 @@ resource "google_vmwareengine_datastore" "example_thirdparty" {
 
 func TestAccVmwareengineDatastore_vmwareEngineDatastoreFilestore_update(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-vmwareengine.iam.gserviceaccount.com",
 			Role:   "roles/file.viewer",
@@ -101,7 +106,7 @@ func TestAccVmwareengineDatastore_vmwareEngineDatastoreFilestore_update(t *testi
 	context := map[string]interface{}{
 		"region":        envvar.GetTestRegionFromEnv(),
 		"zone":          envvar.GetTestZoneFromEnv(),
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "datastore-test"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "datastore-test"),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -179,7 +184,7 @@ resource "google_vmwareengine_datastore" "example_filestore" {
 
 func TestAccVmwareengineDatastore_vmwareEngineDatastoreNetapp_update(t *testing.T) {
 	t.Parallel()
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcp-sa-vmwareengine.iam.gserviceaccount.com",
 			Role:   "roles/netapp.viewer",
@@ -189,7 +194,7 @@ func TestAccVmwareengineDatastore_vmwareEngineDatastoreNetapp_update(t *testing.
 	context := map[string]interface{}{
 		"region":        envvar.GetTestRegionFromEnv(),
 		"zone":          envvar.GetTestZoneFromEnv(),
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "datastore-test", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "datastore-test", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -282,7 +287,7 @@ func testAccCheckVmwareengineDatastoreDestroyProducer(t *testing.T) func(s *terr
 
 			config := acctest.GoogleProviderConfig(t)
 
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{VmwareengineBasePath}}projects/{{project}}/locations/{{location}}/datastores/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(vmwareengine.Product, config)+"projects/{{project}}/locations/{{location}}/datastores/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -116,21 +116,22 @@ func ResourceNetworkConnectivityDestination() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
 			Version: 1,
 			SchemaFunc: func() map[string]*schema.Schema {
 				return map[string]*schema.Schema{
+					"name": {
+						Type:              schema.TypeString,
+						RequiredForImport: true,
+					},
 					"multicloud_data_transfer_config": {
 						Type:              schema.TypeString,
 						RequiredForImport: true,
 					},
 					"location": {
-						Type:              schema.TypeString,
-						RequiredForImport: true,
-					},
-					"name": {
 						Type:              schema.TypeString,
 						RequiredForImport: true,
 					},
@@ -270,6 +271,18 @@ created, the new resource is assigned a different and unique ID.`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -310,6 +323,12 @@ func resourceNetworkConnectivityDestinationCreate(d *schema.ResourceData, meta i
 	}
 
 	obj := make(map[string]interface{})
+	nameProp, err := expandNetworkConnectivityDestinationName(d.Get("name"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("name"); !tpgresource.IsEmptyValue(reflect.ValueOf(nameProp)) && (ok || !reflect.DeepEqual(v, nameProp)) {
+		obj["name"] = nameProp
+	}
 	etagProp, err := expandNetworkConnectivityDestinationEtag(d.Get("etag"), d, config)
 	if err != nil {
 		return err
@@ -341,7 +360,7 @@ func resourceNetworkConnectivityDestinationCreate(d *schema.ResourceData, meta i
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/multicloudDataTransferConfigs/{{multicloud_data_transfer_config}}/destinations?destination_id={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/multicloudDataTransferConfigs/{{multicloud_data_transfer_config}}/destinations?destination_id={{name}}")
 	if err != nil {
 		return err
 	}
@@ -396,6 +415,11 @@ func resourceNetworkConnectivityDestinationCreate(d *schema.ResourceData, meta i
 
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
+		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
+			if err = identity.Set("name", nameValue.(string)); err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
 		if multicloudDataTransferConfigValue, ok := d.GetOk("multicloud_data_transfer_config"); ok && multicloudDataTransferConfigValue.(string) != "" {
 			if err = identity.Set("multicloud_data_transfer_config", multicloudDataTransferConfigValue.(string)); err != nil {
 				return fmt.Errorf("Error setting multicloud_data_transfer_config: %s", err)
@@ -404,11 +428,6 @@ func resourceNetworkConnectivityDestinationCreate(d *schema.ResourceData, meta i
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
 			if err = identity.Set("location", locationValue.(string)); err != nil {
 				return fmt.Errorf("Error setting location: %s", err)
-			}
-		}
-		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
-			if err = identity.Set("name", nameValue.(string)); err != nil {
-				return fmt.Errorf("Error setting name: %s", err)
 			}
 		}
 		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
@@ -430,7 +449,7 @@ func resourceNetworkConnectivityDestinationRead(d *schema.ResourceData, meta int
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/multicloudDataTransferConfigs/{{multicloud_data_transfer_config}}/destinations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/multicloudDataTransferConfigs/{{multicloud_data_transfer_config}}/destinations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -463,46 +482,36 @@ func resourceNetworkConnectivityDestinationRead(d *schema.ResourceData, meta int
 
 	log.Printf("[DEBUG] Finished reading NetworkConnectivityDestination %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Destination: %s", err)
 	}
 
-	if err := d.Set("create_time", flattenNetworkConnectivityDestinationCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("update_time", flattenNetworkConnectivityDestinationUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("labels", flattenNetworkConnectivityDestinationLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("etag", flattenNetworkConnectivityDestinationEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("description", flattenNetworkConnectivityDestinationDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("ip_prefix", flattenNetworkConnectivityDestinationIpPrefix(res["ipPrefix"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("endpoints", flattenNetworkConnectivityDestinationEndpoints(res["endpoints"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("state_timeline", flattenNetworkConnectivityDestinationStateTimeline(res["stateTimeline"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("uid", flattenNetworkConnectivityDestinationUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetworkConnectivityDestinationTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetworkConnectivityDestinationEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Destination: %s", err)
+	err = ResourceNetworkConnectivityDestinationFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
+		if v, ok := identity.GetOk("name"); !ok && v == "" {
+			err = identity.Set("name", d.Get("name").(string))
+			if err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
 		if v, ok := identity.GetOk("multicloud_data_transfer_config"); !ok && v == "" {
 			err = identity.Set("multicloud_data_transfer_config", d.Get("multicloud_data_transfer_config").(string))
 			if err != nil {
@@ -513,12 +522,6 @@ func resourceNetworkConnectivityDestinationRead(d *schema.ResourceData, meta int
 			err = identity.Set("location", d.Get("location").(string))
 			if err != nil {
 				return fmt.Errorf("Error setting location: %s", err)
-			}
-		}
-		if v, ok := identity.GetOk("name"); !ok && v == "" {
-			err = identity.Set("name", d.Get("name").(string))
-			if err != nil {
-				return fmt.Errorf("Error setting name: %s", err)
 			}
 		}
 		if v, ok := identity.GetOk("project"); !ok && v == "" {
@@ -535,6 +538,19 @@ func resourceNetworkConnectivityDestinationRead(d *schema.ResourceData, meta int
 }
 
 func resourceNetworkConnectivityDestinationUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetworkConnectivityDestination().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetworkConnectivityDestinationRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -542,6 +558,11 @@ func resourceNetworkConnectivityDestinationUpdate(d *schema.ResourceData, meta i
 	}
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
+		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
+			if err = identity.Set("name", nameValue.(string)); err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
 		if multicloudDataTransferConfigValue, ok := d.GetOk("multicloud_data_transfer_config"); ok && multicloudDataTransferConfigValue.(string) != "" {
 			if err = identity.Set("multicloud_data_transfer_config", multicloudDataTransferConfigValue.(string)); err != nil {
 				return fmt.Errorf("Error setting multicloud_data_transfer_config: %s", err)
@@ -550,11 +571,6 @@ func resourceNetworkConnectivityDestinationUpdate(d *schema.ResourceData, meta i
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
 			if err = identity.Set("location", locationValue.(string)); err != nil {
 				return fmt.Errorf("Error setting location: %s", err)
-			}
-		}
-		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
-			if err = identity.Set("name", nameValue.(string)); err != nil {
-				return fmt.Errorf("Error setting name: %s", err)
 			}
 		}
 		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
@@ -600,7 +616,7 @@ func resourceNetworkConnectivityDestinationUpdate(d *schema.ResourceData, meta i
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/multicloudDataTransferConfigs/{{multicloud_data_transfer_config}}/destinations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/multicloudDataTransferConfigs/{{multicloud_data_transfer_config}}/destinations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -668,6 +684,13 @@ func resourceNetworkConnectivityDestinationUpdate(d *schema.ResourceData, meta i
 }
 
 func resourceNetworkConnectivityDestinationDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetworkConnectivityDestination without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Destination %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -681,8 +704,7 @@ func resourceNetworkConnectivityDestinationDelete(d *schema.ResourceData, meta i
 		return fmt.Errorf("Error fetching project for Destination: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetworkConnectivityBasePath}}projects/{{project}}/locations/{{location}}/multicloudDataTransferConfigs/{{multicloud_data_transfer_config}}/destinations/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/multicloudDataTransferConfigs/{{multicloud_data_transfer_config}}/destinations/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -878,6 +900,10 @@ func flattenNetworkConnectivityDestinationEffectiveLabels(v interface{}, d *sche
 	return v
 }
 
+func expandNetworkConnectivityDestinationName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandNetworkConnectivityDestinationEtag(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
@@ -962,4 +988,44 @@ func expandNetworkConnectivityDestinationEffectiveLabels(v interface{}, d tpgres
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetworkConnectivityDestinationFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenNetworkConnectivityDestinationCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("update_time", flattenNetworkConnectivityDestinationUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkConnectivityDestinationLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("etag", flattenNetworkConnectivityDestinationEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("description", flattenNetworkConnectivityDestinationDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("ip_prefix", flattenNetworkConnectivityDestinationIpPrefix(res["ipPrefix"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("endpoints", flattenNetworkConnectivityDestinationEndpoints(res["endpoints"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("state_timeline", flattenNetworkConnectivityDestinationStateTimeline(res["stateTimeline"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("uid", flattenNetworkConnectivityDestinationUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetworkConnectivityDestinationTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetworkConnectivityDestinationEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Destination: %s", err)
+	}
+
+	return nil
 }

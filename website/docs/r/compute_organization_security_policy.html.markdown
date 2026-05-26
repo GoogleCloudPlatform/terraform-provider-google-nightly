@@ -40,6 +40,28 @@ resource "google_compute_organization_security_policy" "policy" {
   type       = "CLOUD_ARMOR"
 }
 ```
+## Example Usage - Organization Security Policy With Advanced Options
+
+
+```hcl
+resource "google_compute_organization_security_policy" "policy" {
+  short_name = "security-policy"
+  parent       = "organizations/123456789"
+  type         = "CLOUD_ARMOR"
+
+  advanced_options_config {
+    json_parsing = "STANDARD_WITH_GRAPHQL"
+    log_level    = "VERBOSE"
+    
+    json_custom_config {
+      content_types = ["application/vnd.api+json"]
+    }
+
+    user_ip_request_headers     = ["X-Forwarded-For"]
+    request_body_inspection_size = "64KB"
+  }
+}
+```
 
 ## Argument Reference
 
@@ -70,7 +92,52 @@ The following arguments are supported:
   **NOTE** : 'FIREWALL' type is deprecated and will be removed in a future major release. Please use 'google_compute_firewall_policy' instead."
   Possible values are: `FIREWALL`, `CLOUD_ARMOR`, `CLOUD_ARMOR_EDGE`, `CLOUD_ARMOR_INTERNAL_SERVICE`, `CLOUD_ARMOR_NETWORK`.
 
+* `advanced_options_config` -
+  (Optional)
+  Additional options for this security policy.
+  Structure is [documented below](#nested_advanced_options_config).
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
+
+
+<a name="nested_advanced_options_config"></a>The `advanced_options_config` block supports:
+
+* `json_parsing` -
+  (Optional)
+  JSON body parsing. Supported values include: "DISABLED", "STANDARD", "STANDARD_WITH_GRAPHQL".
+  Possible values are: `DISABLED`, `STANDARD`, `STANDARD_WITH_GRAPHQL`.
+
+* `json_custom_config` -
+  (Optional)
+  Custom JSON parsing configurations.
+  Structure is [documented below](#nested_advanced_options_config_json_custom_config).
+
+* `log_level` -
+  (Optional)
+  Logging level. Supported values include: "NORMAL", "VERBOSE".
+  Possible values are: `NORMAL`, `VERBOSE`.
+
+* `user_ip_request_headers` -
+  (Optional)
+  An optional list of case-insensitive request header names to use for resolving the client source IP address.
+
+* `request_body_inspection_size` -
+  (Optional)
+  The maximum request size chosen by the customer with Waf enabled. Values supported are "8KB", "16KB", "32KB", "48KB" and "64KB".
+  Values are case insensitive.
+  Possible values are: `8KB`, `16KB`, `32KB`, `48KB`, `64KB`.
+
+
+<a name="nested_advanced_options_config_json_custom_config"></a>The `json_custom_config` block supports:
+
+* `content_types` -
+  (Required)
+  A list of content types to be parsed as JSON.
 
 ## Attributes Reference
 

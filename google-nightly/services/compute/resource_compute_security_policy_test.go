@@ -26,6 +26,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/recaptchaenterprise"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
+	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
 
 func TestAccComputeSecurityPolicy_basic(t *testing.T) {
@@ -173,10 +176,9 @@ func TestAccComputeSecurityPolicy_withPreconfiguredWafConfig(t *testing.T) {
 				Config: testAccComputeSecurityPolicy_withPreconfiguredWafConfig_removed(spName),
 			},
 			{
-				ResourceName:            "google_compute_security_policy.policy",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"rule.1.preconfigured_waf_config.#", "rule.1.preconfigured_waf_config.0.%"}, // API will still return a empty object
+				ResourceName:      "google_compute_security_policy.policy",
+				ImportState:       true,
+				ImportStateVerify: true,
 			},
 		},
 	})
@@ -978,7 +980,23 @@ func testAccCheckComputeSecurityPolicyDestroyProducer(t *testing.T) func(s *terr
 
 			pol := rs.Primary.Attributes["name"]
 
-			_, err := config.NewComputeClient(config.UserAgent).SecurityPolicies.Get(config.Project, pol).Do()
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ComputeBasePath}}projects/{{project}}/global/securityPolicies/{{name}}")
+			if err != nil {
+				return err
+			}
+
+			billingProject := ""
+			if config.BillingProject != "" {
+				billingProject = config.BillingProject
+			}
+
+			_, err = transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+				Config:    config,
+				Method:    "GET",
+				Project:   billingProject,
+				RawURL:    url,
+				UserAgent: config.UserAgent,
+			})
 			if err == nil {
 				return fmt.Errorf("Security policy %q still exists", pol)
 			}

@@ -115,6 +115,7 @@ func ResourceCESApp() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -740,6 +741,12 @@ Format: 'projects/{project}/locations/{location}/apps/{app}/agents/{agent}'`,
 					},
 				},
 			},
+			"tool_execution_mode": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Description: `The tool execution mode for the app.
+See the [API reference](https://docs.cloud.google.com/customer-engagement-ai/conversational-agents/ps/reference/rpc/google.cloud.ces.v1#google.cloud.ces.v1.App.ToolExecutionMode) for more details.`,
+			},
 			"variable_declarations": {
 				Type:        schema.TypeList,
 				Optional:    true,
@@ -793,12 +800,14 @@ The value must be a valid JSON string representing the Schema object.
 										Description:  `Optional. The instance value should be valid against at least one of the schemas in this list.`,
 									},
 									"default": {
-										Type:     schema.TypeString,
-										Optional: true,
+										Type:         schema.TypeString,
+										Optional:     true,
+										ValidateFunc: validation.StringIsJSON,
+										StateFunc:    func(v interface{}) string { s, _ := structure.NormalizeJsonString(v); return s },
 										Description: `Optional. Default value of the data. Represents a dynamically typed value
 which can be either null, a number, a string, a boolean, a struct,
-or a list of values. The provided default value must be compatible
-with the defined 'type' and other schema constraints.`,
+or a list of values. The provided default value must be encoded as a JSON string.
+Use 'jsonencode' in Terraform HCL to encode the default value.`,
 									},
 									"defs": {
 										Type:         schema.TypeString,
@@ -931,6 +940,18 @@ Format: 'projects/{project}/locations/{location}/apps/{app}'`,
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -1034,6 +1055,12 @@ func resourceCESAppCreate(d *schema.ResourceData, meta interface{}) error {
 	} else if v, ok := d.GetOkExists("time_zone_settings"); !tpgresource.IsEmptyValue(reflect.ValueOf(timeZoneSettingsProp)) && (ok || !reflect.DeepEqual(v, timeZoneSettingsProp)) {
 		obj["timeZoneSettings"] = timeZoneSettingsProp
 	}
+	toolExecutionModeProp, err := expandCESAppToolExecutionMode(d.Get("tool_execution_mode"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("tool_execution_mode"); !tpgresource.IsEmptyValue(reflect.ValueOf(toolExecutionModeProp)) && (ok || !reflect.DeepEqual(v, toolExecutionModeProp)) {
+		obj["toolExecutionMode"] = toolExecutionModeProp
+	}
 	variableDeclarationsProp, err := expandCESAppVariableDeclarations(d.Get("variable_declarations"), d, config)
 	if err != nil {
 		return err
@@ -1047,7 +1074,14 @@ func resourceCESAppCreate(d *schema.ResourceData, meta interface{}) error {
 		obj["clientCertificateSettings"] = clientCertificateSettingsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps?appId={{app_id}}")
+	lockName, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/apps/{{app_id}}")
+	if err != nil {
+		return err
+	}
+	transport_tpg.MutexStore.Lock(lockName)
+	defer transport_tpg.MutexStore.Unlock(lockName)
+
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps?appId={{app_id}}")
 	if err != nil {
 		return err
 	}
@@ -1145,7 +1179,7 @@ func resourceCESAppRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1178,75 +1212,26 @@ func resourceCESAppRead(d *schema.ResourceData, meta interface{}) error {
 
 	log.Printf("[DEBUG] Finished reading CESApp %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading App: %s", err)
 	}
 
-	if err := d.Set("audio_processing_config", flattenCESAppAudioProcessingConfig(res["audioProcessingConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("create_time", flattenCESAppCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("pinned", flattenCESAppPinned(res["pinned"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("data_store_settings", flattenCESAppDataStoreSettings(res["dataStoreSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("default_channel_profile", flattenCESAppDefaultChannelProfile(res["defaultChannelProfile"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("deployment_count", flattenCESAppDeploymentCount(res["deploymentCount"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("description", flattenCESAppDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("display_name", flattenCESAppDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("etag", flattenCESAppEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("evaluation_metrics_thresholds", flattenCESAppEvaluationMetricsThresholds(res["evaluationMetricsThresholds"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("global_instruction", flattenCESAppGlobalInstruction(res["globalInstruction"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("guardrails", flattenCESAppGuardrails(res["guardrails"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("language_settings", flattenCESAppLanguageSettings(res["languageSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("logging_settings", flattenCESAppLoggingSettings(res["loggingSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("metadata", flattenCESAppMetadata(res["metadata"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("model_settings", flattenCESAppModelSettings(res["modelSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("name", flattenCESAppName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("root_agent", flattenCESAppRootAgent(res["rootAgent"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("time_zone_settings", flattenCESAppTimeZoneSettings(res["timeZoneSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("update_time", flattenCESAppUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("variable_declarations", flattenCESAppVariableDeclarations(res["variableDeclarations"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
-	}
-	if err := d.Set("client_certificate_settings", flattenCESAppClientCertificateSettings(res["clientCertificateSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading App: %s", err)
+	err = ResourceCESAppFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1277,6 +1262,19 @@ func resourceCESAppRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceCESAppUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceCESApp().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceCESAppRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1402,6 +1400,12 @@ func resourceCESAppUpdate(d *schema.ResourceData, meta interface{}) error {
 	} else if v, ok := d.GetOkExists("time_zone_settings"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, timeZoneSettingsProp)) {
 		obj["timeZoneSettings"] = timeZoneSettingsProp
 	}
+	toolExecutionModeProp, err := expandCESAppToolExecutionMode(d.Get("tool_execution_mode"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("tool_execution_mode"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, toolExecutionModeProp)) {
+		obj["toolExecutionMode"] = toolExecutionModeProp
+	}
 	variableDeclarationsProp, err := expandCESAppVariableDeclarations(d.Get("variable_declarations"), d, config)
 	if err != nil {
 		return err
@@ -1415,7 +1419,14 @@ func resourceCESAppUpdate(d *schema.ResourceData, meta interface{}) error {
 		obj["clientCertificateSettings"] = clientCertificateSettingsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{name}}")
+	lockName, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/apps/{{app_id}}")
+	if err != nil {
+		return err
+	}
+	transport_tpg.MutexStore.Lock(lockName)
+	defer transport_tpg.MutexStore.Unlock(lockName)
+
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1484,6 +1495,10 @@ func resourceCESAppUpdate(d *schema.ResourceData, meta interface{}) error {
 		updateMask = append(updateMask, "timeZoneSettings")
 	}
 
+	if d.HasChange("tool_execution_mode") {
+		updateMask = append(updateMask, "toolExecutionMode")
+	}
+
 	if d.HasChange("variable_declarations") {
 		updateMask = append(updateMask, "variableDeclarations")
 	}
@@ -1528,6 +1543,13 @@ func resourceCESAppUpdate(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceCESAppDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy CESApp without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing App %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1542,7 +1564,13 @@ func resourceCESAppDelete(d *schema.ResourceData, meta interface{}) error {
 	}
 	billingProject = project
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{name}}")
+	lockName, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/apps/{{app_id}}")
+	if err != nil {
+		return err
+	}
+	transport_tpg.MutexStore.Lock(lockName)
+	defer transport_tpg.MutexStore.Unlock(lockName)
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -2173,6 +2201,10 @@ func flattenCESAppTimeZoneSettingsTimeZone(v interface{}, d *schema.ResourceData
 	return v
 }
 
+func flattenCESAppToolExecutionMode(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenCESAppUpdateTime(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
@@ -2291,7 +2323,15 @@ func flattenCESAppVariableDeclarationsSchemaDefs(v interface{}, d *schema.Resour
 }
 
 func flattenCESAppVariableDeclarationsSchemaDefault(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
+	if v == nil {
+		return nil
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		// TODO: return error once https://github.com/GoogleCloudPlatform/magic-modules/issues/3257 is fixed.
+		log.Printf("[ERROR] failed to marshal schema to JSON: %v", err)
+	}
+	return string(b)
 }
 
 func flattenCESAppVariableDeclarationsSchemaAdditionalProperties(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -3259,6 +3299,10 @@ func expandCESAppTimeZoneSettingsTimeZone(v interface{}, d tpgresource.Terraform
 	return v, nil
 }
 
+func expandCESAppToolExecutionMode(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandCESAppVariableDeclarations(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	if v == nil {
 		return nil, nil
@@ -3384,7 +3428,7 @@ func expandCESAppVariableDeclarationsSchema(v interface{}, d tpgresource.Terrafo
 	transformedDefault, err := expandCESAppVariableDeclarationsSchemaDefault(original["default"], d, config)
 	if err != nil {
 		return nil, err
-	} else if val := reflect.ValueOf(transformedDefault); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+	} else {
 		transformed["default"] = transformedDefault
 	}
 
@@ -3471,7 +3515,15 @@ func expandCESAppVariableDeclarationsSchemaDefs(v interface{}, d tpgresource.Ter
 }
 
 func expandCESAppVariableDeclarationsSchemaDefault(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
-	return v, nil
+	b := []byte(v.(string))
+	if len(b) == 0 {
+		return nil, nil
+	}
+	var j interface{}
+	if err := json.Unmarshal(b, &j); err != nil {
+		return nil, err
+	}
+	return j, nil
 }
 
 func expandCESAppVariableDeclarationsSchemaAdditionalProperties(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
@@ -3580,4 +3632,80 @@ func expandCESAppClientCertificateSettingsPrivateKey(v interface{}, d tpgresourc
 
 func expandCESAppClientCertificateSettingsPassphrase(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceCESAppFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("audio_processing_config", flattenCESAppAudioProcessingConfig(res["audioProcessingConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("create_time", flattenCESAppCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("pinned", flattenCESAppPinned(res["pinned"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("data_store_settings", flattenCESAppDataStoreSettings(res["dataStoreSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("default_channel_profile", flattenCESAppDefaultChannelProfile(res["defaultChannelProfile"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("deployment_count", flattenCESAppDeploymentCount(res["deploymentCount"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("description", flattenCESAppDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("display_name", flattenCESAppDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("etag", flattenCESAppEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("evaluation_metrics_thresholds", flattenCESAppEvaluationMetricsThresholds(res["evaluationMetricsThresholds"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("global_instruction", flattenCESAppGlobalInstruction(res["globalInstruction"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("guardrails", flattenCESAppGuardrails(res["guardrails"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("language_settings", flattenCESAppLanguageSettings(res["languageSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("logging_settings", flattenCESAppLoggingSettings(res["loggingSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("metadata", flattenCESAppMetadata(res["metadata"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("model_settings", flattenCESAppModelSettings(res["modelSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("name", flattenCESAppName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("root_agent", flattenCESAppRootAgent(res["rootAgent"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("time_zone_settings", flattenCESAppTimeZoneSettings(res["timeZoneSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("tool_execution_mode", flattenCESAppToolExecutionMode(res["toolExecutionMode"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("update_time", flattenCESAppUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("variable_declarations", flattenCESAppVariableDeclarations(res["variableDeclarations"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+	if err = d.Set("client_certificate_settings", flattenCESAppClientCertificateSettings(res["clientCertificateSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading App: %s", err)
+	}
+
+	return nil
 }

@@ -58,9 +58,26 @@ The following arguments are supported:
   **Note**: This field is non-authoritative, and will only manage the labels present in your configuration.
   Please refer to the field `effective_labels` for all of the labels present on the resource.
 
+* `ignored_clusters_selector` -
+  (Optional)
+  Selector for clusters to exclude from the Rollout Sequence.
+  Structure is [documented below](#nested_ignored_clusters_selector).
+
+* `auto_upgrade_config` -
+  (Optional)
+  Configuration for automatic upgrades.
+  If not specified, the system applies default behavior.
+  Structure is [documented below](#nested_auto_upgrade_config).
+
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_stages"></a>The `stages` block supports:
@@ -87,6 +104,36 @@ The following arguments are supported:
   (Required)
   The label selector must be a valid CEL (Common Expression Language) expression which
   evaluates resource.labels.
+
+<a name="nested_ignored_clusters_selector"></a>The `ignored_clusters_selector` block supports:
+
+* `label_selector` -
+  (Required)
+  The label selector must be a valid CEL (Common Expression Language) expression which
+  evaluates resource.labels.
+
+<a name="nested_auto_upgrade_config"></a>The `auto_upgrade_config` block supports:
+
+* `rollout_creation_scope` -
+  (Optional)
+  Specifies the scope of automation for the creation of rollouts.
+  Represents the types of rollouts (version upgrades) the sequence should
+  initiate automatically.
+  If this field is not specified, it defaults to all types.
+  If this field is specified, but the nested upgradeTypes field is empty,
+  most automatic rollouts are disabled for this sequence.
+  Exceptions are rollouts enforcing our security policies (e.g. such as
+  end-of-support and outdated control plane patch enforcements).
+  These policy enforcements cannot be disabled.
+  Structure is [documented below](#nested_auto_upgrade_config_rollout_creation_scope).
+
+
+<a name="nested_auto_upgrade_config_rollout_creation_scope"></a>The `rollout_creation_scope` block supports:
+
+* `upgrade_types` -
+  (Optional)
+  The list of enabled upgrade types.
+  Current valid values are `CONTROL_PLANE_MINOR`, `CONTROL_PLANE_PATCH`, `NODE_MINOR`, and `NODE_PATCH`.
 
 ## Attributes Reference
 

@@ -9,5 +9,6 @@ api_resource_type_kind: ReservationGroup
 fields:
     - field: location
       provider_only: true
-    - field: name
+    - api_field: name
+    - field: deletion_policy
       provider_only: true

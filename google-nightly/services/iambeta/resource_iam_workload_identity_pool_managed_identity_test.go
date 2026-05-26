@@ -24,6 +24,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iambeta"
 )
 
 func TestAccIAMBetaWorkloadIdentityPoolManagedIdentity_minimal(t *testing.T) {

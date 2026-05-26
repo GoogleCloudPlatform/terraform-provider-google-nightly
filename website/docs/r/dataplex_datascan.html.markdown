@@ -197,6 +197,7 @@ resource "google_dataplex_datascan" "full_quality" {
     sampling_percent = 5
     row_filter = "station_id > 1000"
     catalog_publishing_enabled = true
+    filter = "attributes.priority = 'high'"
     post_scan_actions {
       notification_report {
         recipients {
@@ -212,6 +213,9 @@ resource "google_dataplex_datascan" "full_quality" {
       column = "address"
       dimension = "VALIDITY"
       threshold = 0.99
+      attributes = {
+        priority = "high"
+      }
       non_null_expectation {}
     }
 
@@ -631,6 +635,496 @@ resource "google_dataplex_datascan" "onetime_documentation" {
   project = "my-project-name"
 }
 ```
+## Example Usage - Dataplex Datascan Execution Identity User Credential
+
+
+```hcl
+resource "google_bigquery_dataset" "tf_test_dataset" {
+  dataset_id = "tf_test_ds_%{random_suffix}"
+  default_table_expiration_ms = 3600000
+  delete_contents_on_destroy = true
+  project = "my-project-name"
+}
+
+resource "google_bigquery_table" "tf_test_table" {
+  dataset_id          = google_bigquery_dataset.tf_test_dataset.dataset_id
+  table_id            = "tf_test_tbl_%{random_suffix}"
+  deletion_protection = false
+  project = "my-project-name"
+  schema              = <<EOF
+    [
+      {
+        "name": "word",
+        "type": "STRING",
+        "mode": "REQUIRED"
+      },
+      {
+        "name": "word_count",
+        "type": "INTEGER",
+        "mode": "REQUIRED"
+      }
+    ]
+EOF
+}
+
+resource "google_dataplex_datascan" "identity_user_credential" {
+  location     = "us-central1"
+  data_scan_id = "dataplex-id-user-cred"
+
+  data {
+    resource = "//bigquery.googleapis.com/projects/my-project-name/datasets/${google_bigquery_dataset.tf_test_dataset.dataset_id}/tables/${google_bigquery_table.tf_test_table.table_id}"
+  }
+
+  execution_spec {
+    trigger {
+      one_time {}
+    }
+  }
+
+  execution_identity {
+    user_credential {}
+  }
+
+  data_profile_spec {}
+
+  project = "my-project-name"
+
+  depends_on = [
+    google_bigquery_table.tf_test_table
+  ]
+}
+```
+## Example Usage - Dataplex Datascan Execution Identity Service Account
+
+
+```hcl
+data "google_project" "project" {
+  project_id = "my-project-name"
+}
+
+resource "google_service_account" "sa" {
+  account_id   = "tf-test-sa-%{random_suffix}"
+  display_name = "DataScan Service Account"
+  project      = "my-project-name"
+}
+
+resource "google_service_account_iam_member" "dataplex_sa_impersonate" {
+  service_account_id = google_service_account.sa.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-dataplex.iam.gserviceaccount.com"
+}
+resource "time_sleep" "wait_120_seconds" {
+  depends_on = [google_service_account_iam_member.dataplex_sa_impersonate]
+  create_duration = "120s"
+}
+
+
+resource "google_project_iam_member" "sa_bq_data_viewer" {
+  project = "my-project-name"
+  role    = "roles/bigquery.dataViewer"
+  member  = "serviceAccount:${google_service_account.sa.email}"
+}
+
+resource "google_project_iam_member" "sa_bq_job_user" {
+  project = "my-project-name"
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.sa.email}"
+}
+
+resource "google_bigquery_dataset" "tf_test_dataset" {
+  dataset_id = "tf_test_ds_%{random_suffix}"
+  default_table_expiration_ms = 3600000
+  delete_contents_on_destroy = true
+  project = "my-project-name"
+
+  depends_on = [
+    google_service_account_iam_member.dataplex_sa_impersonate,
+    google_project_iam_member.sa_bq_data_viewer,
+    google_project_iam_member.sa_bq_job_user
+  ]
+}
+
+resource "google_bigquery_table" "tf_test_table" {
+  dataset_id          = google_bigquery_dataset.tf_test_dataset.dataset_id
+  table_id            = "tf_test_tbl_%{random_suffix}"
+  deletion_protection = false
+  project = "my-project-name"
+  schema              = <<EOF
+    [
+      {
+        "name": "word",
+        "type": "STRING",
+        "mode": "REQUIRED"
+      },
+      {
+        "name": "word_count",
+        "type": "INTEGER",
+        "mode": "REQUIRED"
+      }
+    ]
+EOF
+}
+
+resource "google_dataplex_datascan" "identity_service_account" {
+  location     = "us-central1"
+  data_scan_id = "dataplex-id-sa"
+
+  data {
+    resource = "//bigquery.googleapis.com/projects/my-project-name/datasets/${google_bigquery_dataset.tf_test_dataset.dataset_id}/tables/${google_bigquery_table.tf_test_table.table_id}"
+  }
+
+  execution_spec {
+    trigger {
+      on_demand {}
+    }
+  }
+
+  execution_identity {
+    service_account {
+      email = google_service_account.sa.email
+    }
+  }
+
+  data_profile_spec {}
+
+  project = "my-project-name"
+
+  depends_on = [
+    google_bigquery_table.tf_test_table,
+    time_sleep.wait_120_seconds
+  ]
+}
+```
+## Example Usage - Dataplex Datascan Quality Reusable Rules Catalog Based
+
+
+```hcl
+data "google_project" "project" {
+  project_id = "my-project-name"
+}
+
+resource "google_service_account" "sa" {
+  account_id   = "tf-test-sa-%{random_suffix}"
+  display_name = "DataScan Service Account"
+  project      = "my-project-name"
+}
+
+resource "google_service_account_iam_member" "dataplex_sa_impersonate" {
+  service_account_id = google_service_account.sa.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-dataplex.iam.gserviceaccount.com"
+}
+
+resource "google_project_iam_member" "sa_bq_data_viewer" {
+  project = "my-project-name"
+  role    = "roles/bigquery.dataViewer"
+  member  = "serviceAccount:${google_service_account.sa.email}"
+}
+
+resource "google_project_iam_member" "sa_bq_job_user" {
+  project = "my-project-name"
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.sa.email}"
+}
+
+resource "google_bigquery_dataset" "tf_test_dataset" {
+  dataset_id                  = "tf_test_dataset_id_%{random_suffix}"
+  default_table_expiration_ms = 3600000
+  delete_contents_on_destroy  = true
+  project                     = "my-project-name"
+  location                    = "us-central1"
+
+  depends_on = [
+    google_service_account_iam_member.dataplex_sa_impersonate,
+    google_project_iam_member.sa_bq_data_viewer,
+    google_project_iam_member.sa_bq_job_user
+  ]
+}
+
+resource "google_bigquery_table" "tf_test_table" {
+  dataset_id          = google_bigquery_dataset.tf_test_dataset.dataset_id
+  table_id            = "tf_test_table_id_%{random_suffix}"
+  deletion_protection = false
+  project             = "my-project-name"
+  schema              = <<SCHEMA_EOF
+    [
+    {
+      "name": "name",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    }
+    ]
+  SCHEMA_EOF
+}
+
+resource "google_dataplex_entry_group" "test_group" {
+  location       = "us-central1"
+  entry_group_id = "test-group-%{random_suffix}"
+  project        = "my-project-name"
+}
+
+resource "google_dataplex_entry" "test_entry" {
+  location       = "us-central1"
+  entry_group_id = google_dataplex_entry_group.test_group.entry_group_id
+  entry_id       = "test-entry-%{random_suffix}"
+  entry_type     = "projects/655216118709/locations/global/entryTypes/data-quality-rule-template"
+  project        = data.google_project.project.number
+  aspects {
+    aspect_key = "655216118709.global.data-quality-rule-template"
+    aspect {
+      data = jsonencode({
+        dimension = "VALIDITY"
+        sqlCollection = [
+          {
+            query = "SELECT * FROM $${param(table_name)} WHERE $${param(column_name)} IS NULL"
+          }
+        ]
+        inputParameters = {
+          table_name = { description = "Table Name" }
+          column_name = { description = "Column Name" }
+        }
+      })
+    }
+  }
+}
+
+resource "time_sleep" "wait_for_bq_sync" {
+  depends_on = [google_bigquery_table.tf_test_table]
+  create_duration = "300s"
+}
+
+resource "google_dataplex_entry" "bq_table_entry" {
+  entry_group_id = "@bigquery"
+  project = data.google_project.project.project_id
+  location = "us-central1"
+  entry_id = "bigquery.googleapis.com/projects/${data.google_project.project.project_id}/datasets/${google_bigquery_dataset.tf_test_dataset.dataset_id}/tables/${google_bigquery_table.tf_test_table.table_id}"
+  entry_type = "projects/655216118709/locations/global/entryTypes/bigquery-table"
+  fully_qualified_name = "bigquery:${data.google_project.project.project_id}.${google_bigquery_dataset.tf_test_dataset.dataset_id}.${google_bigquery_table.tf_test_table.table_id}"
+  parent_entry = "projects/${data.google_project.project.project_id}/locations/us-central1/entryGroups/@bigquery/entries/bigquery.googleapis.com/projects/${data.google_project.project.project_id}/datasets/${google_bigquery_dataset.tf_test_dataset.dataset_id}"
+
+  depends_on = [
+    time_sleep.wait_for_bq_sync,
+    google_dataplex_entry.test_entry
+  ]
+
+  aspects {
+    aspect_key = "655216118709.global.data-rules@Schema.name"
+    aspect {
+      data = jsonencode({
+        rules = [
+          {
+            name = "rule-to-filter-out"
+            dimension = "VALIDITY"
+            type = "TEMPLATE_REFERENCE"
+            templateReference = {
+              name = google_dataplex_entry.test_entry.name
+              values = {
+                table_name = { value = "\u0060${data.google_project.project.project_id}.${google_bigquery_dataset.tf_test_dataset.dataset_id}.${google_bigquery_table.tf_test_table.table_id}\u0060" }
+                column_name = { value = "name" }
+              }
+            }
+            attributes = {
+              "priority" = "low"
+            }
+          },
+          {
+            name = "non-null-check-name-manual"
+            dimension = "VALIDITY"
+            type = "TEMPLATE_REFERENCE"
+            templateReference = {
+              name = google_dataplex_entry.test_entry.name
+              values = {
+                table_name = { value = "\u0060${data.google_project.project.project_id}.${google_bigquery_dataset.tf_test_dataset.dataset_id}.${google_bigquery_table.tf_test_table.table_id}\u0060" }
+                column_name = { value = "name" }
+              }
+            }
+            attributes = {
+              "priority" = "high"
+            }
+          }
+        ]
+      })
+    }
+  }
+}
+
+resource "time_sleep" "wait_for_aspect_propagation" {
+  depends_on = [google_dataplex_entry.bq_table_entry]
+  create_duration = "300s"
+}
+
+resource "google_dataplex_datascan" "reusable_rules_catalog_based" {
+  location     = "us-central1"
+  data_scan_id = "dataquality-catalog"
+  display_name = "Catalog Datascan Quality"
+  description  = "Example resource - Catalog Datascan Quality"
+
+  data {
+    resource = "//bigquery.googleapis.com/projects/${data.google_project.project.project_id}/datasets/${google_bigquery_dataset.tf_test_dataset.dataset_id}/tables/${google_bigquery_table.tf_test_table.table_id}"
+  }
+
+  execution_spec {
+    trigger {
+      on_demand {}
+    }
+  }
+
+  execution_identity {
+    service_account {
+      email = google_service_account.sa.email
+    }
+  }
+
+  data_quality_spec {
+    enable_catalog_based_rules = true
+    filter = "attributes.priority = \"high\""
+  }
+
+  project = data.google_project.project.project_id
+  
+  depends_on = [
+    time_sleep.wait_for_aspect_propagation
+  ]
+}
+```
+## Example Usage - Dataplex Datascan Data Quality Template Reference
+
+
+```hcl
+data "google_project" "project" {
+  project_id = "my-project-name"
+}
+
+resource "google_service_account" "sa" {
+  account_id   = "tf-test-sa-%{random_suffix}"
+  display_name = "DataScan Service Account"
+  project      = data.google_project.project.project_id
+}
+
+resource "google_service_account_iam_member" "dataplex_sa_impersonate" {
+  service_account_id = google_service_account.sa.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-dataplex.iam.gserviceaccount.com"
+}
+resource "time_sleep" "wait_120_seconds" {
+  depends_on = [google_service_account_iam_member.dataplex_sa_impersonate]
+  create_duration = "120s"
+}
+
+
+resource "google_project_iam_member" "sa_bq_data_viewer" {
+  project = data.google_project.project.project_id
+  role    = "roles/bigquery.dataViewer"
+  member  = "serviceAccount:${google_service_account.sa.email}"
+}
+
+resource "google_project_iam_member" "sa_bq_job_user" {
+  project = data.google_project.project.project_id
+  role    = "roles/bigquery.jobUser"
+  member  = "serviceAccount:${google_service_account.sa.email}"
+}
+
+resource "google_dataplex_entry_group" "test_group" {
+  location       = "us-central1"
+  entry_group_id = "test-group-%{random_suffix}"
+  project        = data.google_project.project.project_id
+}
+
+resource "google_dataplex_entry" "test_entry" {
+  location       = "us-central1"
+  entry_group_id = google_dataplex_entry_group.test_group.entry_group_id
+  entry_id       = "test-entry-%{random_suffix}"
+  entry_type     = "projects/655216118709/locations/global/entryTypes/data-quality-rule-template"
+  project        = data.google_project.project.number
+  aspects {
+    aspect_key = "655216118709.global.data-quality-rule-template"
+    aspect {
+      data = jsonencode({
+        dimension = "VALIDITY"
+        sqlCollection = [
+          {
+            query = "SELECT * FROM $${data()} WHERE $${column()} IS NOT NULL"
+          }
+        ]
+      })
+    }
+  }
+}
+
+resource "google_bigquery_dataset" "tf_test_dataset" {
+  dataset_id = "tf_test_dataset_id_%{random_suffix}"
+  default_table_expiration_ms = 3600000
+  location   = "us-central1"
+  project    = data.google_project.project.project_id
+
+  depends_on = [
+    google_service_account_iam_member.dataplex_sa_impersonate,
+    google_project_iam_member.sa_bq_data_viewer,
+    google_project_iam_member.sa_bq_job_user
+  ]
+}
+
+resource "google_bigquery_table" "tf_test_table" {
+  dataset_id          = google_bigquery_dataset.tf_test_dataset.dataset_id
+  table_id            = "tf_test_table_id_%{random_suffix}"
+  deletion_protection = false
+  project             = data.google_project.project.project_id
+  schema              = <<EOF
+    [
+    {
+      "name": "name",
+      "type": "STRING",
+      "mode": "NULLABLE"
+    }
+    ]
+  EOF
+}
+
+
+resource "google_dataplex_datascan" "data_quality_template_reference" {
+  location = "us-central1"
+  display_name = "Data Quality Template Reference"
+  data_scan_id = "dataquality-template"
+
+  data {
+    resource = "//bigquery.googleapis.com/projects/${data.google_project.project.project_id}/datasets/${google_bigquery_dataset.tf_test_dataset.dataset_id}/tables/${google_bigquery_table.tf_test_table.table_id}"
+  }
+
+  execution_spec {
+    trigger {
+      on_demand {}
+    }
+  }
+
+  execution_identity {
+    service_account {
+      email = google_service_account.sa.email
+    }
+  }
+
+  data_quality_spec {
+    rules {
+      column = "name"
+      dimension = "VALIDITY"
+      template_reference {
+        name = google_dataplex_entry.test_entry.name
+        values {
+          name = "min_length"
+          value = "10"
+        }
+      }
+    }
+  }
+
+
+  project = data.google_project.project.project_id
+
+  depends_on = [
+    google_bigquery_table.tf_test_table,
+    time_sleep.wait_120_seconds
+  ]
+}
+```
 
 ## Argument Reference
 
@@ -671,6 +1165,11 @@ The following arguments are supported:
   **Note**: This field is non-authoritative, and will only manage the labels present in your configuration.
   Please refer to the field `effective_labels` for all of the labels present on the resource.
 
+* `execution_identity` -
+  (Optional)
+  The identity to run the datascan. If not specified, defaults to the Dataplex Service Agent.
+  Structure is [documented below](#nested_execution_identity).
+
 * `data_quality_spec` -
   (Optional)
   DataQualityScan related setting.
@@ -693,6 +1192,12 @@ The following arguments are supported:
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
 
+* `deletion_policy` - (Optional) Whether Terraform will be prevented from destroying the resource. Defaults to DELETE.
+	When a 'terraform destroy' or 'terraform apply' would delete the resource,
+	the command will fail if this field is set to "PREVENT" in Terraform state.
+	When set to "ABANDON", the command will remove the resource from Terraform
+	management without updating or deleting the resource in the API.
+	When set to "DELETE", deleting the resource is allowed.
 
 
 <a name="nested_data"></a>The `data` block supports:
@@ -747,6 +1252,28 @@ The following arguments are supported:
   (Optional)
   Time to live for the DataScan and its results after the one-time run completes. Accepts a string with a unit suffix 's' (e.g., '7200s'). Default is 24 hours. Ranges between 0 and 31536000 seconds (1 year).
 
+<a name="nested_execution_identity"></a>The `execution_identity` block supports:
+
+* `dataplex_service_agent` -
+  (Optional)
+  The Dataplex service agent associated with the user's project.
+
+* `user_credential` -
+  (Optional)
+  The credential of the calling user. Supports only ONE_TIME trigger type.
+
+* `service_account` -
+  (Optional)
+  Service account to use to execute a datascan.
+  Structure is [documented below](#nested_execution_identity_service_account).
+
+
+<a name="nested_execution_identity_service_account"></a>The `service_account` block supports:
+
+* `email` -
+  (Required)
+  Service account email.
+
 <a name="nested_data_quality_spec"></a>The `data_quality_spec` block supports:
 
 * `sampling_percent` -
@@ -772,6 +1299,14 @@ The following arguments are supported:
 * `catalog_publishing_enabled` -
   (Optional)
   If set, the latest DataScan job result will be published to Dataplex Catalog.
+
+* `enable_catalog_based_rules` -
+  (Optional)
+  If set to true, the scan will retrieve rules defined in Data Catalog for the resource.
+
+* `filter` -
+  (Optional)
+  A filter to selectively run a subset of rules.
 
 
 <a name="nested_data_quality_spec_post_scan_actions"></a>The `post_scan_actions` block supports:
@@ -862,6 +1397,10 @@ The following arguments are supported:
   Description of the rule.
   The maximum length is 1,024 characters.
 
+* `attributes` -
+  (Optional)
+  Map of attribute name and value linked to the rule.
+
 * `range_expectation` -
   (Optional)
   ColumnMap rule which evaluates whether each column value lies between a specified range.
@@ -904,6 +1443,11 @@ The following arguments are supported:
   (Optional)
   Table rule which evaluates whether any row matches invalid state.
   Structure is [documented below](#nested_data_quality_spec_rules_sql_assertion).
+
+* `template_reference` -
+  (Optional)
+  Aggregate rule which references a rule template and provides the parameters to be substituted in the template.
+  Structure is [documented below](#nested_data_quality_spec_rules_template_reference).
 
 
 <a name="nested_data_quality_spec_rules_range_expectation"></a>The `range_expectation` block supports:
@@ -982,6 +1526,26 @@ The following arguments are supported:
 * `sql_statement` -
   (Required)
   The SQL statement.
+
+<a name="nested_data_quality_spec_rules_template_reference"></a>The `template_reference` block supports:
+
+* `name` -
+  (Required)
+  The resource name of the template entry.
+
+* `values` -
+  (Optional)
+  The map of parameter name and value.
+  Structure is [documented below](#nested_data_quality_spec_rules_template_reference_values).
+
+
+<a name="nested_data_quality_spec_rules_template_reference_values"></a>The `values` block supports:
+
+* `name` - (Required) The identifier for this object. Format specified above.
+
+* `value` -
+  (Required)
+  The string representation of the parameter value.
 
 <a name="nested_data_profile_spec"></a>The `data_profile_spec` block supports:
 
@@ -1173,11 +1737,11 @@ In addition to the arguments listed above, the following computed attributes are
 
 * `latest_job_end_time` -
   (Output)
-  The time when the latest DataScanJob started.
+  The time when the latest DataScanJob ended.
 
 * `latest_job_start_time` -
   (Output)
-  The time when the latest DataScanJob ended.
+  The time when the latest DataScanJob started.
 
 ## Timeouts
 

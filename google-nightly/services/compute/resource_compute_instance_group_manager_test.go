@@ -27,6 +27,8 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
 	tpgcompute "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
+	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
 
 func TestForceNewResourcePoliciesWorkloadPolicyIfNewIsEmpty(t *testing.T) {
@@ -634,8 +636,15 @@ func testAccCheckInstanceGroupManagerDestroyProducer(t *testing.T) func(s *terra
 			if rs.Type != "google_compute_instance_group_manager" {
 				continue
 			}
-			_, err := config.NewComputeClient(config.UserAgent).InstanceGroupManagers.Get(
-				config.Project, rs.Primary.Attributes["zone"], rs.Primary.Attributes["name"]).Do()
+			url := fmt.Sprintf("%sprojects/%s/zones/%s/instanceGroupManagers/%s",
+				transport_tpg.BaseUrl(tpgcompute.Product, config), config.Project, rs.Primary.Attributes["zone"], rs.Primary.Attributes["name"])
+			_, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+				Config:    config,
+				Method:    "GET",
+				Project:   config.Project,
+				RawURL:    url,
+				UserAgent: config.UserAgent,
+			})
 			if err == nil {
 				return fmt.Errorf("InstanceGroupManager still exists")
 			}

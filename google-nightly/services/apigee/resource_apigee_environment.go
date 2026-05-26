@@ -285,6 +285,19 @@ limited by capability and capacity. Refer to Apigee's public documentation
 to understand about each of these types in details.
 An Apigee org can support heterogeneous Environments. Possible values: ["ENVIRONMENT_TYPE_UNSPECIFIED", "BASE", "INTERMEDIATE", "COMPREHENSIVE"]`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -359,7 +372,7 @@ func resourceApigeeEnvironmentCreate(d *schema.ResourceData, meta interface{}) e
 		obj["clientIpResolutionConfig"] = clientIpResolutionConfigProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/environments")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/environments")
 	if err != nil {
 		return err
 	}
@@ -432,7 +445,7 @@ func resourceApigeeEnvironmentRead(d *schema.ResourceData, meta interface{}) err
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/environments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/environments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -459,35 +472,23 @@ func resourceApigeeEnvironmentRead(d *schema.ResourceData, meta interface{}) err
 
 	log.Printf("[DEBUG] Finished reading ApigeeEnvironment %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenApigeeEnvironmentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("display_name", flattenApigeeEnvironmentDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("description", flattenApigeeEnvironmentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("deployment_type", flattenApigeeEnvironmentDeploymentType(res["deploymentType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("api_proxy_type", flattenApigeeEnvironmentApiProxyType(res["apiProxyType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("node_config", flattenApigeeEnvironmentNodeConfig(res["nodeConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("type", flattenApigeeEnvironmentType(res["type"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("forward_proxy_uri", flattenApigeeEnvironmentForwardProxyUri(res["forwardProxyUri"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("properties", flattenApigeeEnvironmentProperties(res["properties"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
-	}
-	if err := d.Set("client_ip_resolution_config", flattenApigeeEnvironmentClientIpResolutionConfig(res["clientIpResolutionConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Environment: %s", err)
+
+	err = ResourceApigeeEnvironmentFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -512,6 +513,19 @@ func resourceApigeeEnvironmentRead(d *schema.ResourceData, meta interface{}) err
 }
 
 func resourceApigeeEnvironmentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceApigeeEnvironment().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceApigeeEnvironmentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -597,7 +611,7 @@ func resourceApigeeEnvironmentUpdate(d *schema.ResourceData, meta interface{}) e
 		obj["clientIpResolutionConfig"] = clientIpResolutionConfigProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/environments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/environments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -631,6 +645,13 @@ func resourceApigeeEnvironmentUpdate(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceApigeeEnvironmentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ApigeeEnvironment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Environment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -639,7 +660,7 @@ func resourceApigeeEnvironmentDelete(d *schema.ResourceData, meta interface{}) e
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ApigeeBasePath}}{{org_id}}/environments/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{org_id}}/environments/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1066,4 +1087,41 @@ func expandApigeeEnvironmentClientIpResolutionConfigHeaderIndexAlgorithmIpHeader
 
 func expandApigeeEnvironmentClientIpResolutionConfigHeaderIndexAlgorithmIpHeaderIndex(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceApigeeEnvironmentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenApigeeEnvironmentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("display_name", flattenApigeeEnvironmentDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("description", flattenApigeeEnvironmentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("deployment_type", flattenApigeeEnvironmentDeploymentType(res["deploymentType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("api_proxy_type", flattenApigeeEnvironmentApiProxyType(res["apiProxyType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("node_config", flattenApigeeEnvironmentNodeConfig(res["nodeConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("type", flattenApigeeEnvironmentType(res["type"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("forward_proxy_uri", flattenApigeeEnvironmentForwardProxyUri(res["forwardProxyUri"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("properties", flattenApigeeEnvironmentProperties(res["properties"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+	if err = d.Set("client_ip_resolution_config", flattenApigeeEnvironmentClientIpResolutionConfig(res["clientIpResolutionConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Environment: %s", err)
+	}
+
+	return nil
 }

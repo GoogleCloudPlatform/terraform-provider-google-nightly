@@ -24,6 +24,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/fwmodels"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
 
@@ -32,6 +33,14 @@ var (
 	_ datasource.DataSource              = &GoogleClientConfigDataSource{}
 	_ datasource.DataSourceWithConfigure = &GoogleClientConfigDataSource{}
 )
+
+func init() {
+	registry.FrameworkDataSource{
+		Name:        "google_client_config",
+		ProductName: "resourcemanager",
+		Func:        NewGoogleClientConfigDataSource,
+	}.Register()
+}
 
 func NewGoogleClientConfigDataSource() datasource.DataSource {
 	return &GoogleClientConfigDataSource{}

@@ -222,7 +222,7 @@ func resourceFirebaseAppHostingDefaultDomainCreate(d *schema.ResourceData, meta 
 		obj["disabled"] = disabledProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppHostingBasePath}}projects/{{project}}/locations/{{location}}/backends/{{backend}}/domains/{{domain_id}}?update_mask=disabled")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backends/{{backend}}/domains/{{domain_id}}?update_mask=disabled")
 	if err != nil {
 		return err
 	}
@@ -311,7 +311,7 @@ func resourceFirebaseAppHostingDefaultDomainRead(d *schema.ResourceData, meta in
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppHostingBasePath}}projects/{{project}}/locations/{{location}}/backends/{{backend}}/domains/{{domain_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backends/{{backend}}/domains/{{domain_id}}")
 	if err != nil {
 		return err
 	}
@@ -348,23 +348,9 @@ func resourceFirebaseAppHostingDefaultDomainRead(d *schema.ResourceData, meta in
 		return fmt.Errorf("Error reading DefaultDomain: %s", err)
 	}
 
-	if err := d.Set("disabled", flattenFirebaseAppHostingDefaultDomainDisabled(res["disabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DefaultDomain: %s", err)
-	}
-	if err := d.Set("name", flattenFirebaseAppHostingDefaultDomainName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DefaultDomain: %s", err)
-	}
-	if err := d.Set("uid", flattenFirebaseAppHostingDefaultDomainUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DefaultDomain: %s", err)
-	}
-	if err := d.Set("etag", flattenFirebaseAppHostingDefaultDomainEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DefaultDomain: %s", err)
-	}
-	if err := d.Set("update_time", flattenFirebaseAppHostingDefaultDomainUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DefaultDomain: %s", err)
-	}
-	if err := d.Set("create_time", flattenFirebaseAppHostingDefaultDomainCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading DefaultDomain: %s", err)
+	err = ResourceFirebaseAppHostingDefaultDomainFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -401,6 +387,7 @@ func resourceFirebaseAppHostingDefaultDomainRead(d *schema.ResourceData, meta in
 }
 
 func resourceFirebaseAppHostingDefaultDomainUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -448,7 +435,7 @@ func resourceFirebaseAppHostingDefaultDomainUpdate(d *schema.ResourceData, meta 
 		obj["disabled"] = disabledProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppHostingBasePath}}projects/{{project}}/locations/{{location}}/backends/{{backend}}/domains/{{domain_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/backends/{{backend}}/domains/{{domain_id}}")
 	if err != nil {
 		return err
 	}
@@ -558,4 +545,29 @@ func flattenFirebaseAppHostingDefaultDomainCreateTime(v interface{}, d *schema.R
 
 func expandFirebaseAppHostingDefaultDomainDisabled(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceFirebaseAppHostingDefaultDomainFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("disabled", flattenFirebaseAppHostingDefaultDomainDisabled(res["disabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DefaultDomain: %s", err)
+	}
+	if err = d.Set("name", flattenFirebaseAppHostingDefaultDomainName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DefaultDomain: %s", err)
+	}
+	if err = d.Set("uid", flattenFirebaseAppHostingDefaultDomainUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DefaultDomain: %s", err)
+	}
+	if err = d.Set("etag", flattenFirebaseAppHostingDefaultDomainEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DefaultDomain: %s", err)
+	}
+	if err = d.Set("update_time", flattenFirebaseAppHostingDefaultDomainUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DefaultDomain: %s", err)
+	}
+	if err = d.Set("create_time", flattenFirebaseAppHostingDefaultDomainCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading DefaultDomain: %s", err)
+	}
+
+	return nil
 }

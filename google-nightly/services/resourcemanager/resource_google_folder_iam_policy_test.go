@@ -24,7 +24,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
-	resourceManagerV3 "google.golang.org/api/cloudresourcemanager/v3"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanagerv3"
+	cloudresourcemanagerv3 "google.golang.org/api/cloudresourcemanager/v3"
 )
 
 func TestAccFolderIamPolicy_basic(t *testing.T) {
@@ -94,7 +96,7 @@ func testAccCheckGoogleFolderIamPolicyDestroyProducer(t *testing.T) func(s *terr
 			}
 
 			folder := rs.Primary.Attributes["folder"]
-			policy, err := config.NewResourceManagerV3Client(config.UserAgent).Folders.GetIamPolicy(folder, &resourceManagerV3.GetIamPolicyRequest{}).Do()
+			policy, err := resourcemanagerv3.NewClient(config, config.UserAgent).Folders.GetIamPolicy(folder, &cloudresourcemanagerv3.GetIamPolicyRequest{}).Do()
 
 			if err != nil && len(policy.Bindings) > 0 {
 				return fmt.Errorf("Folder '%s' policy hasn't been deleted.", folder)

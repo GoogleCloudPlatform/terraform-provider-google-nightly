@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/ces"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/discoveryengine"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = ces.Product
 )
 
 func TestAccCESTool_cesToolClientFunctionBasicExample(t *testing.T) {
@@ -297,7 +300,7 @@ resource "google_ces_tool" "ces_tool_data_store_tool_engine_source_basic" {
             modality_type = "TEXT"
             rewriter_config {
                 model_settings {
-                    model = "gemini-2.5-flash"
+                    model = "gemini-3.0-flash-001"
                     temperature = 1
                 }
                 prompt = "example-prompt"
@@ -305,7 +308,7 @@ resource "google_ces_tool" "ces_tool_data_store_tool_engine_source_basic" {
             }
             summarization_config {
                 model_settings {
-                    model = "gemini-2.5-flash"
+                    model = "gemini-3.0-flash-001"
                     temperature = 1
                 }
                 prompt = "example-prompt"
@@ -327,7 +330,6 @@ resource "google_ces_tool" "ces_tool_data_store_tool_engine_source_basic" {
             }
             filter = "example_field: ANY(\"specific_example\")"
         }
-        max_results = 5
     }
 }
 `, context)
@@ -467,8 +469,7 @@ func testAccCheckCESToolDestroyProducer(t *testing.T) func(s *terraform.State) e
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{CESBasePath}}projects/{{project}}/locations/{{location}}/apps/{{app}}/tools/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(ces.Product, config)+"projects/{{project}}/locations/{{location}}/apps/{{app}}/tools/{{name}}")
 			if err != nil {
 				return err
 			}

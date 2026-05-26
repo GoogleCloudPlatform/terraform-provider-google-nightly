@@ -7,12 +7,14 @@ api_service_name: gkehub.googleapis.com
 api_version: v1beta
 api_resource_type_kind: RolloutSequence
 fields:
+    - api_field: autoUpgradeConfig.rolloutCreationScope.upgradeTypes
     - api_field: createTime
     - api_field: deleteTime
     - api_field: displayName
     - field: effective_labels
       provider_only: true
     - api_field: etag
+    - api_field: ignoredClustersSelector.labelSelector
     - api_field: labels
     - api_field: name
     - field: rollout_sequence_id
@@ -24,3 +26,5 @@ fields:
       provider_only: true
     - api_field: uid
     - api_field: updateTime
+    - field: deletion_policy
+      provider_only: true

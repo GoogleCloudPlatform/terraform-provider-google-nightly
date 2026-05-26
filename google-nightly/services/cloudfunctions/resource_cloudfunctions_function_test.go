@@ -25,7 +25,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/artifactregistry"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudbuild"
 	tpgcloudfunctions "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudfunctions"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/pubsub"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vpcaccess"
 	"google.golang.org/api/cloudfunctions/v1"
 )
 
@@ -42,7 +51,7 @@ const testSecretEnvVarFunctionPath = "./test-fixtures/secret_environment_variabl
 const testSecretVolumesMountFunctionPath = "./test-fixtures/secret_volumes_mount.js"
 
 func bootstrapGcfAdminAgents(t *testing.T) {
-	acctest.BootstrapIamMembers(t, []acctest.IamMember{
+	resourcemanager.BootstrapIamMembers(t, []resourcemanager.IamMember{
 		{
 			Member: "serviceAccount:service-{project_number}@gcf-admin-robot.iam.gserviceaccount.com",
 			Role:   "roles/vpcaccess.admin",
@@ -325,7 +334,7 @@ func TestAccCloudFunctionsFunction_cmek(t *testing.T) {
 	acctest.SkipIfVcr(t)
 	t.Parallel()
 
-	kmsKey := acctest.BootstrapKMSKeyInLocation(t, "us-central1")
+	kmsKey := kms.BootstrapKMSKeyInLocation(t, "us-central1")
 	funcResourceName := "google_cloudfunctions_function.function"
 	arRepoName := fmt.Sprintf("tf-cmek-test-docker-repository-%s", acctest.RandString(t, 10))
 	functionName := fmt.Sprintf("tf-cmek-test-%s", acctest.RandString(t, 10))
@@ -721,7 +730,7 @@ func testAccCheckCloudFunctionsFunctionDestroyProducer(t *testing.T) func(s *ter
 				Region:  region,
 				Name:    name,
 			}
-			_, err := config.NewCloudFunctionsClient(config.UserAgent).Projects.Locations.Functions.Get(cloudFuncId.CloudFunctionId()).Do()
+			_, err := tpgcloudfunctions.NewClient(config, config.UserAgent).Projects.Locations.Functions.Get(cloudFuncId.CloudFunctionId()).Do()
 			if err == nil {
 				return fmt.Errorf("Function still exists")
 			}
@@ -751,7 +760,7 @@ func testAccCloudFunctionsFunctionExists(t *testing.T, n string, function *cloud
 			Region:  region,
 			Name:    name,
 		}
-		found, err := config.NewCloudFunctionsClient(config.UserAgent).Projects.Locations.Functions.Get(cloudFuncId.CloudFunctionId()).Do()
+		found, err := tpgcloudfunctions.NewClient(config, config.UserAgent).Projects.Locations.Functions.Get(cloudFuncId.CloudFunctionId()).Do()
 		if err != nil {
 			return fmt.Errorf("CloudFunctions Function not present")
 		}

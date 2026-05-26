@@ -115,6 +115,7 @@ func ResourceComputeFirewallPolicyAssociation() *schema.Resource {
 
 		CustomizeDiff: customdiff.All(
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -167,6 +168,19 @@ on your exisiting firewall policy so as to prevent a situation where your attach
 				Computed:    true,
 				Description: `The short name of the firewall policy of the association.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -199,7 +213,7 @@ func resourceComputeFirewallPolicyAssociationCreate(d *schema.ResourceData, meta
 		obj["firewallPolicy"] = firewallPolicyProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}locations/global/firewallPolicies/{{firewall_policy}}/addAssociation")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/global/firewallPolicies/{{firewall_policy}}/addAssociation")
 	if err != nil {
 		return err
 	}
@@ -274,7 +288,7 @@ func resourceComputeFirewallPolicyAssociationRead(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}locations/global/firewallPolicies/{{firewall_policy}}/getAssociation?name={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/global/firewallPolicies/{{firewall_policy}}/getAssociation?name={{name}}")
 	if err != nil {
 		return err
 	}
@@ -306,14 +320,23 @@ func resourceComputeFirewallPolicyAssociationRead(d *schema.ResourceData, meta i
 
 	log.Printf("[DEBUG] Finished reading ComputeFirewallPolicyAssociation %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenComputeFirewallPolicyAssociationName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyAssociation: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("attachment_target", flattenComputeFirewallPolicyAssociationAttachmentTarget(res["attachmentTarget"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyAssociation: %s", err)
-	}
-	if err := d.Set("short_name", flattenComputeFirewallPolicyAssociationShortName(res["shortName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading FirewallPolicyAssociation: %s", err)
+
+	err = ResourceComputeFirewallPolicyAssociationFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -338,6 +361,19 @@ func resourceComputeFirewallPolicyAssociationRead(d *schema.ResourceData, meta i
 }
 
 func resourceComputeFirewallPolicyAssociationUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeFirewallPolicyAssociation().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeFirewallPolicyAssociationRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -416,6 +452,13 @@ func resourceComputeFirewallPolicyAssociationUpdate(d *schema.ResourceData, meta
 }
 
 func resourceComputeFirewallPolicyAssociationDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy ComputeFirewallPolicyAssociation without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing FirewallPolicyAssociation %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -424,7 +467,7 @@ func resourceComputeFirewallPolicyAssociationDelete(d *schema.ResourceData, meta
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}locations/global/firewallPolicies/{{firewall_policy}}/removeAssociation?name={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"locations/global/firewallPolicies/{{firewall_policy}}/removeAssociation?name={{name}}")
 	if err != nil {
 		return err
 	}
@@ -514,4 +557,20 @@ func expandComputeFirewallPolicyAssociationFirewallPolicy(v interface{}, d tpgre
 		return nil, fmt.Errorf("Error setting firewall_policy: %s", err)
 	}
 	return firewallPolicyId, nil
+}
+
+func ResourceComputeFirewallPolicyAssociationFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenComputeFirewallPolicyAssociationName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyAssociation: %s", err)
+	}
+	if err = d.Set("attachment_target", flattenComputeFirewallPolicyAssociationAttachmentTarget(res["attachmentTarget"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyAssociation: %s", err)
+	}
+	if err = d.Set("short_name", flattenComputeFirewallPolicyAssociationShortName(res["shortName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading FirewallPolicyAssociation: %s", err)
+	}
+
+	return nil
 }

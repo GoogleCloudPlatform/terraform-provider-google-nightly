@@ -31,6 +31,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/agentregistry"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamconnectors"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -49,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = agentregistry.Product
 )
 
 func TestAccAgentRegistryBinding_agentRegistryBindingBasicExample(t *testing.T) {
@@ -139,8 +142,7 @@ func testAccCheckAgentRegistryBindingDestroyProducer(t *testing.T) func(s *terra
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/bindings/{{binding_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(agentregistry.Product, config)+"projects/{{project}}/locations/{{location}}/bindings/{{binding_id}}")
 			if err != nil {
 				return err
 			}

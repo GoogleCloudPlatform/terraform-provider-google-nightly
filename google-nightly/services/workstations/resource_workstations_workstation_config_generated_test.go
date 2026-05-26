@@ -30,6 +30,11 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/workstations"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +53,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = workstations.Product
 )
 
 func TestAccWorkstationsWorkstationConfig_workstationConfigBasicExample(t *testing.T) {
@@ -244,6 +250,196 @@ resource "google_workstations_workstation_config" "default" {
     env = {
       NAME = "FOO"
       BABE = "bar"
+    }
+  }
+}
+`, context)
+}
+
+func TestAccWorkstationsWorkstationConfig_workstationConfigHyperdiskExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"workstation_cluster_name": "tf-test-workstation-cluster" + randomSuffix,
+		"workstation_config_name":  "tf-test-workstation-config" + randomSuffix,
+		"random_suffix":            randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckWorkstationsWorkstationConfigDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccWorkstationsWorkstationConfig_workstationConfigHyperdiskExample(context),
+			},
+			{
+				ResourceName:            "google_workstations_workstation_config.default",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"annotations", "enable_audit_agent", "labels", "location", "terraform_labels", "workstation_cluster_id", "workstation_config_id"},
+			},
+			{
+				ResourceName:       "google_workstations_workstation_config.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccWorkstationsWorkstationConfig_workstationConfigHyperdiskExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_compute_network" "default" {
+  name                    = "%{workstation_cluster_name}"
+  auto_create_subnetworks = false
+}
+
+resource "google_compute_subnetwork" "default" {
+  name          = "%{workstation_cluster_name}"
+  ip_cidr_range = "10.0.0.0/24"
+  region        = "us-central1"
+  network       = google_compute_network.default.name
+}
+
+resource "google_workstations_workstation_cluster" "default" {
+  workstation_cluster_id = "%{workstation_cluster_name}"
+  network                = google_compute_network.default.id
+  subnetwork             = google_compute_subnetwork.default.id
+  location               = "us-central1"
+}
+
+resource "google_workstations_workstation_config" "default" {
+  workstation_config_id  = "%{workstation_config_name}"
+  workstation_cluster_id = google_workstations_workstation_cluster.default.workstation_cluster_id
+  location               = "us-central1"
+
+  host {
+    gce_instance {
+      # C3 machine types require Hyperdisk storage
+      machine_type = "c3-standard-22"
+    }
+  }
+
+  persistent_directories {
+    mount_path = "/home"
+    gce_hd {
+      size_gb         = 200
+      reclaim_policy  = "DELETE"
+      archive_timeout = "3600s"
+    }
+  }
+}
+`, context)
+}
+
+func TestAccWorkstationsWorkstationConfig_workstationConfigHyperdiskSourceSnapshotExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"key_short_name":           "tf-test-key-" + acctest.RandString(t, 10),
+		"org_id":                   envvar.GetTestOrgFromEnv(t),
+		"value_short_name":         "tf-test-value-" + acctest.RandString(t, 10),
+		"workstation_cluster_name": "tf-test-workstation-cluster" + randomSuffix,
+		"workstation_config_name":  "tf-test-workstation-config" + randomSuffix,
+		"random_suffix":            randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckWorkstationsWorkstationConfigDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccWorkstationsWorkstationConfig_workstationConfigHyperdiskSourceSnapshotExample(context),
+			},
+			{
+				ResourceName:            "google_workstations_workstation_config.default",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"annotations", "enable_audit_agent", "labels", "location", "terraform_labels", "workstation_cluster_id", "workstation_config_id"},
+			},
+			{
+				ResourceName:       "google_workstations_workstation_config.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccWorkstationsWorkstationConfig_workstationConfigHyperdiskSourceSnapshotExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_tags_tag_key" "tag_key1" {
+  parent     = "organizations/%{org_id}"
+  short_name = "%{key_short_name}"
+}
+
+resource "google_tags_tag_value" "tag_value1" {
+  parent     = google_tags_tag_key.tag_key1.id
+  short_name = "%{value_short_name}"
+}
+
+resource "google_compute_network" "default" {
+  name                    = "%{workstation_cluster_name}"
+  auto_create_subnetworks = false
+}
+
+resource "google_compute_subnetwork" "default" {
+  name          = "%{workstation_cluster_name}"
+  ip_cidr_range = "10.0.0.0/24"
+  region        = "us-central1"
+  network       = google_compute_network.default.name
+}
+
+resource "google_compute_disk" "my_source_disk" {
+  name  = "%{workstation_config_name}-source-disk"
+  size  = 10
+  type  = "pd-ssd"
+  zone  = "us-central1-a"
+}
+
+resource "google_compute_snapshot" "my_source_snapshot" {
+  name        = "%{workstation_config_name}-source-snapshot"
+  source_disk = google_compute_disk.my_source_disk.name
+  zone        = "us-central1-a"
+}
+
+resource "google_workstations_workstation_cluster" "default" {
+  workstation_cluster_id = "%{workstation_cluster_name}"
+  network                = google_compute_network.default.id
+  subnetwork             = google_compute_subnetwork.default.id
+  location               = "us-central1"
+}
+
+resource "google_workstations_workstation_config" "default" {
+  workstation_config_id  = "%{workstation_config_name}"
+  workstation_cluster_id = google_workstations_workstation_cluster.default.workstation_cluster_id
+  location               = "us-central1"
+
+  host {
+      gce_instance {
+        machine_type                = "c3-standard-22"
+        boot_disk_size_gb           = 35
+        disable_public_ip_addresses = true
+        vm_tags = {
+          (google_tags_tag_key.tag_key1.id) = google_tags_tag_value.tag_value1.id
+        }
+      }
+    }
+
+  persistent_directories {
+    mount_path = "/home"
+    gce_hd {
+      source_snapshot = google_compute_snapshot.my_source_snapshot.id
+      reclaim_policy  = "DELETE"
+      archive_timeout = "3600s"
     }
   }
 }
@@ -914,8 +1110,7 @@ func testAccCheckWorkstationsWorkstationConfigDestroyProducer(t *testing.T) func
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{WorkstationsBasePath}}projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(workstations.Product, config)+"projects/{{project}}/locations/{{location}}/workstationClusters/{{workstation_cluster_id}}/workstationConfigs/{{workstation_config_id}}")
 			if err != nil {
 				return err
 			}

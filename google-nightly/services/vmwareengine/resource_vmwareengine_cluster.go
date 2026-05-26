@@ -145,9 +145,7 @@ func mountDatastores(mountsToAdd []interface{}, d *schema.ResourceData, config *
 			req["ignoreColocation"] = v.(bool)
 		}
 
-		// Construct the URL directly using d.Id() for the resource name
-		//mountUrl := fmt.Sprintf("%s%s:mountDatastore", config.VmwareengineBasePath, d.Id())
-		mountUrl, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}{{parent}}/clusters/{{name}}:mountDatastore")
+		mountUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/clusters/{{name}}:mountDatastore")
 		if err != nil {
 			return err
 		}
@@ -188,8 +186,7 @@ func unmountDatastores(mountsToRemove []interface{}, d *schema.ResourceData, con
 			return fmt.Errorf("no datastore found in the unmount request : %#v", mountMap)
 		}
 
-		//unmountUrl := fmt.Sprintf("%s%s:unmountDatastore", config.VmwareengineBasePath, d.Id())
-		unmountUrl, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}{{parent}}/clusters/{{name}}:unmountDatastore")
+		unmountUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/clusters/{{name}}:unmountDatastore")
 		if err != nil {
 			return err
 		}
@@ -605,6 +602,19 @@ There can only be one management cluster in a private cloud and it has to be the
 A timestamp in RFC3339 UTC "Zulu" format, with nanosecond resolution and up to nine
 fractional digits. Examples: "2014-10-02T15:01:23Z" and "2014-10-02T15:01:23.045123456Z".`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -643,7 +653,7 @@ func resourceVmwareengineClusterCreate(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}{{parent}}/clusters?clusterId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/clusters?clusterId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -726,7 +736,7 @@ func resourceVmwareengineClusterRead(d *schema.ResourceData, meta interface{}) e
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}{{parent}}/clusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/clusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -754,29 +764,23 @@ func resourceVmwareengineClusterRead(d *schema.ResourceData, meta interface{}) e
 
 	log.Printf("[DEBUG] Finished reading VmwareengineCluster %q: %#v", d.Id(), res)
 
-	if err := d.Set("create_time", flattenVmwareengineClusterCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("update_time", flattenVmwareengineClusterUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("management", flattenVmwareengineClusterManagement(res["management"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("uid", flattenVmwareengineClusterUid(res["uid"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("state", flattenVmwareengineClusterState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("node_type_configs", flattenVmwareengineClusterNodeTypeConfigs(res["nodeTypeConfigs"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("autoscaling_settings", flattenVmwareengineClusterAutoscalingSettings(res["autoscalingSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
-	}
-	if err := d.Set("datastore_mount_config", flattenVmwareengineClusterDatastoreMountConfig(res["datastoreMountConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Cluster: %s", err)
+
+	err = ResourceVmwareengineClusterFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -801,6 +805,18 @@ func resourceVmwareengineClusterRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceVmwareengineClusterUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceVmwareengineCluster().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceVmwareengineClusterRead(d, meta)
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -850,7 +866,7 @@ func resourceVmwareengineClusterUpdate(d *schema.ResourceData, meta interface{})
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}{{parent}}/clusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/clusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -936,6 +952,13 @@ func resourceVmwareengineClusterUpdate(d *schema.ResourceData, meta interface{})
 }
 
 func resourceVmwareengineClusterDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy VmwareengineCluster without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Cluster %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	var project string
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -945,7 +968,7 @@ func resourceVmwareengineClusterDelete(d *schema.ResourceData, meta interface{})
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{VmwareengineBasePath}}{{parent}}/clusters/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/clusters/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1849,4 +1872,35 @@ func resourceVmwareengineClusterEncoder(d *schema.ResourceData, meta interface{}
 	delete(obj, "datastoreMountConfig")
 	log.Printf("[DEBUG] After removal of datastoreMountConfig Cluster request %q: %#v", d.Id(), obj)
 	return obj, nil
+}
+
+func ResourceVmwareengineClusterFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("create_time", flattenVmwareengineClusterCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("update_time", flattenVmwareengineClusterUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("management", flattenVmwareengineClusterManagement(res["management"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("uid", flattenVmwareengineClusterUid(res["uid"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("state", flattenVmwareengineClusterState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("node_type_configs", flattenVmwareengineClusterNodeTypeConfigs(res["nodeTypeConfigs"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("autoscaling_settings", flattenVmwareengineClusterAutoscalingSettings(res["autoscalingSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+	if err = d.Set("datastore_mount_config", flattenVmwareengineClusterDatastoreMountConfig(res["datastoreMountConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Cluster: %s", err)
+	}
+
+	return nil
 }

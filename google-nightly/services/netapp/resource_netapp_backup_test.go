@@ -21,11 +21,13 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/netapp"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 )
 
 func TestAccNetappBackup_NetappBackupFull_update(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -97,15 +99,15 @@ resource "google_netapp_backup_vault" "default" {
 }
 
 resource "google_netapp_volume_snapshot" "default" {
-	depends_on = [google_netapp_volume.default]
-	location = google_netapp_volume.default.location
-	volume_name = google_netapp_volume.default.name
-	description = "This is a test description"
-	name = "testvolumesnap%{random_suffix}"
-	labels = {
-	  key= "test"
-	  value= "snapshot"
-	}
+  depends_on = [google_netapp_volume.default]
+  location = google_netapp_volume.default.location
+  volume_name = google_netapp_volume.default.name
+  description = "This is a test description"
+  name = "testvolumesnap%{random_suffix}"
+  labels = {
+    key= "test"
+    value= "snapshot"
+  }
   }
 
 resource "google_netapp_backup" "test_backup" {
@@ -116,8 +118,8 @@ resource "google_netapp_backup" "test_backup" {
   vault_name = google_netapp_backup_vault.default.name
   source_snapshot = google_netapp_volume_snapshot.default.id
   labels = {
-	key= "test"
-	value= "backup"
+  key= "test"
+  value= "backup"
   }
 }
 `, context)
@@ -161,15 +163,15 @@ resource "google_netapp_backup_vault" "default" {
 }
 
 resource "google_netapp_volume_snapshot" "default" {
-	depends_on = [google_netapp_volume.default]
-	location = google_netapp_volume.default.location
-	volume_name = google_netapp_volume.default.name
-	description = "This is a test description"
-	name = "testvolumesnap%{random_suffix}"
-	labels = {
-	  key= "test"
-	  value= "snapshot"
-	}
+  depends_on = [google_netapp_volume.default]
+  location = google_netapp_volume.default.location
+  volume_name = google_netapp_volume.default.name
+  description = "This is a test description"
+  name = "testvolumesnap%{random_suffix}"
+  labels = {
+    key= "test"
+    value= "snapshot"
+  }
   }
 
 resource "google_netapp_backup" "test_backup" {
@@ -180,8 +182,8 @@ resource "google_netapp_backup" "test_backup" {
   vault_name = google_netapp_backup_vault.default.name
   source_snapshot = google_netapp_volume_snapshot.default.id
   labels = {
-	key= "test_update"
-	value= "backup_update"
+  key= "test_update"
+  value= "backup_update"
   }
 }
 `, context)
@@ -189,7 +191,7 @@ resource "google_netapp_backup" "test_backup" {
 
 func TestAccNetappBackup_NetappFlexBackup(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -282,7 +284,7 @@ resource "google_netapp_backup" "test_backup" {
 
 func TestAccNetappBackup_NetappIntegratedBackup(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 
@@ -369,7 +371,7 @@ resource "google_netapp_backup" "test_backup" {
 
 func TestAccNetappBackup_NetappImmutableBackup(t *testing.T) {
 	context := map[string]interface{}{
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"random_suffix": acctest.RandString(t, 10),
 	}
 

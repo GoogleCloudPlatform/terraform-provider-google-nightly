@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -116,6 +117,7 @@ func ResourceGeminiGeminiGcpEnablementSetting() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -217,6 +219,18 @@ Format:projects/{project}/locations/{location}/geminiGcpEnablementSettings/{gemi
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -262,7 +276,7 @@ func resourceGeminiGeminiGcpEnablementSettingCreate(d *schema.ResourceData, meta
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/geminiGcpEnablementSettings?geminiGcpEnablementSettingId={{gemini_gcp_enablement_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/geminiGcpEnablementSettings?geminiGcpEnablementSettingId={{gemini_gcp_enablement_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -303,6 +317,16 @@ func resourceGeminiGeminiGcpEnablementSettingCreate(d *schema.ResourceData, meta
 	}
 	d.SetId(id)
 
+	err = GeminiOperationWaitTime(
+		config, res, project, "Creating GeminiGcpEnablementSetting", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create GeminiGcpEnablementSetting: %s", err)
+	}
+
 	log.Printf("[DEBUG] Finished creating GeminiGcpEnablementSetting %q: %#v", d.Id(), res)
 
 	identity, err := d.Identity()
@@ -336,7 +360,7 @@ func resourceGeminiGeminiGcpEnablementSettingRead(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/geminiGcpEnablementSettings/{{gemini_gcp_enablement_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/geminiGcpEnablementSettings/{{gemini_gcp_enablement_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -369,36 +393,26 @@ func resourceGeminiGeminiGcpEnablementSettingRead(d *schema.ResourceData, meta i
 
 	log.Printf("[DEBUG] Finished reading GeminiGeminiGcpEnablementSetting %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
 	}
 
-	if err := d.Set("name", flattenGeminiGeminiGcpEnablementSettingName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
-	}
-	if err := d.Set("create_time", flattenGeminiGeminiGcpEnablementSettingCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
-	}
-	if err := d.Set("update_time", flattenGeminiGeminiGcpEnablementSettingUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
-	}
-	if err := d.Set("labels", flattenGeminiGeminiGcpEnablementSettingLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
-	}
-	if err := d.Set("enable_customer_data_sharing", flattenGeminiGeminiGcpEnablementSettingEnableCustomerDataSharing(res["enableCustomerDataSharing"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
-	}
-	if err := d.Set("disable_web_grounding", flattenGeminiGeminiGcpEnablementSettingDisableWebGrounding(res["disableWebGrounding"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
-	}
-	if err := d.Set("web_grounding_type", flattenGeminiGeminiGcpEnablementSettingWebGroundingType(res["webGroundingType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenGeminiGeminiGcpEnablementSettingTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenGeminiGeminiGcpEnablementSettingEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	err = ResourceGeminiGeminiGcpEnablementSettingFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -429,6 +443,19 @@ func resourceGeminiGeminiGcpEnablementSettingRead(d *schema.ResourceData, meta i
 }
 
 func resourceGeminiGeminiGcpEnablementSettingUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceGeminiGeminiGcpEnablementSetting().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceGeminiGeminiGcpEnablementSettingRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -496,7 +523,7 @@ func resourceGeminiGeminiGcpEnablementSettingUpdate(d *schema.ResourceData, meta
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/geminiGcpEnablementSettings/{{gemini_gcp_enablement_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/geminiGcpEnablementSettings/{{gemini_gcp_enablement_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -551,12 +578,26 @@ func resourceGeminiGeminiGcpEnablementSettingUpdate(d *schema.ResourceData, meta
 			log.Printf("[DEBUG] Finished updating GeminiGcpEnablementSetting %q: %#v", d.Id(), res)
 		}
 
+		err = GeminiOperationWaitTime(
+			config, res, project, "Updating GeminiGcpEnablementSetting", userAgent,
+			d.Timeout(schema.TimeoutUpdate))
+
+		if err != nil {
+			return err
+		}
 	}
 
 	return resourceGeminiGeminiGcpEnablementSettingRead(d, meta)
 }
 
 func resourceGeminiGeminiGcpEnablementSettingDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy GeminiGeminiGcpEnablementSetting without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing GeminiGcpEnablementSetting %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -577,8 +618,7 @@ func resourceGeminiGeminiGcpEnablementSettingDelete(d *schema.ResourceData, meta
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/geminiGcpEnablementSettings/{{gemini_gcp_enablement_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/geminiGcpEnablementSettings/{{gemini_gcp_enablement_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -605,6 +645,14 @@ func resourceGeminiGeminiGcpEnablementSettingDelete(d *schema.ResourceData, meta
 	})
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, "GeminiGcpEnablementSetting")
+	}
+
+	err = GeminiOperationWaitTime(
+		config, res, project, "Deleting GeminiGcpEnablementSetting", userAgent,
+		d.Timeout(schema.TimeoutDelete))
+
+	if err != nil {
+		return err
 	}
 
 	log.Printf("[DEBUG] Finished deleting GeminiGcpEnablementSetting %q: %#v", d.Id(), res)
@@ -710,4 +758,38 @@ func expandGeminiGeminiGcpEnablementSettingEffectiveLabels(v interface{}, d tpgr
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceGeminiGeminiGcpEnablementSettingFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenGeminiGeminiGcpEnablementSettingName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+	if err = d.Set("create_time", flattenGeminiGeminiGcpEnablementSettingCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+	if err = d.Set("update_time", flattenGeminiGeminiGcpEnablementSettingUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+	if err = d.Set("labels", flattenGeminiGeminiGcpEnablementSettingLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+	if err = d.Set("enable_customer_data_sharing", flattenGeminiGeminiGcpEnablementSettingEnableCustomerDataSharing(res["enableCustomerDataSharing"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+	if err = d.Set("disable_web_grounding", flattenGeminiGeminiGcpEnablementSettingDisableWebGrounding(res["disableWebGrounding"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+	if err = d.Set("web_grounding_type", flattenGeminiGeminiGcpEnablementSettingWebGroundingType(res["webGroundingType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenGeminiGeminiGcpEnablementSettingTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenGeminiGeminiGcpEnablementSettingEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+
+	return nil
 }

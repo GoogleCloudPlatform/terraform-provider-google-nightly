@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudsecuritycompliance"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = cloudsecuritycompliance.Product
 )
 
 func TestAccCloudSecurityComplianceFrameworkDeployment_cloudsecuritycomplianceFrameworkDeploymentBasicExample(t *testing.T) {
@@ -464,8 +466,7 @@ func testAccCheckCloudSecurityComplianceFrameworkDeploymentDestroyProducer(t *te
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{CloudSecurityComplianceBasePath}}organizations/{{organization}}/locations/{{location}}/frameworkDeployments/{{framework_deployment_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(cloudsecuritycompliance.Product, config)+"organizations/{{organization}}/locations/{{location}}/frameworkDeployments/{{framework_deployment_id}}")
 			if err != nil {
 				return err
 			}

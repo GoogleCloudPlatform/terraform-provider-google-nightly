@@ -188,7 +188,7 @@ func resourceSecurityCenterSourceCreate(d *schema.ResourceData, meta interface{}
 		obj["displayName"] = displayNameProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}organizations/{{organization}}/sources")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"organizations/{{organization}}/sources")
 	if err != nil {
 		return err
 	}
@@ -257,7 +257,7 @@ func resourceSecurityCenterSourceRead(d *schema.ResourceData, meta interface{}) 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -284,14 +284,9 @@ func resourceSecurityCenterSourceRead(d *schema.ResourceData, meta interface{}) 
 
 	log.Printf("[DEBUG] Finished reading SecurityCenterSource %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenSecurityCenterSourceName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Source: %s", err)
-	}
-	if err := d.Set("description", flattenSecurityCenterSourceDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Source: %s", err)
-	}
-	if err := d.Set("display_name", flattenSecurityCenterSourceDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Source: %s", err)
+	err = ResourceSecurityCenterSourceFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -316,6 +311,7 @@ func resourceSecurityCenterSourceRead(d *schema.ResourceData, meta interface{}) 
 }
 
 func resourceSecurityCenterSourceUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -353,7 +349,7 @@ func resourceSecurityCenterSourceUpdate(d *schema.ResourceData, meta interface{}
 		obj["displayName"] = displayNameProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecurityCenterBasePath}}{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{name}}")
 	if err != nil {
 		return err
 	}
@@ -462,5 +458,21 @@ func resourceSecurityCenterSourcePostCreateSetComputedFields(d *schema.ResourceD
 	if err := d.Set("name", flattenSecurityCenterSourceName(res["name"], d, config)); err != nil {
 		return fmt.Errorf(`Error setting computed identity field "name": %s`, err)
 	}
+	return nil
+}
+
+func ResourceSecurityCenterSourceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecurityCenterSourceName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Source: %s", err)
+	}
+	if err = d.Set("description", flattenSecurityCenterSourceDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Source: %s", err)
+	}
+	if err = d.Set("display_name", flattenSecurityCenterSourceDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Source: %s", err)
+	}
+
 	return nil
 }

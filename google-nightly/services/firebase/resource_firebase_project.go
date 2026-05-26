@@ -189,7 +189,7 @@ func resourceFirebaseProjectCreate(d *schema.ResourceData, meta interface{}) err
 
 	obj := make(map[string]interface{})
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseBasePath}}projects/{{project}}:addFirebase")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}:addFirebase")
 	if err != nil {
 		return err
 	}
@@ -274,7 +274,7 @@ func resourceFirebaseProjectRead(d *schema.ResourceData, meta interface{}) error
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseBasePath}}projects/{{project}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}")
 	if err != nil {
 		return err
 	}
@@ -311,11 +311,9 @@ func resourceFirebaseProjectRead(d *schema.ResourceData, meta interface{}) error
 		return fmt.Errorf("Error reading Project: %s", err)
 	}
 
-	if err := d.Set("project_number", flattenFirebaseProjectProjectNumber(res["projectNumber"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Project: %s", err)
-	}
-	if err := d.Set("display_name", flattenFirebaseProjectDisplayName(res["displayName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Project: %s", err)
+	err = ResourceFirebaseProjectFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -367,4 +365,17 @@ func flattenFirebaseProjectProjectNumber(v interface{}, d *schema.ResourceData, 
 
 func flattenFirebaseProjectDisplayName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
+}
+
+func ResourceFirebaseProjectFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("project_number", flattenFirebaseProjectProjectNumber(res["projectNumber"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Project: %s", err)
+	}
+	if err = d.Set("display_name", flattenFirebaseProjectDisplayName(res["displayName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Project: %s", err)
+	}
+
+	return nil
 }

@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/netapp"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = netapp.Product
 )
 
 func TestAccNetappVolumeReplication_netappVolumeReplicationCreateExample(t *testing.T) {
@@ -58,7 +61,7 @@ func TestAccNetappVolumeReplication_netappVolumeReplicationCreateExample(t *test
 	context := map[string]interface{}{
 		"destination_pool_name": "tf-test-destination-pool" + randomSuffix,
 		"destination_volume":    "tf-test-destination-volume" + randomSuffix,
-		"network_name":          acctest.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", acctest.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
+		"network_name":          servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "gcnv-network-config-3", servicenetworking.ServiceNetworkWithParentService("netapp.servicenetworking.goog")),
 		"replication_name":      "tf-test-test-replication" + randomSuffix,
 		"source_pool_name":      "tf-test-source-pool" + randomSuffix,
 		"volume_name":           "tf-test-source-volume" + randomSuffix,
@@ -164,8 +167,7 @@ func testAccCheckNetappVolumeReplicationDestroyProducer(t *testing.T) func(s *te
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/volumes/{{volume_name}}/replications/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(netapp.Product, config)+"projects/{{project}}/locations/{{location}}/volumes/{{volume_name}}/replications/{{name}}")
 			if err != nil {
 				return err
 			}

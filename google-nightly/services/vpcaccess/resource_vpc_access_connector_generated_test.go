@@ -30,6 +30,9 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/servicenetworking"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vpcaccess"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +51,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = vpcaccess.Product
 )
 
 func TestAccVPCAccessConnector_vpcAccessConnectorExample(t *testing.T) {
@@ -57,7 +61,7 @@ func TestAccVPCAccessConnector_vpcAccessConnectorExample(t *testing.T) {
 
 	context := map[string]interface{}{
 		"name":          "tf-test-vpc-con" + randomSuffix,
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "vpc-access-connector"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "vpc-access-connector"),
 		"random_suffix": randomSuffix,
 	}
 
@@ -104,7 +108,7 @@ func TestAccVPCAccessConnector_vpcAccessConnectorSharedVpcExample(t *testing.T) 
 
 	context := map[string]interface{}{
 		"name":          "tf-test-vpc-con" + randomSuffix,
-		"network_name":  acctest.BootstrapSharedServiceNetworkingConnection(t, "vpc-access-connector"),
+		"network_name":  servicenetworking.BootstrapSharedServiceNetworkingConnection(t, "vpc-access-connector"),
 		"random_suffix": randomSuffix,
 	}
 
@@ -164,8 +168,7 @@ func testAccCheckVPCAccessConnectorDestroyProducer(t *testing.T) func(s *terrafo
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{VPCAccessBasePath}}projects/{{project}}/locations/{{region}}/connectors/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(vpcaccess.Product, config)+"projects/{{project}}/locations/{{region}}/connectors/{{name}}")
 			if err != nil {
 				return err
 			}

@@ -233,6 +233,19 @@ ACTIVE, CREATE_FAILED, UPDATE_FAILED, DELETE_FAILED.`,
 				Computed:    true,
 				Description: `Time the posture deployment was updated in UTC.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -271,7 +284,7 @@ func resourceSecurityposturePostureDeploymentCreate(d *schema.ResourceData, meta
 		obj["description"] = descriptionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecuritypostureBasePath}}{{parent}}/locations/{{location}}/postureDeployments?postureDeploymentId={{posture_deployment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/postureDeployments?postureDeploymentId={{posture_deployment_id}}")
 	if err != nil {
 		return err
 	}
@@ -349,7 +362,7 @@ func resourceSecurityposturePostureDeploymentRead(d *schema.ResourceData, meta i
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecuritypostureBasePath}}{{parent}}/locations/{{location}}/postureDeployments/{{posture_deployment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/postureDeployments/{{posture_deployment_id}}")
 	if err != nil {
 		return err
 	}
@@ -376,44 +389,23 @@ func resourceSecurityposturePostureDeploymentRead(d *schema.ResourceData, meta i
 
 	log.Printf("[DEBUG] Finished reading SecurityposturePostureDeployment %q: %#v", d.Id(), res)
 
-	if err := d.Set("name", flattenSecurityposturePostureDeploymentName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
 	}
-	if err := d.Set("target_resource", flattenSecurityposturePostureDeploymentTargetResource(res["targetResource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("state", flattenSecurityposturePostureDeploymentState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("posture_id", flattenSecurityposturePostureDeploymentPostureId(res["postureId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("posture_revision_id", flattenSecurityposturePostureDeploymentPostureRevisionId(res["postureRevisionId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("create_time", flattenSecurityposturePostureDeploymentCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("update_time", flattenSecurityposturePostureDeploymentUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("description", flattenSecurityposturePostureDeploymentDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("etag", flattenSecurityposturePostureDeploymentEtag(res["etag"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("reconciling", flattenSecurityposturePostureDeploymentReconciling(res["reconciling"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("desired_posture_id", flattenSecurityposturePostureDeploymentDesiredPostureId(res["desiredPostureId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("desired_posture_revision_id", flattenSecurityposturePostureDeploymentDesiredPostureRevisionId(res["desiredPostureRevisionId"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
-	}
-	if err := d.Set("failure_message", flattenSecurityposturePostureDeploymentFailureMessage(res["failureMessage"], d, config)); err != nil {
-		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+
+	err = ResourceSecurityposturePostureDeploymentFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -444,6 +436,19 @@ func resourceSecurityposturePostureDeploymentRead(d *schema.ResourceData, meta i
 }
 
 func resourceSecurityposturePostureDeploymentUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceSecurityposturePostureDeployment().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceSecurityposturePostureDeploymentRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -492,7 +497,7 @@ func resourceSecurityposturePostureDeploymentUpdate(d *schema.ResourceData, meta
 		obj["description"] = descriptionProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecuritypostureBasePath}}{{parent}}/locations/{{location}}/postureDeployments/{{posture_deployment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/postureDeployments/{{posture_deployment_id}}")
 	if err != nil {
 		return err
 	}
@@ -556,6 +561,13 @@ func resourceSecurityposturePostureDeploymentUpdate(d *schema.ResourceData, meta
 }
 
 func resourceSecurityposturePostureDeploymentDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy SecurityposturePostureDeployment without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing PostureDeployment %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -564,7 +576,7 @@ func resourceSecurityposturePostureDeploymentDelete(d *schema.ResourceData, meta
 
 	billingProject := ""
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{SecuritypostureBasePath}}{{parent}}/locations/{{location}}/postureDeployments/{{posture_deployment_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{parent}}/locations/{{location}}/postureDeployments/{{posture_deployment_id}}")
 	if err != nil {
 		return err
 	}
@@ -689,4 +701,50 @@ func expandSecurityposturePostureDeploymentPostureRevisionId(v interface{}, d tp
 
 func expandSecurityposturePostureDeploymentDescription(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceSecurityposturePostureDeploymentFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenSecurityposturePostureDeploymentName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("target_resource", flattenSecurityposturePostureDeploymentTargetResource(res["targetResource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("state", flattenSecurityposturePostureDeploymentState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("posture_id", flattenSecurityposturePostureDeploymentPostureId(res["postureId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("posture_revision_id", flattenSecurityposturePostureDeploymentPostureRevisionId(res["postureRevisionId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("create_time", flattenSecurityposturePostureDeploymentCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("update_time", flattenSecurityposturePostureDeploymentUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("description", flattenSecurityposturePostureDeploymentDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("etag", flattenSecurityposturePostureDeploymentEtag(res["etag"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("reconciling", flattenSecurityposturePostureDeploymentReconciling(res["reconciling"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("desired_posture_id", flattenSecurityposturePostureDeploymentDesiredPostureId(res["desiredPostureId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("desired_posture_revision_id", flattenSecurityposturePostureDeploymentDesiredPostureRevisionId(res["desiredPostureRevisionId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+	if err = d.Set("failure_message", flattenSecurityposturePostureDeploymentFailureMessage(res["failureMessage"], d, config)); err != nil {
+		return fmt.Errorf("Error reading PostureDeployment: %s", err)
+	}
+
+	return nil
 }

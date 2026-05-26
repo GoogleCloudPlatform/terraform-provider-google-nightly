@@ -25,6 +25,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dataprocmetastore"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"strings"
 )
@@ -194,12 +197,12 @@ resource "google_storage_bucket" "bucket" {
 
 func TestAccMetastoreService_tags(t *testing.T) {
 	t.Parallel()
-	tagKey := acctest.BootstrapSharedTestOrganizationTagKey(t, "metastore-service-tagkey", map[string]interface{}{})
+	tagKey := tags.BootstrapSharedTestOrganizationTagKey(t, "metastore-service-tagkey", map[string]interface{}{})
 	context := map[string]interface{}{
 		"random_suffix": acctest.RandString(t, 10),
 		"org":           envvar.GetTestOrgFromEnv(t),
 		"tagKey":        tagKey,
-		"tagValue":      acctest.BootstrapSharedTestOrganizationTagValue(t, "metastore-service-tagvalue", tagKey),
+		"tagValue":      tags.BootstrapSharedTestOrganizationTagValue(t, "metastore-service-tagvalue", tagKey),
 	}
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },

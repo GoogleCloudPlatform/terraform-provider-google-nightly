@@ -20,8 +20,11 @@ fields:
     - api_field: name
     - field: private_connection_id
       provider_only: true
+    - api_field: pscInterfaceConfig.networkAttachment
     - api_field: state
     - field: terraform_labels
       provider_only: true
     - api_field: vpcPeeringConfig.subnet
     - api_field: vpcPeeringConfig.vpcName
+    - field: deletion_policy
+      provider_only: true

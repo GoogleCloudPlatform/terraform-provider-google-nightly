@@ -30,6 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/contactcenterinsights"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +49,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = contactcenterinsights.Product
 )
 
 func TestAccContactCenterInsightsAssessmentRule_contactCenterInsightsAssessmentRuleBasicExample(t *testing.T) {
@@ -169,8 +171,7 @@ func testAccCheckContactCenterInsightsAssessmentRuleDestroyProducer(t *testing.T
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{ContactCenterInsightsBasePath}}projects/{{project}}/locations/{{location}}/assessmentRules/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(contactcenterinsights.Product, config)+"projects/{{project}}/locations/{{location}}/assessmentRules/{{name}}")
 			if err != nil {
 				return err
 			}

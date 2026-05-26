@@ -21,6 +21,9 @@ fields:
       provider_only: true
     - field: name
       provider_only: true
+    - api_field: ontapSource.snapshotUuid
+    - api_field: ontapSource.storagePool
+    - api_field: ontapSource.volumeUuid
     - api_field: sourceSnapshot
     - api_field: sourceVolume
     - api_field: state
@@ -30,3 +33,5 @@ fields:
       provider_only: true
     - api_field: volumeRegion
     - api_field: volumeUsageBytes
+    - field: deletion_policy
+      provider_only: true

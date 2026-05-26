@@ -159,6 +159,7 @@ func ResourceNetappVolume() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DEFAULT"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -975,20 +976,17 @@ Format for SMB volumes: '\\\\netbios_prefix-four_random_hex_letters.domain_name\
 				Computed:    true,
 				Description: `Specifies the active zone for regional volume.`,
 			},
-			"deletion_policy": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Description: `Policy to determine if the volume should be deleted forcefully.
-Volumes may have nested snapshot resources. Deleting such a volume will fail.
-Setting this parameter to FORCE will delete volumes including nested snapshots.
-Possible values: DEFAULT, FORCE.`,
-				Default: "DEFAULT",
-			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 				ForceNew: true,
+			},
+			"deletion_policy": {
+				Type:        schema.TypeString,
+				Optional:    true,
+				Computed:    true,
+				Description: `This field uses a custom implementation please refer to documentation under /hashicorp/terraform-provider-google-beta/website/docs/r/netapp_volume.html.markdown for specifics`,
 			},
 		},
 		UseJSONNumber: true,
@@ -1148,7 +1146,7 @@ func resourceNetappVolumeCreate(d *schema.ResourceData, meta interface{}) error 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/volumes?volumeId={{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/volumes?volumeId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -1232,7 +1230,7 @@ func resourceNetappVolumeRead(d *schema.ResourceData, meta interface{}) error {
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/volumes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/volumes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1267,139 +1265,24 @@ func resourceNetappVolumeRead(d *schema.ResourceData, meta interface{}) error {
 
 	// Explicitly set virtual fields to default values if unset
 	if _, ok := d.GetOkExists("deletion_policy"); !ok {
-		if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
-			return fmt.Errorf("Error setting deletion_policy: %s", err)
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
 		}
 	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading Volume: %s", err)
 	}
 
-	if err := d.Set("state", flattenNetappVolumeState(res["state"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("state_details", flattenNetappVolumeStateDetails(res["stateDetails"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("create_time", flattenNetappVolumeCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("share_name", flattenNetappVolumeShareName(res["shareName"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("psa_range", flattenNetappVolumePsaRange(res["psaRange"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("storage_pool", flattenNetappVolumeStoragePool(res["storagePool"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("network", flattenNetappVolumeNetwork(res["network"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("service_level", flattenNetappVolumeServiceLevel(res["serviceLevel"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("capacity_gib", flattenNetappVolumeCapacityGib(res["capacityGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("export_policy", flattenNetappVolumeExportPolicy(res["exportPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("protocols", flattenNetappVolumeProtocols(res["protocols"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("smb_settings", flattenNetappVolumeSmbSettings(res["smbSettings"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("unix_permissions", flattenNetappVolumeUnixPermissions(res["unixPermissions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("labels", flattenNetappVolumeLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("description", flattenNetappVolumeDescription(res["description"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("snapshot_directory", flattenNetappVolumeSnapshotDirectory(res["snapshotDirectory"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("used_gib", flattenNetappVolumeUsedGib(res["usedGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("security_style", flattenNetappVolumeSecurityStyle(res["securityStyle"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("kerberos_enabled", flattenNetappVolumeKerberosEnabled(res["kerberosEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("ldap_enabled", flattenNetappVolumeLdapEnabled(res["ldapEnabled"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("active_directory", flattenNetappVolumeActiveDirectory(res["activeDirectory"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("kms_config", flattenNetappVolumeKmsConfig(res["kmsConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("encryption_type", flattenNetappVolumeEncryptionType(res["encryptionType"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("has_replication", flattenNetappVolumeHasReplication(res["hasReplication"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("restricted_actions", flattenNetappVolumeRestrictedActions(res["restrictedActions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("mount_options", flattenNetappVolumeMountOptions(res["mountOptions"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("snapshot_policy", flattenNetappVolumeSnapshotPolicy(res["snapshotPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("backup_config", flattenNetappVolumeBackupConfig(res["backupConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("zone", flattenNetappVolumeZone(res["zone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("replica_zone", flattenNetappVolumeReplicaZone(res["replicaZone"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("large_capacity", flattenNetappVolumeLargeCapacity(res["largeCapacity"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("multiple_endpoints", flattenNetappVolumeMultipleEndpoints(res["multipleEndpoints"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("cold_tier_size_gib", flattenNetappVolumeColdTierSizeGib(res["coldTierSizeGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("tiering_policy", flattenNetappVolumeTieringPolicy(res["tieringPolicy"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("hybrid_replication_parameters", flattenNetappVolumeHybridReplicationParameters(res["hybridReplicationParameters"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("throughput_mibps", flattenNetappVolumeThroughputMibps(res["throughputMibps"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("hot_tier_size_used_gib", flattenNetappVolumeHotTierSizeUsedGib(res["hotTierSizeUsedGib"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("cache_parameters", flattenNetappVolumeCacheParameters(res["cacheParameters"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("block_devices", flattenNetappVolumeBlockDevices(res["blockDevices"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("large_capacity_config", flattenNetappVolumeLargeCapacityConfig(res["largeCapacityConfig"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenNetappVolumeTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenNetappVolumeEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading Volume: %s", err)
+	err = ResourceNetappVolumeFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -1430,6 +1313,19 @@ func resourceNetappVolumeRead(d *schema.ResourceData, meta interface{}) error {
 }
 
 func resourceNetappVolumeUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceNetappVolume().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceNetappVolumeRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1574,7 +1470,7 @@ func resourceNetappVolumeUpdate(d *schema.ResourceData, meta interface{}) error 
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/volumes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/volumes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1879,6 +1775,13 @@ func resourceNetappVolumeUpdate(d *schema.ResourceData, meta interface{}) error 
 }
 
 func resourceNetappVolumeDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy NetappVolume without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing Volume %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -1892,8 +1795,7 @@ func resourceNetappVolumeDelete(d *schema.ResourceData, meta interface{}) error 
 		return fmt.Errorf("Error fetching project for Volume: %s", err)
 	}
 	billingProject = project
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{NetappBasePath}}projects/{{project}}/locations/{{location}}/volumes/{{name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/volumes/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -1956,9 +1858,6 @@ func resourceNetappVolumeImport(d *schema.ResourceData, meta interface{}) ([]*sc
 	d.SetId(id)
 
 	// Explicitly set virtual fields to default values on import
-	if err := d.Set("deletion_policy", "DEFAULT"); err != nil {
-		return nil, fmt.Errorf("Error setting deletion_policy: %s", err)
-	}
 
 	return []*schema.ResourceData{d}, nil
 }
@@ -3931,4 +3830,137 @@ func expandNetappVolumeEffectiveLabels(v interface{}, d tpgresource.TerraformRes
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceNetappVolumeFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("state", flattenNetappVolumeState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("state_details", flattenNetappVolumeStateDetails(res["stateDetails"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("create_time", flattenNetappVolumeCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("share_name", flattenNetappVolumeShareName(res["shareName"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("psa_range", flattenNetappVolumePsaRange(res["psaRange"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("storage_pool", flattenNetappVolumeStoragePool(res["storagePool"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("network", flattenNetappVolumeNetwork(res["network"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("service_level", flattenNetappVolumeServiceLevel(res["serviceLevel"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("capacity_gib", flattenNetappVolumeCapacityGib(res["capacityGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("export_policy", flattenNetappVolumeExportPolicy(res["exportPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("protocols", flattenNetappVolumeProtocols(res["protocols"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("smb_settings", flattenNetappVolumeSmbSettings(res["smbSettings"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("unix_permissions", flattenNetappVolumeUnixPermissions(res["unixPermissions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("labels", flattenNetappVolumeLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("description", flattenNetappVolumeDescription(res["description"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("snapshot_directory", flattenNetappVolumeSnapshotDirectory(res["snapshotDirectory"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("used_gib", flattenNetappVolumeUsedGib(res["usedGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("security_style", flattenNetappVolumeSecurityStyle(res["securityStyle"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("kerberos_enabled", flattenNetappVolumeKerberosEnabled(res["kerberosEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("ldap_enabled", flattenNetappVolumeLdapEnabled(res["ldapEnabled"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("active_directory", flattenNetappVolumeActiveDirectory(res["activeDirectory"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("kms_config", flattenNetappVolumeKmsConfig(res["kmsConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("encryption_type", flattenNetappVolumeEncryptionType(res["encryptionType"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("has_replication", flattenNetappVolumeHasReplication(res["hasReplication"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("restricted_actions", flattenNetappVolumeRestrictedActions(res["restrictedActions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("mount_options", flattenNetappVolumeMountOptions(res["mountOptions"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("snapshot_policy", flattenNetappVolumeSnapshotPolicy(res["snapshotPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("backup_config", flattenNetappVolumeBackupConfig(res["backupConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("zone", flattenNetappVolumeZone(res["zone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("replica_zone", flattenNetappVolumeReplicaZone(res["replicaZone"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("large_capacity", flattenNetappVolumeLargeCapacity(res["largeCapacity"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("multiple_endpoints", flattenNetappVolumeMultipleEndpoints(res["multipleEndpoints"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("cold_tier_size_gib", flattenNetappVolumeColdTierSizeGib(res["coldTierSizeGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("tiering_policy", flattenNetappVolumeTieringPolicy(res["tieringPolicy"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("hybrid_replication_parameters", flattenNetappVolumeHybridReplicationParameters(res["hybridReplicationParameters"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("throughput_mibps", flattenNetappVolumeThroughputMibps(res["throughputMibps"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("hot_tier_size_used_gib", flattenNetappVolumeHotTierSizeUsedGib(res["hotTierSizeUsedGib"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("cache_parameters", flattenNetappVolumeCacheParameters(res["cacheParameters"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("block_devices", flattenNetappVolumeBlockDevices(res["blockDevices"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("large_capacity_config", flattenNetappVolumeLargeCapacityConfig(res["largeCapacityConfig"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenNetappVolumeTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenNetappVolumeEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Volume: %s", err)
+	}
+
+	return nil
 }

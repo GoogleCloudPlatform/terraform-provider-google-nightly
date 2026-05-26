@@ -100,6 +100,7 @@ func ResourceAccessContextManagerIngressPolicy() *schema.Resource {
 	return &schema.Resource{
 		Create: resourceAccessContextManagerIngressPolicyCreate,
 		Read:   resourceAccessContextManagerIngressPolicyRead,
+		Update: resourceAccessContextManagerIngressPolicyUpdate,
 		Delete: resourceAccessContextManagerIngressPolicyDelete,
 
 		Importer: &schema.ResourceImporter{
@@ -149,6 +150,19 @@ func ResourceAccessContextManagerIngressPolicy() *schema.Resource {
 				Computed:    true,
 				Description: `The name of the Access Policy this resource belongs to.`,
 			},
+
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -181,7 +195,7 @@ func resourceAccessContextManagerIngressPolicyCreate(d *schema.ResourceData, met
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{ingress_policy_name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{ingress_policy_name}}")
 	if err != nil {
 		return err
 	}
@@ -263,7 +277,7 @@ func resourceAccessContextManagerIngressPolicyRead(d *schema.ResourceData, meta 
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{ingress_policy_name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{ingress_policy_name}}")
 	if err != nil {
 		return err
 	}
@@ -302,8 +316,23 @@ func resourceAccessContextManagerIngressPolicyRead(d *schema.ResourceData, meta 
 		return nil
 	}
 
-	if err := d.Set("resource", flattenNestedAccessContextManagerIngressPolicyResource(res["resource"], d, config)); err != nil {
-		return fmt.Errorf("Error reading IngressPolicy: %s", err)
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
+
+	err = ResourceAccessContextManagerIngressPolicyFlatten(d, meta, res, config, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -327,7 +356,19 @@ func resourceAccessContextManagerIngressPolicyRead(d *schema.ResourceData, meta 
 	return nil
 }
 
+func resourceAccessContextManagerIngressPolicyUpdate(d *schema.ResourceData, meta interface{}) error {
+	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	return resourceAccessContextManagerIngressPolicyRead(d, meta)
+}
+
 func resourceAccessContextManagerIngressPolicyDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy AccessContextManagerIngressPolicy without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing IngressPolicy %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -342,8 +383,7 @@ func resourceAccessContextManagerIngressPolicyDelete(d *schema.ResourceData, met
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{AccessContextManagerBasePath}}{{ingress_policy_name}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"{{ingress_policy_name}}")
 	if err != nil {
 		return err
 	}
@@ -354,6 +394,7 @@ func resourceAccessContextManagerIngressPolicyDelete(d *schema.ResourceData, met
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, "IngressPolicy")
 	}
+
 	url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": "status.resources"})
 	if err != nil {
 		return err
@@ -590,4 +631,14 @@ func resourceAccessContextManagerIngressPolicyListForPatch(d *schema.ResourceDat
 		return ls, nil
 	}
 	return nil, nil
+}
+
+func ResourceAccessContextManagerIngressPolicyFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("resource", flattenNestedAccessContextManagerIngressPolicyResource(res["resource"], d, config)); err != nil {
+		return fmt.Errorf("Error reading IngressPolicy: %s", err)
+	}
+
+	return nil
 }

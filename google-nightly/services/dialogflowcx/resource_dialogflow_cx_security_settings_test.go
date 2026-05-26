@@ -22,6 +22,9 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/datalossprevention"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/dialogflowcx"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 )
 
 func TestAccDialogflowCXSecuritySettings_dialogflowcxSecuritySettings_update(t *testing.T) {

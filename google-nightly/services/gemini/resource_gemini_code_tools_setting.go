@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -116,6 +117,7 @@ func ResourceGeminiCodeToolsSetting() *schema.Resource {
 		CustomizeDiff: customdiff.All(
 			tpgresource.SetLabelsDiff,
 			tpgresource.DefaultProviderProject,
+			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
 
 		Identity: &schema.ResourceIdentity{
@@ -247,6 +249,18 @@ Format:projects/{project}/locations/{location}/codeToolsSettings/{codeToolsSetti
 				Computed: true,
 				ForceNew: true,
 			},
+			"deletion_policy": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
+				Description: `Whether Terraform will be prevented from destroying the instance. Defaults to "DELETE".
+When a 'terraform destroy' or 'terraform apply' would delete the instance,
+the command will fail if this field is set to "PREVENT" in Terraform state.
+When set to "ABANDON", the command will remove the resource from Terraform
+management without updating or deleting the resource in the API.
+When set to "DELETE", deleting the resource is allowed.
+`,
+			},
 		},
 		UseJSONNumber: true,
 	}
@@ -280,7 +294,7 @@ func resourceGeminiCodeToolsSettingCreate(d *schema.ResourceData, meta interface
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/codeToolsSettings?codeToolsSettingId={{code_tools_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/codeToolsSettings?codeToolsSettingId={{code_tools_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -321,6 +335,16 @@ func resourceGeminiCodeToolsSettingCreate(d *schema.ResourceData, meta interface
 	}
 	d.SetId(id)
 
+	err = GeminiOperationWaitTime(
+		config, res, project, "Creating CodeToolsSetting", userAgent,
+		d.Timeout(schema.TimeoutCreate))
+
+	if err != nil {
+		// The resource didn't actually create
+		d.SetId("")
+		return fmt.Errorf("Error waiting to create CodeToolsSetting: %s", err)
+	}
+
 	log.Printf("[DEBUG] Finished creating CodeToolsSetting %q: %#v", d.Id(), res)
 
 	identity, err := d.Identity()
@@ -354,7 +378,7 @@ func resourceGeminiCodeToolsSettingRead(d *schema.ResourceData, meta interface{}
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/codeToolsSettings/{{code_tools_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/codeToolsSettings/{{code_tools_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -387,30 +411,26 @@ func resourceGeminiCodeToolsSettingRead(d *schema.ResourceData, meta interface{}
 
 	log.Printf("[DEBUG] Finished reading GeminiCodeToolsSetting %q: %#v", d.Id(), res)
 
+	// Explicitly set virtual fields to default values if unset
+	if _, ok := d.GetOkExists("deletion_policy"); !ok {
+		//prioritize config's value if present
+		if config.DeletionPolicy != "" {
+			if err := d.Set("deletion_policy", config.DeletionPolicy); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		} else {
+			if err := d.Set("deletion_policy", "DELETE"); err != nil {
+				return fmt.Errorf("Error setting deletion_policy: %s", err)
+			}
+		}
+	}
 	if err := d.Set("project", project); err != nil {
 		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
 	}
 
-	if err := d.Set("name", flattenGeminiCodeToolsSettingName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
-	}
-	if err := d.Set("create_time", flattenGeminiCodeToolsSettingCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
-	}
-	if err := d.Set("update_time", flattenGeminiCodeToolsSettingUpdateTime(res["updateTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
-	}
-	if err := d.Set("labels", flattenGeminiCodeToolsSettingLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
-	}
-	if err := d.Set("enabled_tool", flattenGeminiCodeToolsSettingEnabledTool(res["enabledTool"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
-	}
-	if err := d.Set("terraform_labels", flattenGeminiCodeToolsSettingTerraformLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
-	}
-	if err := d.Set("effective_labels", flattenGeminiCodeToolsSettingEffectiveLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
+	err = ResourceGeminiCodeToolsSettingFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -441,6 +461,19 @@ func resourceGeminiCodeToolsSettingRead(d *schema.ResourceData, meta interface{}
 }
 
 func resourceGeminiCodeToolsSettingUpdate(d *schema.ResourceData, meta interface{}) error {
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceGeminiCodeToolsSetting().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceGeminiCodeToolsSettingRead(d, meta)
+	}
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -496,7 +529,7 @@ func resourceGeminiCodeToolsSettingUpdate(d *schema.ResourceData, meta interface
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/codeToolsSettings/{{code_tools_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/codeToolsSettings/{{code_tools_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -543,12 +576,26 @@ func resourceGeminiCodeToolsSettingUpdate(d *schema.ResourceData, meta interface
 			log.Printf("[DEBUG] Finished updating CodeToolsSetting %q: %#v", d.Id(), res)
 		}
 
+		err = GeminiOperationWaitTime(
+			config, res, project, "Updating CodeToolsSetting", userAgent,
+			d.Timeout(schema.TimeoutUpdate))
+
+		if err != nil {
+			return err
+		}
 	}
 
 	return resourceGeminiCodeToolsSettingRead(d, meta)
 }
 
 func resourceGeminiCodeToolsSettingDelete(d *schema.ResourceData, meta interface{}) error {
+	if d.Get("deletion_policy").(string) == "PREVENT" {
+		return fmt.Errorf("cannot destroy GeminiCodeToolsSetting without setting deletion_policy=\"DELETE\" and running `terraform apply`")
+	}
+	if d.Get("deletion_policy").(string) == "ABANDON" {
+		log.Printf("[DEBUG] deletion_policy set to \"ABANDON\", removing CodeToolsSetting %q from Terraform state without deletion", d.Id())
+		return nil
+	}
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -569,8 +616,7 @@ func resourceGeminiCodeToolsSettingDelete(d *schema.ResourceData, meta interface
 	}
 	transport_tpg.MutexStore.Lock(lockName)
 	defer transport_tpg.MutexStore.Unlock(lockName)
-
-	url, err := tpgresource.ReplaceVars(d, config, "{{GeminiBasePath}}projects/{{project}}/locations/{{location}}/codeToolsSettings/{{code_tools_setting_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/codeToolsSettings/{{code_tools_setting_id}}")
 	if err != nil {
 		return err
 	}
@@ -597,6 +643,14 @@ func resourceGeminiCodeToolsSettingDelete(d *schema.ResourceData, meta interface
 	})
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, "CodeToolsSetting")
+	}
+
+	err = GeminiOperationWaitTime(
+		config, res, project, "Deleting CodeToolsSetting", userAgent,
+		d.Timeout(schema.TimeoutDelete))
+
+	if err != nil {
+		return err
 	}
 
 	log.Printf("[DEBUG] Finished deleting CodeToolsSetting %q: %#v", d.Id(), res)
@@ -852,4 +906,32 @@ func expandGeminiCodeToolsSettingEffectiveLabels(v interface{}, d tpgresource.Te
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func ResourceGeminiCodeToolsSettingFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenGeminiCodeToolsSettingName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
+	}
+	if err = d.Set("create_time", flattenGeminiCodeToolsSettingCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
+	}
+	if err = d.Set("update_time", flattenGeminiCodeToolsSettingUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
+	}
+	if err = d.Set("labels", flattenGeminiCodeToolsSettingLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
+	}
+	if err = d.Set("enabled_tool", flattenGeminiCodeToolsSettingEnabledTool(res["enabledTool"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
+	}
+	if err = d.Set("terraform_labels", flattenGeminiCodeToolsSettingTerraformLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
+	}
+	if err = d.Set("effective_labels", flattenGeminiCodeToolsSettingEffectiveLabels(res["labels"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CodeToolsSetting: %s", err)
+	}
+
+	return nil
 }

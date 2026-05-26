@@ -184,7 +184,7 @@ func resourceFirebaseAppCheckAppAttestConfigCreate(d *schema.ResourceData, meta 
 		obj["tokenTtl"] = tokenTtlProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppCheckBasePath}}projects/{{project}}/apps/{{app_id}}/appAttestConfig?updateMask=tokenTtl")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/apps/{{app_id}}/appAttestConfig?updateMask=tokenTtl")
 	if err != nil {
 		return err
 	}
@@ -253,7 +253,7 @@ func resourceFirebaseAppCheckAppAttestConfigRead(d *schema.ResourceData, meta in
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppCheckBasePath}}projects/{{project}}/apps/{{app_id}}/appAttestConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/apps/{{app_id}}/appAttestConfig")
 	if err != nil {
 		return err
 	}
@@ -290,11 +290,9 @@ func resourceFirebaseAppCheckAppAttestConfigRead(d *schema.ResourceData, meta in
 		return fmt.Errorf("Error reading AppAttestConfig: %s", err)
 	}
 
-	if err := d.Set("name", flattenFirebaseAppCheckAppAttestConfigName(res["name"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppAttestConfig: %s", err)
-	}
-	if err := d.Set("token_ttl", flattenFirebaseAppCheckAppAttestConfigTokenTtl(res["tokenTtl"], d, config)); err != nil {
-		return fmt.Errorf("Error reading AppAttestConfig: %s", err)
+	err = ResourceFirebaseAppCheckAppAttestConfigFlatten(d, meta, res, config, project, userAgent, billingProject, url, headers)
+	if err != nil {
+		return err
 	}
 
 	identity, err := d.Identity()
@@ -319,6 +317,7 @@ func resourceFirebaseAppCheckAppAttestConfigRead(d *schema.ResourceData, meta in
 }
 
 func resourceFirebaseAppCheckAppAttestConfigUpdate(d *schema.ResourceData, meta interface{}) error {
+
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
 	if err != nil {
@@ -356,7 +355,7 @@ func resourceFirebaseAppCheckAppAttestConfigUpdate(d *schema.ResourceData, meta 
 		obj["tokenTtl"] = tokenTtlProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, "{{FirebaseAppCheckBasePath}}projects/{{project}}/apps/{{app_id}}/appAttestConfig")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/apps/{{app_id}}/appAttestConfig")
 	if err != nil {
 		return err
 	}
@@ -443,4 +442,17 @@ func flattenFirebaseAppCheckAppAttestConfigTokenTtl(v interface{}, d *schema.Res
 
 func expandFirebaseAppCheckAppAttestConfigTokenTtl(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func ResourceFirebaseAppCheckAppAttestConfigFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
+	var err error
+
+	if err = d.Set("name", flattenFirebaseAppCheckAppAttestConfigName(res["name"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppAttestConfig: %s", err)
+	}
+	if err = d.Set("token_ttl", flattenFirebaseAppCheckAppAttestConfigTokenTtl(res["tokenTtl"], d, config)); err != nil {
+		return fmt.Errorf("Error reading AppAttestConfig: %s", err)
+	}
+
+	return nil
 }

@@ -30,6 +30,8 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/binaryauthorization"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/containeranalysis"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -48,6 +50,7 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
+	_ = binaryauthorization.Product
 )
 
 func TestAccBinaryAuthorizationAttestor_binaryAuthorizationAttestorBasicExample(t *testing.T) {
@@ -135,8 +138,7 @@ func testAccCheckBinaryAuthorizationAttestorDestroyProducer(t *testing.T) func(s
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, "{{BinaryAuthorizationBasePath}}projects/{{project}}/attestors/{{name}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(binaryauthorization.Product, config)+"projects/{{project}}/attestors/{{name}}")
 			if err != nil {
 				return err
 			}
