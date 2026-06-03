@@ -53,7 +53,7 @@ resource "google_app_engine_standard_app_version" "internalapp" {
   service = "internalapp"
   delete_service_on_destroy = true
 
-  runtime = "nodejs20"
+  runtime = "nodejs22"
   entrypoint {
     shell = "node ./app.js"
   }
@@ -134,7 +134,7 @@ ServiceNetworkSettings can be imported using any of these accepted formats:
 * `{{project}}/{{service}}`
 * `{{service}}`
 
-In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/resources/identities) to import ServiceNetworkSettings using identity values. For example:
+In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/block/import#identity) to import ServiceNetworkSettings using identity values. For example:
 
 ```tf
 import {

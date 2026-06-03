@@ -58,10 +58,10 @@ The following arguments are supported:
 * `display_name` - Obtained from the A2A Agent Card. The display name of the Agent.
 * `description` - Obtained from the A2A Agent Card. The description of the Agent.
 * `version` - Obtained from the A2A Agent Card. Contains the version of the Agent.
-* `framework` - The OSS agent framework used to develop the agent. Currently supported values: "google-adk", "langchain", "langgraph", "ag2", "llama-index", "custom".
-* `skills` - Obtained from the A2A Agent Card. Skills represent the ability of an agent. It is largely a descriptive concept but represents a more focused set of behaviors that the agent is likely to succeed at.
-* `skills.0.id` - A unique identifier for the agent's skill.
-* `skills.0.name` - A human readable name for the agent's skill.
+* `framework` - The OSS Agent framework used to develop the Agent. Currently supported values: "google-adk", "langchain", "langgraph", "ag2", "llama-index", "custom".
+* `skills` - Obtained from the A2A Agent Card. Skills represent the ability of an Agent. It is largely a descriptive concept but represents a more focused set of behaviors that the Agent is likely to succeed at.
+* `skills.0.id` - A unique identifier for the Agent's skill.
+* `skills.0.name` - A human readable name for the Agent's skill.
 * `skills.0.description` - A more detailed description of the skill.
 * `skills.0.tags` - A set of keywords describing the skills.  Example:  [["cooking", "customer support", "billing"]]
 * `skills.0.examples` - Example prompts or scenarios that this skill can handle. Provides a hint to the client on how to use the skill. Example: [["I need a recipe for bread"]]

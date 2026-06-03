@@ -35,12 +35,13 @@ Service manages a service in a management boundary
 
 ```hcl
 resource "google_agent_registry_service" "default" {
+  provider     = google-nightly
   location     = "us-central1"
   service_id   = "service"
 
   display_name = "My Service"
   interfaces {
-    url = "https://www.google.com"
+    url = "https://www.google.com/service"
     protocol_binding = "GRPC"
   }
 
@@ -59,27 +60,23 @@ resource "google_agent_registry_service" "default" {
 
 ```hcl
 resource "google_agent_registry_service" "default" {
+  provider     = google-nightly
   location     = "us-central1"
   service_id   = "service"
 
   display_name = "My Service"
   interfaces {
-    url = "https://www.google.com/api"
-    protocol_binding = "GRPC"
+    url = "https://www.google.com/api/service"
+    protocol_binding = "JSONRPC"
   }
 
   interfaces {
-    url = "https://www.youtube.com/api"
+    url = "https://www.youtube.com/api/service"
     protocol_binding = "JSONRPC"
   }
 
   mcp_server_spec {
-    type    = "TOOL_SPEC"
-    content = jsonencode({
-            name = {
-              type        = "STRING"
-              description = "A name"
-            }})
+    type    = "NO_SPEC"
   }
 }
 ```
@@ -95,7 +92,7 @@ The following arguments are supported:
 
 * `service_id` -
   (Required)
-  The name of the service.
+  The name of the Service.
 
 
 * `display_name` -
@@ -104,7 +101,7 @@ The following arguments are supported:
 
 * `description` -
   (Optional)
-  The description of the service.
+  The description of the Service.
 
 * `interfaces` -
   (Optional)
@@ -113,17 +110,17 @@ The following arguments are supported:
 
 * `agent_spec` -
   (Optional)
-  The spec of the Agent. When set, the type of the service is Agent.
+  The spec of the Agent. When set, the type of the Service is Agent.
   Structure is [documented below](#nested_agent_spec).
 
 * `mcp_server_spec` -
   (Optional)
-  The spec of the MCP Server. When set, the type of the service is MCP Server.
+  The spec of the MCP Server. When set, the type of the Service is MCP Server.
   Structure is [documented below](#nested_mcp_server_spec).
 
 * `endpoint_spec` -
   (Optional)
-  The spec of the Endpoint. When set, the type of the service is Endpoint.
+  The spec of the Endpoint. When set, the type of the Service is Endpoint.
   Structure is [documented below](#nested_endpoint_spec).
 
 * `project` - (Optional) The ID of the project in which the resource belongs.
@@ -152,7 +149,7 @@ The following arguments are supported:
 
 * `type` -
   (Required)
-  The type of the agent spec content.
+  The type of the Agent spec content.
   Possible values are: `NO_SPEC`, `A2A_AGENT_CARD`.
 
 * `content` -
@@ -174,7 +171,7 @@ The following arguments are supported:
 
 * `type` -
   (Required)
-  The type of the endpoint spec content.
+  The type of the Endpoint spec content.
   Possible values are: `NO_SPEC`.
 
 ## Attributes Reference
@@ -182,6 +179,9 @@ The following arguments are supported:
 In addition to the arguments listed above, the following computed attributes are exported:
 
 * `id` - an identifier for the resource with format `projects/{{project}}/locations/{{location}}/services/{{service_id}}`
+
+* `registry_resource` -
+  The resource name of the resulting Agent, MCP Server, or Endpoint.
 
 * `create_time` -
   The timestamp when the resource was created.
@@ -208,7 +208,7 @@ Service can be imported using any of these accepted formats:
 * `{{project}}/{{location}}/{{service_id}}`
 * `{{location}}/{{service_id}}`
 
-In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/resources/identities) to import Service using identity values. For example:
+In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/block/import#identity) to import Service using identity values. For example:
 
 ```tf
 import {

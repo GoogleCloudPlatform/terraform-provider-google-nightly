@@ -93,7 +93,7 @@ func testAccAgentRegistryBinding_agentRegistryBindingBasicExample(context map[st
 resource "google_agent_registry_binding" "default" {
   provider = google-nightly
 
-  location     = "us-east7"
+  location     = "us-central1"
   binding_id   = "%{binding}"
   display_name = "My Binding"
 
@@ -107,6 +107,8 @@ resource "google_agent_registry_binding" "default" {
 
   auth_provider_binding {
     auth_provider = google_iam_connectors_connector.default.id
+    scopes        = ["https://www.googleapis.com/auth/cloud-platform"]
+    continue_uri  = "https://example.com/continue"
   }
 }
 
@@ -119,7 +121,7 @@ data "google_agent_registry_agent" "default" {
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "us-east7"
+  location       = "us-central1"
   connector_id   = "%{binding}"
 
   connector_type_params {

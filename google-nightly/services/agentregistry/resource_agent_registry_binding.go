@@ -146,7 +146,7 @@ func ResourceAgentRegistryBinding() *schema.Resource {
 			"auth_provider_binding": {
 				Type:        schema.TypeList,
 				Required:    true,
-				Description: `The auth provider of the binding.`,
+				Description: `The auth provider of the Binding.`,
 				MaxItems:    1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
@@ -155,13 +155,26 @@ func ResourceAgentRegistryBinding() *schema.Resource {
 							Required:    true,
 							Description: `The resource name of the target auth provider.`,
 						},
+						"continue_uri": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: `The continue URI of the auth provider.`,
+						},
+						"scopes": {
+							Type:        schema.TypeList,
+							Optional:    true,
+							Description: `The list of OAuth2 scopes of the auth provider.`,
+							Elem: &schema.Schema{
+								Type: schema.TypeString,
+							},
+						},
 					},
 				},
 			},
 			"binding_id": {
 				Type:        schema.TypeString,
 				Required:    true,
-				Description: `The name of the binding.`,
+				Description: `The name of the Binding.`,
 			},
 			"location": {
 				Type:        schema.TypeString,
@@ -171,7 +184,7 @@ func ResourceAgentRegistryBinding() *schema.Resource {
 			"source": {
 				Type:        schema.TypeList,
 				Required:    true,
-				Description: `The source of the binding.`,
+				Description: `The source of the Binding.`,
 				MaxItems:    1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
@@ -186,7 +199,7 @@ func ResourceAgentRegistryBinding() *schema.Resource {
 			"target": {
 				Type:        schema.TypeList,
 				Required:    true,
-				Description: `The target of the binding.`,
+				Description: `The target of the Binding.`,
 				MaxItems:    1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
@@ -735,9 +748,21 @@ func flattenAgentRegistryBindingAuthProviderBinding(v interface{}, d *schema.Res
 	transformed := make(map[string]interface{})
 	transformed["auth_provider"] =
 		flattenAgentRegistryBindingAuthProviderBindingAuthProvider(original["authProvider"], d, config)
+	transformed["scopes"] =
+		flattenAgentRegistryBindingAuthProviderBindingScopes(original["scopes"], d, config)
+	transformed["continue_uri"] =
+		flattenAgentRegistryBindingAuthProviderBindingContinueUri(original["continueUri"], d, config)
 	return []interface{}{transformed}
 }
 func flattenAgentRegistryBindingAuthProviderBindingAuthProvider(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenAgentRegistryBindingAuthProviderBindingScopes(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenAgentRegistryBindingAuthProviderBindingContinueUri(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -828,10 +853,32 @@ func expandAgentRegistryBindingAuthProviderBinding(v interface{}, d tpgresource.
 		transformed["authProvider"] = transformedAuthProvider
 	}
 
+	transformedScopes, err := expandAgentRegistryBindingAuthProviderBindingScopes(original["scopes"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedScopes); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["scopes"] = transformedScopes
+	}
+
+	transformedContinueUri, err := expandAgentRegistryBindingAuthProviderBindingContinueUri(original["continue_uri"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedContinueUri); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["continueUri"] = transformedContinueUri
+	}
+
 	return transformed, nil
 }
 
 func expandAgentRegistryBindingAuthProviderBindingAuthProvider(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandAgentRegistryBindingAuthProviderBindingScopes(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandAgentRegistryBindingAuthProviderBindingContinueUri(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
