@@ -19,62 +19,94 @@ package agentregistry_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestAccDataSourceAgentRegistryEndpoint_basic(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
+	displayName := "tf-test-endpoint-" + randomSuffix
 	context := map[string]interface{}{
-		"endpoint_id": "add-here",
+		"service":       "tf-test-service-" + randomSuffix,
+		"display_name":  displayName,
+		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		Steps: []resource.TestStep{
 			{
+				Config: testAccDataSourceAgentRegistryEndpoint_serviceOnly(context),
+				Check: resource.ComposeTestCheckFunc(
+					func(s *terraform.State) error {
+						time.Sleep(10 * time.Second)
+						return nil
+					},
+				),
+			},
+			{
 				Config: testAccDataSourceAgentRegistryEndpoint_basic(context),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttrSet("data.google_agent_registry_endpoint.default", "create_time"),
+					resource.TestCheckResourceAttrSet("data.google_agent_registry_endpoint.default", "update_time"),
+					resource.TestCheckResourceAttr("data.google_agent_registry_endpoint.default", "display_name", displayName),
+				),
 			},
 		},
 	})
 }
 
-func testAccDataSourceAgentRegistryEndpoint_basic(context map[string]interface{}) string {
+func testAccDataSourceAgentRegistryEndpoint_serviceOnly(context map[string]interface{}) string {
 	return acctest.Nprintf(`
-data "google_agent_registry_endpoint" "default" {
-  location = "us-central1"
-  endpoint_id = "%{endpoint_id}"
+resource "google_agent_registry_service" "default" {
+  provider     = google-nightly
+  location     = "us-central1"
+  service_id   = "%{service}"
+
+  display_name = "%{display_name}"
+  interfaces {
+    url = "https://www.google.com/%{service}"
+    protocol_binding = "GRPC"
+  }
+
+  endpoint_spec {
+    type = "NO_SPEC"
+  }
 }
 `, context)
 }
 
-func TestAccDataSourceAgentRegistryEndpoint_filter(t *testing.T) {
-	t.Parallel()
+func testAccDataSourceAgentRegistryEndpoint_basic(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_agent_registry_service" "default" {
+  provider     = google-nightly
+  location     = "us-central1"
+  service_id   = "%{service}"
 
-	context := map[string]interface{}{
-		"filter": "displayName:Example API Endpoint",
-	}
+  display_name = "%{display_name}"
+  interfaces {
+    url = "https://www.google.com/%{service}"
+    protocol_binding = "GRPC"
+  }
 
-	acctest.VcrTest(t, resource.TestCase{
-		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccDataSourceAgentRegistryEndpoint_filter(context),
-			},
-		},
-	})
+  endpoint_spec {
+    type = "NO_SPEC"
+  }
 }
 
-func testAccDataSourceAgentRegistryEndpoint_filter(context map[string]interface{}) string {
-	return acctest.Nprintf(`
 data "google_agent_registry_endpoint" "default" {
+  provider = google-nightly
   location = "us-central1"
-  filter   = "%{filter}"
+  filter   = "displayName=\"%{display_name}\""
+
+  depends_on = [google_agent_registry_service.default]
 }
 `, context)
 }

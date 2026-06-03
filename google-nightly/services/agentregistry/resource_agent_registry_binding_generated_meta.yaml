@@ -9,6 +9,8 @@ api_version: v1alpha
 api_resource_type_kind: Binding
 fields:
     - api_field: authProviderBinding.authProvider
+    - api_field: authProviderBinding.continueUri
+    - api_field: authProviderBinding.scopes
     - field: binding_id
       provider_only: true
     - api_field: createTime

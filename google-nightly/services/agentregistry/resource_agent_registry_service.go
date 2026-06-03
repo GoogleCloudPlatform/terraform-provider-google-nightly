@@ -151,12 +151,12 @@ func ResourceAgentRegistryService() *schema.Resource {
 			"service_id": {
 				Type:        schema.TypeString,
 				Required:    true,
-				Description: `The name of the service.`,
+				Description: `The name of the Service.`,
 			},
 			"agent_spec": {
 				Type:        schema.TypeList,
 				Optional:    true,
-				Description: `The spec of the Agent. When set, the type of the service is Agent.`,
+				Description: `The spec of the Agent. When set, the type of the Service is Agent.`,
 				MaxItems:    1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
@@ -164,7 +164,7 @@ func ResourceAgentRegistryService() *schema.Resource {
 							Type:         schema.TypeString,
 							Required:     true,
 							ValidateFunc: verify.ValidateEnum([]string{"NO_SPEC", "A2A_AGENT_CARD"}),
-							Description:  `The type of the agent spec content. Possible values: ["NO_SPEC", "A2A_AGENT_CARD"]`,
+							Description:  `The type of the Agent spec content. Possible values: ["NO_SPEC", "A2A_AGENT_CARD"]`,
 						},
 						"content": {
 							Type:         schema.TypeString,
@@ -180,7 +180,7 @@ func ResourceAgentRegistryService() *schema.Resource {
 			"description": {
 				Type:        schema.TypeString,
 				Optional:    true,
-				Description: `The description of the service.`,
+				Description: `The description of the Service.`,
 			},
 			"display_name": {
 				Type:        schema.TypeString,
@@ -190,7 +190,7 @@ func ResourceAgentRegistryService() *schema.Resource {
 			"endpoint_spec": {
 				Type:        schema.TypeList,
 				Optional:    true,
-				Description: `The spec of the Endpoint. When set, the type of the service is Endpoint.`,
+				Description: `The spec of the Endpoint. When set, the type of the Service is Endpoint.`,
 				MaxItems:    1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
@@ -198,7 +198,7 @@ func ResourceAgentRegistryService() *schema.Resource {
 							Type:         schema.TypeString,
 							Required:     true,
 							ValidateFunc: verify.ValidateEnum([]string{"NO_SPEC"}),
-							Description:  `The type of the endpoint spec content. Possible values: ["NO_SPEC"]`,
+							Description:  `The type of the Endpoint spec content. Possible values: ["NO_SPEC"]`,
 						},
 					},
 				},
@@ -227,7 +227,7 @@ func ResourceAgentRegistryService() *schema.Resource {
 			"mcp_server_spec": {
 				Type:        schema.TypeList,
 				Optional:    true,
-				Description: `The spec of the MCP Server. When set, the type of the service is MCP Server.`,
+				Description: `The spec of the MCP Server. When set, the type of the Service is MCP Server.`,
 				MaxItems:    1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
@@ -252,6 +252,11 @@ func ResourceAgentRegistryService() *schema.Resource {
 				Type:        schema.TypeString,
 				Computed:    true,
 				Description: `The timestamp when the resource was created.`,
+			},
+			"registry_resource": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `The resource name of the resulting Agent, MCP Server, or Endpoint.`,
 			},
 			"update_time": {
 				Type:        schema.TypeString,
@@ -849,6 +854,10 @@ func flattenAgentRegistryServiceEndpointSpecType(v interface{}, d *schema.Resour
 	return v
 }
 
+func flattenAgentRegistryServiceRegistryResource(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenAgentRegistryServiceCreateTime(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
@@ -1040,6 +1049,9 @@ func ResourceAgentRegistryServiceFlatten(d *schema.ResourceData, meta interface{
 		return fmt.Errorf("Error reading Service: %s", err)
 	}
 	if err = d.Set("endpoint_spec", flattenAgentRegistryServiceEndpointSpec(res["endpointSpec"], d, config)); err != nil {
+		return fmt.Errorf("Error reading Service: %s", err)
+	}
+	if err = d.Set("registry_resource", flattenAgentRegistryServiceRegistryResource(res["registryResource"], d, config)); err != nil {
 		return fmt.Errorf("Error reading Service: %s", err)
 	}
 	if err = d.Set("create_time", flattenAgentRegistryServiceCreateTime(res["createTime"], d, config)); err != nil {

@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 // ----------------------------------------------------------------------------
 //
@@ -67,7 +68,7 @@ var (
 )
 
 var DEFAULT_SCRATCH_DISK_SIZE_GB = 375
-var VALID_SCRATCH_DISK_SIZES_GB [2]int = [2]int{375, 3000}
+var VALID_SCRATCH_DISK_SIZES_GB = []int{375, 3000, 3500, 7000}
 
 func ResourceComputeInstanceTemplate() *schema.Resource {
 	return &schema.Resource{
@@ -177,7 +178,7 @@ func ResourceComputeInstanceTemplate() *schema.Resource {
 							Optional:    true,
 							ForceNew:    true,
 							Computed:    true,
-							Description: `The size of the image in gigabytes. If not specified, it will inherit the size of its base image. For SCRATCH disks, the size must be one of 375 or 3000 GB, with a default of 375 GB.`,
+							Description: `The size of the image in gigabytes. If not specified, it will inherit the size of its base image. For SCRATCH disks, the size must be one of 375, 3000, 3500 or 7000 GB, with a default of 375 GB.`,
 						},
 
 						"disk_type": {
@@ -1415,13 +1416,13 @@ func resourceComputeInstanceTemplateScratchDiskCustomizeDiffFunc(diff tpgresourc
 		}
 
 		diskSize := diff.Get(fmt.Sprintf("disk.%d.disk_size_gb", i)).(int)
-		if typee == "SCRATCH" && !(diskSize == 375 || diskSize == 3000) { // see VALID_SCRATCH_DISK_SIZES_GB
+		if typee == "SCRATCH" && !(diskSize == 375 || diskSize == 3000 || diskSize == 3500 || diskSize == 7000) { // see VALID_SCRATCH_DISK_SIZES_GB
 			return fmt.Errorf("SCRATCH disks must be one of %v GB, disk %d is %d", VALID_SCRATCH_DISK_SIZES_GB, i, diskSize)
 		}
 
 		interfacee := diff.Get(fmt.Sprintf("disk.%d.interface", i)).(string)
-		if typee == "SCRATCH" && diskSize == 3000 && interfacee != "NVME" {
-			return fmt.Errorf("SCRATCH disks with a size of 3000 GB must have an interface of NVME. disk %d has interface %s", i, interfacee)
+		if typee == "SCRATCH" && (diskSize == 3000 || diskSize == 3500 || diskSize == 7000) && interfacee != "NVME" {
+			return fmt.Errorf("SCRATCH disks with a size of %d GB must have an interface of NVME. disk %d has interface %s", diskSize, i, interfacee)
 		}
 	}
 
@@ -1692,9 +1693,16 @@ func resourceComputeInstanceTemplateCreate(d *schema.ResourceData, meta interfac
 			return fmt.Errorf("Error converting networkPerformanceConfig: %s", err)
 		}
 	}
-	reservationAffinity, err := expandReservationAffinity(d)
+	reservationAffinityMap, err := expandReservationAffinity(d)
 	if err != nil {
 		return err
+	}
+	var reservationAffinity *compute.ReservationAffinity
+	if reservationAffinityMap != nil {
+		reservationAffinity = &compute.ReservationAffinity{}
+		if err := tpgresource.Convert(reservationAffinityMap, reservationAffinity); err != nil {
+			return fmt.Errorf("Error converting reservationAffinity: %s", err)
+		}
 	}
 	resourcePolicies := expandInstanceTemplateResourcePolicies(d, "resource_policies")
 
@@ -2234,7 +2242,11 @@ func resourceComputeInstanceTemplateRead(d *schema.ResourceData, meta interface{
 	}
 
 	if reservationAffinity := instanceTemplate.Properties.ReservationAffinity; reservationAffinity != nil {
-		if err = d.Set("reservation_affinity", flattenReservationAffinity(reservationAffinity)); err != nil {
+		reservationAffinityMap, err := tpgresource.ConvertToMap(reservationAffinity)
+		if err != nil {
+			return fmt.Errorf("Error converting reservation_affinity: %s", err)
+		}
+		if err = d.Set("reservation_affinity", flattenReservationAffinity(reservationAffinityMap)); err != nil {
 			return fmt.Errorf("Error setting reservation_affinity: %s", err)
 		}
 	}

@@ -226,7 +226,12 @@ func dataSourceAgentRegistryAgentRead(d *schema.ResourceData, meta any) error {
 			return transport_tpg.HandleDataSourceNotFoundError(err, d, fmt.Sprintf("AgentRegistry Agent %q", d.Get("agent_id")), id)
 		}
 	} else if filter, ok := d.GetOk("filter"); ok {
-		url, err := tpgresource.ReplaceVars(d, config, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/agents?filter={{filter}}")
+		url, err := tpgresource.ReplaceVars(d, config, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/agents")
+		if err != nil {
+			return err
+		}
+
+		url, err = transport_tpg.AddQueryParams(url, map[string]string{"filter": filter.(string)})
 		if err != nil {
 			return err
 		}

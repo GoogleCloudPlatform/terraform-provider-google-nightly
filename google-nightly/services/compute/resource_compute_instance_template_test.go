@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 // ----------------------------------------------------------------------------
 //
@@ -1112,6 +1113,21 @@ func TestAccComputeInstanceTemplate_invalidDiskType(t *testing.T) {
 			{
 				Config:      testAccComputeInstanceTemplate_invalidDiskType(acctest.RandString(t, 10)),
 				ExpectError: regexp.MustCompile("SCRATCH disks must have a disk_type of local-ssd"),
+			},
+		},
+	})
+}
+
+func TestAccComputeInstanceTemplate_invalidScratchDiskInterface(t *testing.T) {
+	t.Parallel()
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		Steps: []resource.TestStep{
+			{
+				Config:      testAccComputeInstanceTemplate_invalidScratchDiskInterface(acctest.RandString(t, 10)),
+				ExpectError: regexp.MustCompile("SCRATCH disks with a size of 3500 GB must have an interface of NVME"),
 			},
 		},
 	})
@@ -4778,6 +4794,35 @@ resource "google_compute_instance_template" "foobar" {
   }
 }
 `, suffix)
+}
+
+func testAccComputeInstanceTemplate_invalidScratchDiskInterface(suffix string) string {
+	return fmt.Sprintf(`
+data "google_compute_image" "my_image" {
+	family  = "debian-12"
+	project = "debian-cloud"
+}
+
+resource "google_compute_instance_template" "foobar" {
+  name           = "tf-test-instance-template-%s"
+  machine_type   = "n2-standard-64"
+  can_ip_forward = false
+  disk {
+    source_image = data.google_compute_image.my_image.name
+    auto_delete  = true
+    boot         = true
+  }
+  disk {
+    auto_delete  = true
+    disk_size_gb = 3500
+    type         = "SCRATCH"
+    disk_type    = "local-ssd"
+    interface    = "SCSI"
+  }
+  network_interface {
+    network = "default"
+  }
+}`, suffix)
 }
 
 func testAccComputeInstanceTemplate_imageResourceTest(diskName string, imageName string, imageDescription string) string {

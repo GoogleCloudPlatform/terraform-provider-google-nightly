@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 // ----------------------------------------------------------------------------
 //
@@ -150,7 +151,7 @@ func ResourceComputeRegionInstanceTemplate() *schema.Resource {
 							Optional:    true,
 							ForceNew:    true,
 							Computed:    true,
-							Description: `The size of the image in gigabytes. If not specified, it will inherit the size of its base image. For SCRATCH disks, the size must be one of 375 or 3000 GB, with a default of 375 GB.`,
+							Description: `The size of the image in gigabytes. If not specified, it will inherit the size of its base image. For SCRATCH disks, the size must be one of 375, 3000, 3500 or 7000 GB, with a default of 375 GB.`,
 						},
 
 						"disk_type": {
@@ -1446,11 +1447,7 @@ func resourceComputeRegionInstanceTemplateCreate(d *schema.ResourceData, meta in
 		instanceProperties["advancedMachineFeatures"] = amfMap
 	}
 	if reservationAffinity != nil {
-		raMap, err := tpgresource.ConvertToMap(reservationAffinity)
-		if err != nil {
-			return fmt.Errorf("Error converting reservationAffinity: %s", err)
-		}
-		instanceProperties["reservationAffinity"] = raMap
+		instanceProperties["reservationAffinity"] = reservationAffinity
 	}
 	if len(PartnerMetadata) > 0 {
 		pmJSON, err := json.Marshal(PartnerMetadata)
@@ -1782,7 +1779,11 @@ func resourceComputeRegionInstanceTemplateRead(d *schema.ResourceData, meta inte
 	}
 
 	if reservationAffinity := instanceTemplate.Properties.ReservationAffinity; reservationAffinity != nil {
-		if err = d.Set("reservation_affinity", flattenReservationAffinity(reservationAffinity)); err != nil {
+		reservationAffinityMap, err := tpgresource.ConvertToMap(reservationAffinity)
+		if err != nil {
+			return fmt.Errorf("Error converting reservation_affinity: %s", err)
+		}
+		if err = d.Set("reservation_affinity", flattenReservationAffinity(reservationAffinityMap)); err != nil {
 			return fmt.Errorf("Error setting reservation_affinity: %s", err)
 		}
 	}

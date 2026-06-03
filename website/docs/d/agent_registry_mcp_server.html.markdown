@@ -55,12 +55,14 @@ The following arguments are supported:
 * `interfaces.0.url` - The destination URL.
 * `interfaces.0.protocol_binding` - The protocol binding of the interface.
 * `tools` - A list of tools available with the MCP Server.
-* `tools.0.name` - The name of the tool
-* `tools.0.description` - The description of the tool
-* `tools.0.annotations` - Additional tool information
-* `tools.0.annotations.title` - A human-readable title for the tool
+* `tools.0.name` - The name of the tool.
+* `tools.0.description` - The description of the tool.
+* `tools.0.annotations` - Additional tool information.
+* `tools.0.annotations.title` - A human-readable title for the tool.
 * `tools.0.annotations.destructive_hint` - If true, the tool may perform destructive updates to its environment. If false, the tool performs only additive updates.
-* `tools.0.annotations.idempotent_hint` - If true, calling the tool repeatedly with the same arguments will have no additional effect on the its environment
+* `tools.0.annotations.idempotent_hint` - If true, calling the tool repeatedly with the same arguments will have no additional effect on the its environment.
 * `tools.0.annotations.open_world_hint` - If true, this tool may interact with an “open world” of external entities. If false, the tool’s domain of interaction is closed. For example, the world of a web search tool is open, whereas that of a memory tool is not
 * `tools.0.annotations.read_only_hint` - If true, the tool does not modify its environment.
 * `attributes` - Attributes of the Agent.
+* `create_time` - Create time.
+* `update_time` - Update time.

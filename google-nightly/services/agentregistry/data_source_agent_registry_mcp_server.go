@@ -155,6 +155,16 @@ func DataSourceAgentRegistryMcpServer() *schema.Resource {
 					Type: schema.TypeString,
 				},
 			},
+			"create_time": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `Create time.`,
+			},
+			"update_time": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `Update time.`,
+			},
 		},
 	}
 }
@@ -201,7 +211,12 @@ func dataSourceAgentRegistryMcpServerRead(d *schema.ResourceData, meta any) erro
 			return transport_tpg.HandleDataSourceNotFoundError(err, d, fmt.Sprintf("AgentRegistry MCP Server %q", d.Get("mcp_server_id")), id)
 		}
 	} else if filter, ok := d.GetOk("filter"); ok {
-		url, err := tpgresource.ReplaceVars(d, config, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/mcpServers?filter={{filter}}")
+		url, err := tpgresource.ReplaceVars(d, config, "{{AgentRegistryBasePath}}projects/{{project}}/locations/{{location}}/mcpServers")
+		if err != nil {
+			return err
+		}
+
+		url, err = transport_tpg.AddQueryParams(url, map[string]string{"filter": filter.(string)})
 		if err != nil {
 			return err
 		}
@@ -271,6 +286,16 @@ func dataSourceAgentRegistryMcpServerRead(d *schema.ResourceData, meta any) erro
 	}
 
 	err = d.Set("attributes", flattenAgentRegistryMcpServerAttributes(res["attributes"], d, config))
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("create_time", res["createTime"])
+	if err != nil {
+		return err
+	}
+
+	err = d.Set("update_time", res["updateTime"])
 	if err != nil {
 		return err
 	}

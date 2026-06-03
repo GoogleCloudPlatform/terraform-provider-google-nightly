@@ -67,8 +67,10 @@ var (
 func TestAccAgentRegistryService_update(t *testing.T) {
 	t.Parallel()
 
+	randomSuffix := acctest.RandString(t, 10)
 	context := map[string]interface{}{
-		"random_suffix": acctest.RandString(t, 10),
+		"random_suffix": randomSuffix,
+		"service":       "service" + randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
@@ -110,28 +112,19 @@ func TestAccAgentRegistryService_update(t *testing.T) {
 func testAccAgentRegistryService_update(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_agent_registry_service" "default" {
+  provider     = google-nightly
   location     = "us-central1"
-  service_id   = "service%{random_suffix}"
+  service_id   = "%{service}"
 
   display_name = "My Updated Service"
 
   interfaces {
-    url = "https://www.google.com/api"
+    url = "https://www.google.com/api/%{random_suffix}"
     protocol_binding = "GRPC"
   }
 
-  interfaces {
-    url = "https://www.youtube.com/api"
-    protocol_binding = "JSONRPC"
-  }
-
   agent_spec {
-    type    = "A2A_AGENT_CARD"
-    content = jsonencode({
-        name = {
-          type        = "STRING"
-          description = "A name"
-      }})
+    type = "NO_SPEC"
   }
 }
 `, context)
