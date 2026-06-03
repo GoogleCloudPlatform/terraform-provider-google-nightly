@@ -213,13 +213,6 @@ resource "google_datastream_connection_profile" "default" {
 		bucket    = "my-bucket"
 		root_path = "/path"
 	}
-
-	forward_ssh_connectivity {
-		hostname = "google.com"
-		username = "my-user"
-		port     = 8022
-		password = "swordfish"
-	}
 	labels = {
 		key = "value"
 	}
@@ -1061,7 +1054,7 @@ ConnectionProfile can be imported using any of these accepted formats:
 * `{{project}}/{{location}}/{{connection_profile_id}}`
 * `{{location}}/{{connection_profile_id}}`
 
-In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/resources/identities) to import ConnectionProfile using identity values. For example:
+In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/block/import#identity) to import ConnectionProfile using identity values. For example:
 
 ```tf
 import {

@@ -57,7 +57,7 @@ resource "google_project_iam_member" "storage_viewer" {
 resource "google_app_engine_standard_app_version" "myapp_v1" {
   version_id = "v1"
   service    = "myapp"
-  runtime    = "nodejs20"
+  runtime    = "nodejs22"
 
   entrypoint {
     shell = "node ./app.js"
@@ -94,7 +94,7 @@ resource "google_app_engine_standard_app_version" "myapp_v1" {
 resource "google_app_engine_standard_app_version" "myapp_v2" {
   version_id      = "v2"
   service         = "myapp"
-  runtime         = "nodejs20"
+  runtime         = "nodejs22"
   app_engine_apis = true
 
   entrypoint {
@@ -478,7 +478,7 @@ StandardAppVersion can be imported using any of these accepted formats:
 * `{{project}}/{{service}}/{{version_id}}`
 * `{{service}}/{{version_id}}`
 
-In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/resources/identities) to import StandardAppVersion using identity values. For example:
+In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/block/import#identity) to import StandardAppVersion using identity values. For example:
 
 ```tf
 import {

@@ -25,8 +25,6 @@ description: |-
 A data product is a curated collection of data assets, packaged to address
 specific use cases.
 
-~> **Warning:** This resource is in beta, and should be used with the terraform-provider-google-beta provider.
-See [Provider Versions](../guides/provider_versions.html.markdown) for more details on beta resources.
 
 To get more information about DataProduct, see:
 
@@ -55,13 +53,17 @@ resource "google_dataplex_data_product" "example" {
     }
   }
 
-  provider = google-beta
 }
 ```
 ## Example Usage - Dataplex Data Product Full
 
 
 ```hcl
+resource "google_service_account" "test_sa" {
+  account_id   = "tf-test-sa-%{random_suffix}"
+  display_name = "Test Service Account"
+}
+
 resource "google_dataplex_data_product" "example" {
   project         = "my-project-name"
   location        = "us-central1"
@@ -72,6 +74,10 @@ resource "google_dataplex_data_product" "example" {
   description     = "Updated with emojis 🚀 and brackets {test}"
 
   owner_emails = ["gterraformtestuser@gmail.com"]
+
+  access_approval_config {
+    approver_emails = ["gterraformtestuser@gmail.com"]
+  }
 
   labels = {
     env = "manual-test"
@@ -92,11 +98,10 @@ resource "google_dataplex_data_product" "example" {
     group_id     = "scientist"
     display_name = "Data Scientist"
     principal {
-      google_group = "tf-test-scientists-%{random_suffix}@example.com"
+      service_account = google_service_account.test_sa.email
     }
   }
 
-  provider = google-beta
 }
 ```
 
@@ -121,6 +126,11 @@ The following arguments are supported:
   (Required)
   The ID of the data product.
 
+
+* `access_approval_config` -
+  (Optional)
+  Configuration for access approval for the data product.
+  Structure is [documented below](#nested_access_approval_config).
 
 * `labels` -
   (Optional)
@@ -147,6 +157,12 @@ The following arguments are supported:
 	management without updating or deleting the resource in the API.
 	When set to "DELETE", deleting the resource is allowed.
 
+
+<a name="nested_access_approval_config"></a>The `access_approval_config` block supports:
+
+* `approver_emails` -
+  (Optional)
+  Specifies the email addresses of users who are potential approvers.
 
 <a name="nested_access_groups"></a>The `access_groups` block supports:
 
@@ -176,11 +192,18 @@ The following arguments are supported:
   (Optional)
   Email of the Google Group.
 
+* `service_account` -
+  (Optional)
+  Specifies the email of the producer service account.
+
 ## Attributes Reference
 
 In addition to the arguments listed above, the following computed attributes are exported:
 
 * `id` - an identifier for the resource with format `projects/{{project}}/locations/{{location}}/dataProducts/{{data_product_id}}`
+
+* `name` -
+  The relative resource name of the data product.
 
 * `uid` -
   System generated unique ID.
@@ -223,7 +246,7 @@ DataProduct can be imported using any of these accepted formats:
 * `{{project}}/{{location}}/{{data_product_id}}`
 * `{{location}}/{{data_product_id}}`
 
-In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/resources/identities) to import DataProduct using identity values. For example:
+In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/block/import#identity) to import DataProduct using identity values. For example:
 
 ```tf
 import {

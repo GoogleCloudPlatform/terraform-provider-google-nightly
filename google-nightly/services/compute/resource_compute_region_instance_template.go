@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 // ----------------------------------------------------------------------------
 //
@@ -150,7 +151,7 @@ func ResourceComputeRegionInstanceTemplate() *schema.Resource {
 							Optional:    true,
 							ForceNew:    true,
 							Computed:    true,
-							Description: `The size of the image in gigabytes. If not specified, it will inherit the size of its base image. For SCRATCH disks, the size must be one of 375 or 3000 GB, with a default of 375 GB.`,
+							Description: `The size of the image in gigabytes. If not specified, it will inherit the size of its base image. For SCRATCH disks, the size must be one of 375, 3000, 3500 or 7000 GB, with a default of 375 GB.`,
 						},
 
 						"disk_type": {
@@ -1376,15 +1377,8 @@ func resourceComputeRegionInstanceTemplateCreate(d *schema.ResourceData, meta in
 		return fmt.Errorf("Error unmarshaling network interfaces: %s", err)
 	}
 
-	// Convert service accounts (still typed) via JSON roundtrip
-	saJSON, err := json.Marshal(expandServiceAccounts(d.Get("service_account").([]interface{})))
-	if err != nil {
-		return fmt.Errorf("Error marshaling service accounts: %s", err)
-	}
-	var serviceAccountsIface interface{}
-	if err := json.Unmarshal(saJSON, &serviceAccountsIface); err != nil {
-		return fmt.Errorf("Error unmarshaling service accounts: %s", err)
-	}
+	// Service accounts are already expanded to the map-based representation.
+	serviceAccountsIface := expandServiceAccounts(d.Get("service_account").([]interface{}))
 
 	instanceProperties := map[string]interface{}{
 		"machineType":       d.Get("machine_type").(string),
@@ -1401,7 +1395,7 @@ func resourceComputeRegionInstanceTemplateCreate(d *schema.ResourceData, meta in
 	if ga := expandInstanceTemplateGuestAccelerators(d, config); len(ga) > 0 {
 		instanceProperties["guestAccelerators"] = ga
 	}
-	if sa, ok := serviceAccountsIface.([]interface{}); ok && len(sa) > 0 {
+	if len(serviceAccountsIface) > 0 {
 		instanceProperties["serviceAccounts"] = serviceAccountsIface
 	}
 	if len(resourcePolicies) > 0 {
@@ -1421,11 +1415,7 @@ func resourceComputeRegionInstanceTemplateCreate(d *schema.ResourceData, meta in
 		instanceProperties["metadata"] = metadataMap
 	}
 	if networkPerformanceConfig != nil {
-		npcMap, err := tpgresource.ConvertToMap(networkPerformanceConfig)
-		if err != nil {
-			return fmt.Errorf("Error converting networkPerformanceConfig: %s", err)
-		}
-		instanceProperties["networkPerformanceConfig"] = npcMap
+		instanceProperties["networkPerformanceConfig"] = networkPerformanceConfig
 	}
 	if tags := resourceInstanceTags(d); tags != nil {
 		tagsMap, err := tpgresource.ConvertToMap(tags)
@@ -1457,11 +1447,7 @@ func resourceComputeRegionInstanceTemplateCreate(d *schema.ResourceData, meta in
 		instanceProperties["advancedMachineFeatures"] = amfMap
 	}
 	if reservationAffinity != nil {
-		raMap, err := tpgresource.ConvertToMap(reservationAffinity)
-		if err != nil {
-			return fmt.Errorf("Error converting reservationAffinity: %s", err)
-		}
-		instanceProperties["reservationAffinity"] = raMap
+		instanceProperties["reservationAffinity"] = reservationAffinity
 	}
 	if len(PartnerMetadata) > 0 {
 		pmJSON, err := json.Marshal(PartnerMetadata)
@@ -1702,7 +1688,15 @@ func resourceComputeRegionInstanceTemplateRead(d *schema.ResourceData, meta inte
 	if err = d.Set("project", project); err != nil {
 		return fmt.Errorf("Error setting project: %s", err)
 	}
-	if err := d.Set("network_performance_config", flattenNetworkPerformanceConfig(instanceTemplate.Properties.NetworkPerformanceConfig)); err != nil {
+	var npcMap map[string]interface{}
+	if instanceTemplate.Properties.NetworkPerformanceConfig != nil {
+		var err error
+		npcMap, err = tpgresource.ConvertToMap(instanceTemplate.Properties.NetworkPerformanceConfig)
+		if err != nil {
+			return fmt.Errorf("Error converting network_performance_config: %s", err)
+		}
+	}
+	if err := d.Set("network_performance_config", flattenNetworkPerformanceConfig(npcMap)); err != nil {
 		return err
 	}
 	if instanceTemplate.Properties.NetworkInterfaces != nil {
@@ -1747,7 +1741,7 @@ func resourceComputeRegionInstanceTemplateRead(d *schema.ResourceData, meta inte
 		}
 	}
 	if instanceTemplate.Properties.ServiceAccounts != nil {
-		if err = d.Set("service_account", flattenServiceAccounts(instanceTemplate.Properties.ServiceAccounts)); err != nil {
+		if err = d.Set("service_account", flattenServiceAccounts(serviceAccountsToInterface(instanceTemplate.Properties.ServiceAccounts))); err != nil {
 			return fmt.Errorf("Error setting service_account: %s", err)
 		}
 	}
@@ -1785,7 +1779,11 @@ func resourceComputeRegionInstanceTemplateRead(d *schema.ResourceData, meta inte
 	}
 
 	if reservationAffinity := instanceTemplate.Properties.ReservationAffinity; reservationAffinity != nil {
-		if err = d.Set("reservation_affinity", flattenReservationAffinity(reservationAffinity)); err != nil {
+		reservationAffinityMap, err := tpgresource.ConvertToMap(reservationAffinity)
+		if err != nil {
+			return fmt.Errorf("Error converting reservation_affinity: %s", err)
+		}
+		if err = d.Set("reservation_affinity", flattenReservationAffinity(reservationAffinityMap)); err != nil {
 			return fmt.Errorf("Error setting reservation_affinity: %s", err)
 		}
 	}

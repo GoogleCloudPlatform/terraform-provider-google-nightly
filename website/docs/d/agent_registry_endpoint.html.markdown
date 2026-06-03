@@ -49,11 +49,11 @@ The following arguments are supported:
 ## Attributes Reference
 
 * `urn` - The URN of the Endpoint.
-* `display_name` - The display name of the endpoint.
-* `description` - The description of the endpoint.
+* `display_name` - The display name of the Endpoint.
+* `description` - The description of the Endpoint.
 * `interfaces` - The connection details for the Endpoint.
 * `interfaces.0.url` - The destination URL.
 * `interfaces.0.protocol_binding` - The protocol binding of the interface.
-* `attributes` - Attributes of the Agent.
+* `attributes` - Attributes of the Endpoint.
 * `create_time` - Create time.
 * `update_time` - Update time.

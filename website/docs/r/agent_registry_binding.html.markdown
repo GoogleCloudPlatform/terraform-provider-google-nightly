@@ -37,7 +37,7 @@ Represents a user-defined Binding.
 resource "google_agent_registry_binding" "default" {
   provider = google-nightly
 
-  location     = "us-east7"
+  location     = "us-central1"
   binding_id   = "ar-binding"
   display_name = "My Binding"
 
@@ -51,6 +51,8 @@ resource "google_agent_registry_binding" "default" {
 
   auth_provider_binding {
     auth_provider = google_iam_connectors_connector.default.id
+    scopes        = ["https://www.googleapis.com/auth/cloud-platform"]
+    continue_uri  = "https://example.com/continue"
   }
 }
 
@@ -63,7 +65,7 @@ data "google_agent_registry_agent" "default" {
 resource "google_iam_connectors_connector" "default" {
   provider     = google-nightly
 
-  location       = "us-east7"
+  location       = "us-central1"
   connector_id   = "ar-binding"
 
   connector_type_params {
@@ -81,17 +83,17 @@ The following arguments are supported:
 
 * `source` -
   (Required)
-  The source of the binding.
+  The source of the Binding.
   Structure is [documented below](#nested_source).
 
 * `target` -
   (Required)
-  The target of the binding.
+  The target of the Binding.
   Structure is [documented below](#nested_target).
 
 * `auth_provider_binding` -
   (Required)
-  The auth provider of the binding.
+  The auth provider of the Binding.
   Structure is [documented below](#nested_auth_provider_binding).
 
 * `location` -
@@ -100,7 +102,7 @@ The following arguments are supported:
 
 * `binding_id` -
   (Required)
-  The name of the binding.
+  The name of the Binding.
 
 
 * `display_name` -
@@ -143,6 +145,14 @@ The following arguments are supported:
   (Required)
   The resource name of the target auth provider.
 
+* `scopes` -
+  (Optional)
+  The list of OAuth2 scopes of the auth provider.
+
+* `continue_uri` -
+  (Optional)
+  The continue URI of the auth provider.
+
 ## Attributes Reference
 
 In addition to the arguments listed above, the following computed attributes are exported:
@@ -174,7 +184,7 @@ Binding can be imported using any of these accepted formats:
 * `{{project}}/{{location}}/{{binding_id}}`
 * `{{location}}/{{binding_id}}`
 
-In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/resources/identities) to import Binding using identity values. For example:
+In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/block/import#identity) to import Binding using identity values. For example:
 
 ```tf
 import {

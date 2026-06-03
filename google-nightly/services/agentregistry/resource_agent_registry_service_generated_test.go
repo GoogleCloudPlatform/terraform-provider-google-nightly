@@ -90,12 +90,13 @@ func TestAccAgentRegistryService_agentRegistryServiceBasicExample(t *testing.T) 
 func testAccAgentRegistryService_agentRegistryServiceBasicExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_agent_registry_service" "default" {
+  provider     = google-nightly
   location     = "us-central1"
   service_id   = "%{service}"
 
   display_name = "My Service"
   interfaces {
-    url = "https://www.google.com"
+    url = "https://www.google.com/%{service}"
     protocol_binding = "GRPC"
   }
 
@@ -143,27 +144,23 @@ func TestAccAgentRegistryService_agentRegistryServiceMcpServerExample(t *testing
 func testAccAgentRegistryService_agentRegistryServiceMcpServerExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
 resource "google_agent_registry_service" "default" {
+  provider     = google-nightly
   location     = "us-central1"
   service_id   = "%{service}"
 
   display_name = "My Service"
   interfaces {
-    url = "https://www.google.com/api"
-    protocol_binding = "GRPC"
+    url = "https://www.google.com/api/%{service}"
+    protocol_binding = "JSONRPC"
   }
 
   interfaces {
-    url = "https://www.youtube.com/api"
+    url = "https://www.youtube.com/api/%{service}"
     protocol_binding = "JSONRPC"
   }
 
   mcp_server_spec {
-    type    = "TOOL_SPEC"
-    content = jsonencode({
-            name = {
-              type        = "STRING"
-              description = "A name"
-            }})
+    type    = "NO_SPEC"
   }
 }
 `, context)

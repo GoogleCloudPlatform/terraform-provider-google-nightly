@@ -54,7 +54,7 @@ resource "google_app_engine_application_url_dispatch_rules" "web_service" {
 resource "google_app_engine_standard_app_version" "admin_v3" {
   version_id = "v3"
   service    = "admin"
-  runtime    = "nodejs20"
+  runtime    = "nodejs22"
 
   entrypoint {
     shell = "node ./app.js"
@@ -147,7 +147,7 @@ ApplicationUrlDispatchRules can be imported using any of these accepted formats:
 
 * `{{project}}`
 
-In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/resources/identities) to import ApplicationUrlDispatchRules using identity values. For example:
+In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/block/import#identity) to import ApplicationUrlDispatchRules using identity values. For example:
 
 ```tf
 import {
