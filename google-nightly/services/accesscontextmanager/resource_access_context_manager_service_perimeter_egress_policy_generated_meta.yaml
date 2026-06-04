@@ -1,10 +1,11 @@
 # Copyright IBM Corp. 2014, 2026
+# Copyright 2026 Google LLC
 # SPDX-License-Identifier: MPL-2.0
 resource: google_access_context_manager_service_perimeter_egress_policy
 generation_type: mmv1
 source_file: products/accesscontextmanager/ServicePerimeterEgressPolicy.yaml
 api_service_name: accesscontextmanager.googleapis.com
-api_version: v1
+api_version: v1alpha
 api_resource_type_kind: ServicePerimeter
 fields:
     - field: access_policy_id
