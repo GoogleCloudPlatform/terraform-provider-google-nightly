@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -24,7 +25,7 @@ import (
 
 var Product = registry.Product{
 	Name:                 "accesscontextmanager",
-	BaseUrl:              "https://accesscontextmanager.googleapis.com/v1/",
+	BaseUrl:              "https://accesscontextmanager.googleapis.com/v1alpha/",
 	CustomEndpointField:  "access_context_manager_custom_endpoint",
 	CustomEndpointEnvVar: "GOOGLE_ACCESS_CONTEXT_MANAGER_CUSTOM_ENDPOINT",
 }
