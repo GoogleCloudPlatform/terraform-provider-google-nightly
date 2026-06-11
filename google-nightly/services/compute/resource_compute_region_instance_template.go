@@ -1428,12 +1428,7 @@ func resourceComputeRegionInstanceTemplateCreate(d *schema.ResourceData, meta in
 		instanceProperties["confidentialInstanceConfig"] = cic
 	}
 	if sic := expandShieldedVmConfigs(d); sic != nil {
-		// Build manually to preserve false boolean values (ForceSendFields workaround)
-		instanceProperties["shieldedInstanceConfig"] = map[string]interface{}{
-			"enableSecureBoot":          sic.EnableSecureBoot,
-			"enableVtpm":                sic.EnableVtpm,
-			"enableIntegrityMonitoring": sic.EnableIntegrityMonitoring,
-		}
+		instanceProperties["shieldedInstanceConfig"] = sic
 	}
 	if amf := expandAdvancedMachineFeatures(d); amf != nil {
 		amfMap, err := tpgresource.ConvertToMap(amf)
@@ -1746,8 +1741,13 @@ func resourceComputeRegionInstanceTemplateRead(d *schema.ResourceData, meta inte
 			return fmt.Errorf("Error setting guest_accelerator: %s", err)
 		}
 	}
-	if instanceTemplate.Properties.ShieldedInstanceConfig != nil {
-		if err = d.Set("shielded_instance_config", flattenShieldedVmConfig(instanceTemplate.Properties.ShieldedInstanceConfig)); err != nil {
+	if sic := instanceTemplate.Properties.ShieldedInstanceConfig; sic != nil {
+		sicMap := map[string]interface{}{
+			"enableSecureBoot":          sic.EnableSecureBoot,
+			"enableVtpm":                sic.EnableVtpm,
+			"enableIntegrityMonitoring": sic.EnableIntegrityMonitoring,
+		}
+		if err = d.Set("shielded_instance_config", flattenShieldedVmConfig(sicMap)); err != nil {
 			return fmt.Errorf("Error setting shielded_instance_config: %s", err)
 		}
 	}
@@ -1767,7 +1767,11 @@ func resourceComputeRegionInstanceTemplateRead(d *schema.ResourceData, meta inte
 		}
 	}
 	if instanceTemplate.Properties.DisplayDevice != nil {
-		if err = d.Set("enable_display", flattenEnableDisplay(instanceTemplate.Properties.DisplayDevice)); err != nil {
+		ddMap, convErr := tpgresource.ConvertToMap(instanceTemplate.Properties.DisplayDevice)
+		if convErr != nil {
+			return fmt.Errorf("Error converting displayDevice: %s", convErr)
+		}
+		if err = d.Set("enable_display", flattenEnableDisplay(ddMap)); err != nil {
 			return fmt.Errorf("Error setting enable_display: %s", err)
 		}
 	}

@@ -46,7 +46,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/structure"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/registry"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
@@ -174,6 +173,16 @@ All system annotations in v1 now have a corresponding field in v2 WorkerPoolRevi
 
 This field follows Kubernetes annotations' namespacing, limits, and rules.`,
 							Elem: &schema.Schema{Type: schema.TypeString},
+						},
+						"client": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: `Arbitrary identifier for the API client.`,
+						},
+						"client_version": {
+							Type:        schema.TypeString,
+							Optional:    true,
+							Description: `Arbitrary version identifier for the API client.`,
 						},
 						"containers": {
 							Type:        schema.TypeList,
@@ -1213,6 +1222,12 @@ func resourceCloudRunV2WorkerPoolCreate(d *schema.ResourceData, meta interface{}
 	}
 
 	obj := make(map[string]interface{})
+	nameProp, err := expandCloudRunV2WorkerPoolName(d.Get("name"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("name"); !tpgresource.IsEmptyValue(reflect.ValueOf(nameProp)) && (ok || !reflect.DeepEqual(v, nameProp)) {
+		obj["name"] = nameProp
+	}
 	descriptionProp, err := expandCloudRunV2WorkerPoolDescription(d.Get("description"), d, config)
 	if err != nil {
 		return err
@@ -1278,6 +1293,11 @@ func resourceCloudRunV2WorkerPoolCreate(d *schema.ResourceData, meta interface{}
 		return err
 	} else if v, ok := d.GetOkExists("effective_annotations"); !tpgresource.IsEmptyValue(reflect.ValueOf(effectiveAnnotationsProp)) && (ok || !reflect.DeepEqual(v, effectiveAnnotationsProp)) {
 		obj["annotations"] = effectiveAnnotationsProp
+	}
+
+	obj, err = resourceCloudRunV2WorkerPoolEncoder(d, meta, obj)
+	if err != nil {
+		return err
 	}
 
 	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workerPools?workerPoolId={{name}}")
@@ -1564,6 +1584,11 @@ func resourceCloudRunV2WorkerPoolUpdate(d *schema.ResourceData, meta interface{}
 		return err
 	} else if v, ok := d.GetOkExists("effective_annotations"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, effectiveAnnotationsProp)) {
 		obj["annotations"] = effectiveAnnotationsProp
+	}
+
+	obj, err = resourceCloudRunV2WorkerPoolUpdateEncoder(d, meta, obj)
+	if err != nil {
+		return err
 	}
 
 	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/workerPools/{{name}}")
@@ -1897,6 +1922,10 @@ func flattenCloudRunV2WorkerPoolTemplate(v interface{}, d *schema.ResourceData, 
 		flattenCloudRunV2WorkerPoolTemplateLabels(original["labels"], d, config)
 	transformed["annotations"] =
 		flattenCloudRunV2WorkerPoolTemplateAnnotations(original["annotations"], d, config)
+	transformed["client"] =
+		flattenCloudRunV2WorkerPoolTemplateClient(original["client"], d, config)
+	transformed["client_version"] =
+		flattenCloudRunV2WorkerPoolTemplateClientVersion(original["clientVersion"], d, config)
 	transformed["vpc_access"] =
 		flattenCloudRunV2WorkerPoolTemplateVpcAccess(original["vpcAccess"], d, config)
 	transformed["service_account"] =
@@ -1926,6 +1955,14 @@ func flattenCloudRunV2WorkerPoolTemplateLabels(v interface{}, d *schema.Resource
 }
 
 func flattenCloudRunV2WorkerPoolTemplateAnnotations(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenCloudRunV2WorkerPoolTemplateClient(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenCloudRunV2WorkerPoolTemplateClientVersion(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -3114,6 +3151,10 @@ func flattenCloudRunV2WorkerPoolEffectiveAnnotations(v interface{}, d *schema.Re
 	return v
 }
 
+func expandCloudRunV2WorkerPoolName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return tpgresource.GetResourceNameFromSelfLink(v.(string)), nil
+}
+
 func expandCloudRunV2WorkerPoolDescription(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
@@ -3274,6 +3315,20 @@ func expandCloudRunV2WorkerPoolTemplate(v interface{}, d tpgresource.TerraformRe
 		transformed["annotations"] = transformedAnnotations
 	}
 
+	transformedClient, err := expandCloudRunV2WorkerPoolTemplateClient(original["client"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedClient); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["client"] = transformedClient
+	}
+
+	transformedClientVersion, err := expandCloudRunV2WorkerPoolTemplateClientVersion(original["client_version"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedClientVersion); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["clientVersion"] = transformedClientVersion
+	}
+
 	transformedVpcAccess, err := expandCloudRunV2WorkerPoolTemplateVpcAccess(original["vpc_access"], d, config)
 	if err != nil {
 		return nil, err
@@ -3364,6 +3419,14 @@ func expandCloudRunV2WorkerPoolTemplateAnnotations(v interface{}, d tpgresource.
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func expandCloudRunV2WorkerPoolTemplateClient(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandCloudRunV2WorkerPoolTemplateClientVersion(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
 }
 
 func expandCloudRunV2WorkerPoolTemplateVpcAccess(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
@@ -4655,6 +4718,16 @@ func expandCloudRunV2WorkerPoolEffectiveAnnotations(v interface{}, d tpgresource
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func resourceCloudRunV2WorkerPoolEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
+	delete(obj, "name") // Field not allowed when creating.
+	return obj, nil
+}
+
+func resourceCloudRunV2WorkerPoolUpdateEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
+	// Keep the original resource. This file is to override the encoder for creation.
+	return obj, nil
 }
 
 func ResourceCloudRunV2WorkerPoolFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {

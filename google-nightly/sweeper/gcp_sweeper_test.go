@@ -131,6 +131,7 @@ import (
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/integrationconnectors"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/integrations"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/kms"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/licensemanager"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/logging"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/looker"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/lustre"

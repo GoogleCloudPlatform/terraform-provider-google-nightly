@@ -33,6 +33,7 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudrunv2"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/filestore"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/secretmanager"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/sql"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"

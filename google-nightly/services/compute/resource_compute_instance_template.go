@@ -1729,9 +1729,7 @@ func resourceComputeInstanceTemplateCreate(d *schema.ResourceData, meta interfac
 		Scheduling:               scheduling,
 		ServiceAccounts:          expandServiceAccountsTyped(d.Get("service_account").([]interface{})),
 		Tags:                     resourceInstanceTags(d),
-		ShieldedInstanceConfig:   expandShieldedVmConfigs(d),
 		AdvancedMachineFeatures:  expandAdvancedMachineFeatures(d),
-		DisplayDevice:            expandDisplayDevice(d),
 		ResourcePolicies:         resourcePolicies,
 		ReservationAffinity:      reservationAffinity,
 		KeyRevocationActionType:  d.Get("key_revocation_action_type").(string),
@@ -1740,6 +1738,22 @@ func resourceComputeInstanceTemplateCreate(d *schema.ResourceData, meta interfac
 		instanceProperties.ConfidentialInstanceConfig = &compute.ConfidentialInstanceConfig{
 			EnableConfidentialCompute: cic["enableConfidentialCompute"].(bool),
 			ConfidentialInstanceType:  cic["confidentialInstanceType"].(string),
+		}
+	}
+
+	if sicMap := expandShieldedVmConfigs(d); sicMap != nil {
+		instanceProperties.ShieldedInstanceConfig = &compute.ShieldedInstanceConfig{
+			EnableSecureBoot:          sicMap["enableSecureBoot"].(bool),
+			EnableVtpm:                sicMap["enableVtpm"].(bool),
+			EnableIntegrityMonitoring: sicMap["enableIntegrityMonitoring"].(bool),
+			ForceSendFields:           []string{"EnableSecureBoot", "EnableVtpm", "EnableIntegrityMonitoring"},
+		}
+	}
+	if dd := expandDisplayDevice(d); dd != nil {
+		enabled, _ := dd["enableDisplay"].(bool)
+		instanceProperties.DisplayDevice = &compute.DisplayDevice{
+			EnableDisplay:   enabled,
+			ForceSendFields: []string{"EnableDisplay"},
 		}
 	}
 
@@ -2233,8 +2247,13 @@ func resourceComputeInstanceTemplateRead(d *schema.ResourceData, meta interface{
 			return fmt.Errorf("Error setting guest_accelerator: %s", err)
 		}
 	}
-	if instanceTemplate.Properties.ShieldedInstanceConfig != nil {
-		if err = d.Set("shielded_instance_config", flattenShieldedVmConfig(instanceTemplate.Properties.ShieldedInstanceConfig)); err != nil {
+	if sic := instanceTemplate.Properties.ShieldedInstanceConfig; sic != nil {
+		sicMap := map[string]interface{}{
+			"enableSecureBoot":          sic.EnableSecureBoot,
+			"enableVtpm":                sic.EnableVtpm,
+			"enableIntegrityMonitoring": sic.EnableIntegrityMonitoring,
+		}
+		if err = d.Set("shielded_instance_config", flattenShieldedVmConfig(sicMap)); err != nil {
 			return fmt.Errorf("Error setting shielded_instance_config: %s", err)
 		}
 	}
@@ -2254,7 +2273,11 @@ func resourceComputeInstanceTemplateRead(d *schema.ResourceData, meta interface{
 		}
 	}
 	if instanceTemplate.Properties.DisplayDevice != nil {
-		if err = d.Set("enable_display", flattenEnableDisplay(instanceTemplate.Properties.DisplayDevice)); err != nil {
+		ddMap, convErr := tpgresource.ConvertToMap(instanceTemplate.Properties.DisplayDevice)
+		if convErr != nil {
+			return fmt.Errorf("Error converting displayDevice: %s", convErr)
+		}
+		if err = d.Set("enable_display", flattenEnableDisplay(ddMap)); err != nil {
 			return fmt.Errorf("Error setting enable_display: %s", err)
 		}
 	}

@@ -797,6 +797,11 @@ func Provider() *schema.Provider {
 				Optional:     true,
 				ValidateFunc: ValidateCustomEndpoint,
 			},
+			"license_manager_custom_endpoint": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ValidateFunc: ValidateCustomEndpoint,
+			},
 			"logging_custom_endpoint": {
 				Type:         schema.TypeString,
 				Optional:     true,
