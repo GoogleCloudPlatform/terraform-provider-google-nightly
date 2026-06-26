@@ -1,5 +1,4 @@
 // Copyright IBM Corp. 2014, 2026
-// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -16,7 +15,7 @@
 //
 // ----------------------------------------------------------------------------
 
-package agentregistry_test
+package compute_test
 
 import (
 	"fmt"
@@ -31,8 +30,7 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
-	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/agentregistry"
-	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/iamconnectors"
+	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/compute"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 
@@ -51,37 +49,36 @@ var (
 	_ = tpgresource.SetLabels
 	_ = transport_tpg.Config{}
 	_ = googleapi.Error{}
-	_ = agentregistry.Product
+	_ = compute.Product
 )
 
-func TestAccAgentRegistryBinding_agentRegistryBindingBasicExample(t *testing.T) {
-	acctest.SkipTestUntil(t, "2026-09-30")
+func TestAccComputeBulkPerInstanceConfig_computeBulkPerInstanceConfigExample(t *testing.T) {
 	t.Parallel()
 
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
-		"project":       envvar.GetTestProjectFromEnv(),
-		"binding":       "tf-test-ar-binding" + randomSuffix,
+		"igm_name":      "tf-test-bulk-igm" + randomSuffix,
+		"template_name": "tf-test-bulk-igm-template" + randomSuffix,
 		"random_suffix": randomSuffix,
 	}
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
 		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
-		CheckDestroy:             testAccCheckAgentRegistryBindingDestroyProducer(t),
+		CheckDestroy:             testAccCheckComputeBulkPerInstanceConfigDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccAgentRegistryBinding_agentRegistryBindingBasicExample(context),
+				Config: testAccComputeBulkPerInstanceConfig_computeBulkPerInstanceConfigExample(context),
 			},
 			{
-				ResourceName:            "google_agent_registry_binding.default",
+				ResourceName:            "google_compute_bulk_per_instance_config.bulk-igm-per-instance-config",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"binding_id", "location"},
+				ImportStateVerifyIgnore: []string{"instance_group_manager", "zone"},
 			},
 			{
-				ResourceName:       "google_agent_registry_binding.default",
+				ResourceName:       "google_compute_bulk_per_instance_config.bulk-igm-per-instance-config",
 				RefreshState:       true,
 				ExpectNonEmptyPlan: true,
 				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
@@ -90,51 +87,64 @@ func TestAccAgentRegistryBinding_agentRegistryBindingBasicExample(t *testing.T) 
 	})
 }
 
-func testAccAgentRegistryBinding_agentRegistryBindingBasicExample(context map[string]interface{}) string {
+func testAccComputeBulkPerInstanceConfig_computeBulkPerInstanceConfigExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
-resource "google_agent_registry_binding" "default" {
-  location     = "us-central1"
-  binding_id   = "%{binding}"
-  display_name = "My Binding"
-  description  = "My GA agent registry binding"
-
-  source {
-    identifier = data.google_agent_registry_agent.default.urn
-  }
-
-  target {
-    identifier = data.google_agent_registry_agent.default.urn
-  }
-
-  auth_provider_binding {
-    auth_provider = google_iam_connectors_connector.default.id
-    scopes        = ["https://www.googleapis.com/auth/cloud-platform"]
-    continue_uri  = "https://example.com/continue"
-  }
-
-  depends_on = [google_iam_connectors_connector.default]
+data "google_compute_image" "my_image" {
+  family  = "debian-12"
+  project = "debian-cloud"
 }
 
-data "google_agent_registry_agent" "default" {
-  location = "global"
-  filter   = "displayName:Workspace Agent"
+resource "google_compute_instance_template" "bulk-igm" {
+  name         = "%{template_name}"
+  machine_type = "e2-medium"
+
+  disk {
+    source_image = data.google_compute_image.my_image.self_link
+    auto_delete  = true
+    boot         = true
+  }
+
+  network_interface {
+    network = "default"
+  }
 }
 
-resource "google_iam_connectors_connector" "default" {
-  location       = "us-central1"
-  connector_id   = "%{binding}"
+resource "google_compute_instance_group_manager" "bulk-igm" {
+  description        = "Terraform test bulk instance group manager"
+  name               = "%{igm_name}"
+  zone               = "us-central1-a"
+  base_instance_name = "bulk-igm"
 
-  connector_type_params {
-    connector_version = "projects/%{project}/locations/global/providers/gcp/connectors/pubsub/versions/1"
+  version {
+    name              = "prod"
+    instance_template = google_compute_instance_template.bulk-igm.self_link
+  }
+
+  lifecycle {
+    # Bulk per-instance configs manage the number of instances, so ignore target_size changes.
+    ignore_changes = [target_size]
+  }
+}
+
+resource "google_compute_bulk_per_instance_config" "bulk-igm-per-instance-config" {
+  zone                   = google_compute_instance_group_manager.bulk-igm.zone
+  instance_group_manager = google_compute_instance_group_manager.bulk-igm.name
+
+  instances {
+    name = "per-instance-config-instance-1"
+  }
+
+  instances {
+    name = "per-instance-config-instance-2"
   }
 }
 `, context)
 }
 
-func testAccCheckAgentRegistryBindingDestroyProducer(t *testing.T) func(s *terraform.State) error {
+func testAccCheckComputeBulkPerInstanceConfigDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {
-			if rs.Type != "google_agent_registry_binding" {
+			if rs.Type != "google_compute_bulk_per_instance_config" {
 				continue
 			}
 			if strings.HasPrefix(name, "data.") {
@@ -142,7 +152,7 @@ func testAccCheckAgentRegistryBindingDestroyProducer(t *testing.T) func(s *terra
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(agentregistry.Product, config)+"projects/{{project}}/locations/{{location}}/bindings/{{binding_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(compute.Product, config)+"projects/{{project}}/zones/{{zone}}/instanceGroupManagers/{{instance_group_manager}}/listManagedInstances")
 			if err != nil {
 				return err
 			}
@@ -155,13 +165,13 @@ func testAccCheckAgentRegistryBindingDestroyProducer(t *testing.T) func(s *terra
 
 			_, err = transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 				Config:    config,
-				Method:    "GET",
+				Method:    "POST",
 				Project:   billingProject,
 				RawURL:    url,
 				UserAgent: config.UserAgent,
 			})
 			if err == nil {
-				return fmt.Errorf("AgentRegistryBinding still exists at %s", url)
+				return fmt.Errorf("ComputeBulkPerInstanceConfig still exists at %s", url)
 			}
 		}
 

@@ -31,6 +31,64 @@ To get more information about ReasoningEngine, see:
     * [Develop and deploy agents on Vertex AI Agent Engine](https://cloud.google.com/vertex-ai/generative-ai/docs/agent-engine/quickstart)
 
 <div class = "oics-button" style="float: right; margin: 0 0 -15px">
+  <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=vertex_ai_reasoning_engine_agent_gateway&open_in_editor=main.tf" target="_blank">
+    <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
+  </a>
+</div>
+## Example Usage - Vertex Ai Reasoning Engine Agent Gateway
+
+
+```hcl
+data "google_project" "project" {
+  provider = google-nightly
+}
+
+resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
+  provider = google-nightly
+
+  display_name = "reasoning-engine"
+  description  = "A basic reasoning engine"
+  region       = "us-central1"
+
+  spec {
+    identity_type = "AGENT_IDENTITY"
+
+    deployment_spec {
+      agent_gateway_config {
+        client_to_agent_config {
+          agent_gateway = google_network_services_agent_gateway.default.id
+        }
+      }
+    }
+
+    source_code_spec {
+      inline_source {
+        source_archive = filebase64("./test-fixtures/source.tar.gz")
+      }
+
+      python_spec {
+        entrypoint_module = "simple_agent"
+        entrypoint_object = "fixed_name_generator"
+        version           = "3.14"
+      }
+    }
+  }
+}
+
+resource "google_network_services_agent_gateway" "default" {
+  provider = google-nightly
+
+  name     = "reasoning-engine"
+  location = "us-central1"
+
+  protocols = ["MCP"]
+
+  google_managed {
+    governed_access_path = "CLIENT_TO_AGENT"
+  }
+}
+```
+<div class = "oics-button" style="float: right; margin: 0 0 -15px">
   <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=vertex_ai_reasoning_engine_source_based_deployment&open_in_editor=main.tf" target="_blank">
     <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
   </a>
@@ -542,64 +600,6 @@ resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
 
 data "google_project" "project" {
   provider = google-beta
-}
-```
-<div class = "oics-button" style="float: right; margin: 0 0 -15px">
-  <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=vertex_ai_reasoning_engine_agent_gateway&open_in_editor=main.tf" target="_blank">
-    <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
-  </a>
-</div>
-## Example Usage - Vertex Ai Reasoning Engine Agent Gateway
-
-
-```hcl
-data "google_project" "project" {
-  provider = google-nightly
-}
-
-resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  provider = google-nightly
-
-  display_name = "reasoning-engine"
-  description  = "A basic reasoning engine"
-  region       = "us-central1"
-
-  spec {
-    identity_type = "AGENT_IDENTITY"
-
-    deployment_spec {
-      agent_gateway_config {
-        client_to_agent_config {
-          agent_gateway = google_network_services_agent_gateway.default.id
-        }
-      }
-    }
-
-    source_code_spec {
-      inline_source {
-        source_archive = filebase64("./test-fixtures/source.tar.gz")
-      }
-
-      python_spec {
-        entrypoint_module = "simple_agent"
-        entrypoint_object = "fixed_name_generator"
-        version           = "3.14"
-      }
-    }
-  }
-}
-
-resource "google_network_services_agent_gateway" "default" {
-  provider = google-nightly
-
-  name     = "reasoning-engine"
-  location = "us-central1"
-
-  protocols = ["MCP"]
-
-  google_managed {
-    governed_access_path = "CLIENT_TO_AGENT"
-  }
 }
 ```
 
