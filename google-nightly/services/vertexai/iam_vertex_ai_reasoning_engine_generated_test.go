@@ -1,5 +1,4 @@
 // Copyright IBM Corp. 2014, 2026
-// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -31,8 +30,6 @@ import (
 
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/acctest"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/envvar"
-	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/networkservices"
-	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/vertexai"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 )
@@ -158,53 +155,11 @@ func TestAccVertexAIReasoningEngineIamPolicyGenerated(t *testing.T) {
 
 func testAccVertexAIReasoningEngineIamMember_basicGenerated(context map[string]interface{}) string {
 	return acctest.Nprintf(`
-data "google_project" "project" {
-  provider = google-nightly
-}
-
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  provider = google-nightly
-
-  display_name = "%{name}"
-  description  = "A basic reasoning engine"
-  region       = "us-central1"
-
-  spec {
-    identity_type = "AGENT_IDENTITY"
-
-    deployment_spec {
-      agent_gateway_config {
-        client_to_agent_config {
-          agent_gateway = google_network_services_agent_gateway.default.id
-        }
-      }
-    }
-
-    source_code_spec {
-      inline_source {
-        source_archive = filebase64("./test-fixtures/source.tar.gz")
-      }
-
-      python_spec {
-        entrypoint_module = "simple_agent"
-        entrypoint_object = "fixed_name_generator"
-        version           = "3.14"
-      }
-    }
-  }
-}
-
-resource "google_network_services_agent_gateway" "default" {
-  provider = google-nightly
-
-  name     = "%{name}"
-  location = "us-central1"
-
-  protocols = ["MCP"]
-
-  google_managed {
-    governed_access_path = "CLIENT_TO_AGENT"
-  }
+  display_name    = "%{name}"
+  description     = "A reasoning engine with deletion policy"
+  region          = "us-central1"
+  deletion_policy = "FORCE"
 }
 
 resource "google_vertex_ai_reasoning_engine_iam_member" "foo" {
@@ -219,53 +174,11 @@ resource "google_vertex_ai_reasoning_engine_iam_member" "foo" {
 
 func testAccVertexAIReasoningEngineIamPolicy_basicGenerated(context map[string]interface{}) string {
 	return acctest.Nprintf(`
-data "google_project" "project" {
-  provider = google-nightly
-}
-
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  provider = google-nightly
-
-  display_name = "%{name}"
-  description  = "A basic reasoning engine"
-  region       = "us-central1"
-
-  spec {
-    identity_type = "AGENT_IDENTITY"
-
-    deployment_spec {
-      agent_gateway_config {
-        client_to_agent_config {
-          agent_gateway = google_network_services_agent_gateway.default.id
-        }
-      }
-    }
-
-    source_code_spec {
-      inline_source {
-        source_archive = filebase64("./test-fixtures/source.tar.gz")
-      }
-
-      python_spec {
-        entrypoint_module = "simple_agent"
-        entrypoint_object = "fixed_name_generator"
-        version           = "3.14"
-      }
-    }
-  }
-}
-
-resource "google_network_services_agent_gateway" "default" {
-  provider = google-nightly
-
-  name     = "%{name}"
-  location = "us-central1"
-
-  protocols = ["MCP"]
-
-  google_managed {
-    governed_access_path = "CLIENT_TO_AGENT"
-  }
+  display_name    = "%{name}"
+  description     = "A reasoning engine with deletion policy"
+  region          = "us-central1"
+  deletion_policy = "FORCE"
 }
 
 data "google_iam_policy" "foo" {
@@ -295,53 +208,11 @@ data "google_vertex_ai_reasoning_engine_iam_policy" "foo" {
 
 func testAccVertexAIReasoningEngineIamPolicy_emptyBinding(context map[string]interface{}) string {
 	return acctest.Nprintf(`
-data "google_project" "project" {
-  provider = google-nightly
-}
-
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  provider = google-nightly
-
-  display_name = "%{name}"
-  description  = "A basic reasoning engine"
-  region       = "us-central1"
-
-  spec {
-    identity_type = "AGENT_IDENTITY"
-
-    deployment_spec {
-      agent_gateway_config {
-        client_to_agent_config {
-          agent_gateway = google_network_services_agent_gateway.default.id
-        }
-      }
-    }
-
-    source_code_spec {
-      inline_source {
-        source_archive = filebase64("./test-fixtures/source.tar.gz")
-      }
-
-      python_spec {
-        entrypoint_module = "simple_agent"
-        entrypoint_object = "fixed_name_generator"
-        version           = "3.14"
-      }
-    }
-  }
-}
-
-resource "google_network_services_agent_gateway" "default" {
-  provider = google-nightly
-
-  name     = "%{name}"
-  location = "us-central1"
-
-  protocols = ["MCP"]
-
-  google_managed {
-    governed_access_path = "CLIENT_TO_AGENT"
-  }
+  display_name    = "%{name}"
+  description     = "A reasoning engine with deletion policy"
+  region          = "us-central1"
+  deletion_policy = "FORCE"
 }
 
 data "google_iam_policy" "foo" {
@@ -358,53 +229,11 @@ resource "google_vertex_ai_reasoning_engine_iam_policy" "foo" {
 
 func testAccVertexAIReasoningEngineIamBinding_basicGenerated(context map[string]interface{}) string {
 	return acctest.Nprintf(`
-data "google_project" "project" {
-  provider = google-nightly
-}
-
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  provider = google-nightly
-
-  display_name = "%{name}"
-  description  = "A basic reasoning engine"
-  region       = "us-central1"
-
-  spec {
-    identity_type = "AGENT_IDENTITY"
-
-    deployment_spec {
-      agent_gateway_config {
-        client_to_agent_config {
-          agent_gateway = google_network_services_agent_gateway.default.id
-        }
-      }
-    }
-
-    source_code_spec {
-      inline_source {
-        source_archive = filebase64("./test-fixtures/source.tar.gz")
-      }
-
-      python_spec {
-        entrypoint_module = "simple_agent"
-        entrypoint_object = "fixed_name_generator"
-        version           = "3.14"
-      }
-    }
-  }
-}
-
-resource "google_network_services_agent_gateway" "default" {
-  provider = google-nightly
-
-  name     = "%{name}"
-  location = "us-central1"
-
-  protocols = ["MCP"]
-
-  google_managed {
-    governed_access_path = "CLIENT_TO_AGENT"
-  }
+  display_name    = "%{name}"
+  description     = "A reasoning engine with deletion policy"
+  region          = "us-central1"
+  deletion_policy = "FORCE"
 }
 
 resource "google_vertex_ai_reasoning_engine_iam_binding" "foo" {
@@ -419,53 +248,11 @@ resource "google_vertex_ai_reasoning_engine_iam_binding" "foo" {
 
 func testAccVertexAIReasoningEngineIamBinding_updateGenerated(context map[string]interface{}) string {
 	return acctest.Nprintf(`
-data "google_project" "project" {
-  provider = google-nightly
-}
-
 resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  provider = google-nightly
-
-  display_name = "%{name}"
-  description  = "A basic reasoning engine"
-  region       = "us-central1"
-
-  spec {
-    identity_type = "AGENT_IDENTITY"
-
-    deployment_spec {
-      agent_gateway_config {
-        client_to_agent_config {
-          agent_gateway = google_network_services_agent_gateway.default.id
-        }
-      }
-    }
-
-    source_code_spec {
-      inline_source {
-        source_archive = filebase64("./test-fixtures/source.tar.gz")
-      }
-
-      python_spec {
-        entrypoint_module = "simple_agent"
-        entrypoint_object = "fixed_name_generator"
-        version           = "3.14"
-      }
-    }
-  }
-}
-
-resource "google_network_services_agent_gateway" "default" {
-  provider = google-nightly
-
-  name     = "%{name}"
-  location = "us-central1"
-
-  protocols = ["MCP"]
-
-  google_managed {
-    governed_access_path = "CLIENT_TO_AGENT"
-  }
+  display_name    = "%{name}"
+  description     = "A reasoning engine with deletion policy"
+  region          = "us-central1"
+  deletion_policy = "FORCE"
 }
 
 resource "google_vertex_ai_reasoning_engine_iam_binding" "foo" {

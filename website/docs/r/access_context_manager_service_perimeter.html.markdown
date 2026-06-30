@@ -47,122 +47,6 @@ in the provider configuration. Otherwise the ACM API will return a 403 error.
 Your account must have the `serviceusage.services.use` permission on the
 `billing_project` you defined.
 
-## Example Usage - Access Context Manager Service Perimeter Weakened For Testing
-
-
-```hcl
-resource "google_access_context_manager_access_policy" "access-policy" {
-  parent = "organizations/123456789"
-  title  = "my policy"
-}
-
-resource "google_access_context_manager_service_perimeter" "service-perimeter" {
-  parent = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}"
-  name   = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}/servicePerimeters/restrict_all"
-  title  = "restrict_all"
-  status {
-    # weakened_for_testing is required for unsupported services
-    # drive.googleapis.com is expected to be indefinitely unsupported
-    restricted_services = ["drive.googleapis.com"]
-  }
-
-  weakened_for_testing = true
-}
-```
-## Example Usage - Access Context Manager Service Perimeter Granular Controls
-
-
-```hcl
-resource "google_access_context_manager_service_perimeters" "service-perimeter" {
-  parent = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}"
-
-  service_perimeters {
-    name   = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}/servicePerimeters/"
-    title  = ""
-    status {
-      restricted_services = ["storage.googleapis.com"]
-    }
-  }
-
-  service_perimeters {
-    name   = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}/servicePerimeters/"
-    title  = ""
-    status {
-      restricted_services = ["bigtable.googleapis.com"]
-      		vpcAccessibleServices = {
-			enableRestriction = true
-			allowedServices = ["bigquery.googleapis.com"]
-		}
-    }
-  }
-}
-
-resource "google_access_context_manager_access_level" "access-level" {
-  parent = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}"
-  name   = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}/accessLevels/access"
-  title  = "access"
-  basic {
-    conditions {
-      device_policy {
-        require_screen_lock = false
-        os_constraints {
-          os_type = "DESKTOP_CHROME_OS"
-        }
-      }
-      regions = [
-        "CH",
-        "IT",
-        "US",
-      ]
-    }
-  }
-}
-
-resource "google_access_context_manager_access_policy" "access-policy" {
-  parent = "organizations/123456789"
-  title  = "my policy"
-}
-
-resource "google_access_context_manager_service_perimeter" "test-access" {
-  parent         = "accessPolicies/${google_access_context_manager_access_policy.test-access.name}"
-  name           = "accessPolicies/${google_access_context_manager_access_policy.test-access.name}/servicePerimeters/%s"
-  title          = "%s"
-  perimeter_type = "PERIMETER_TYPE_REGULAR"
-  status {
-    restricted_services = ["bigquery.googleapis.com", "storage.googleapis.com"]
-		access_levels       = [google_access_context_manager_access_level.access-level.name]
-
-		vpc_accessible_services {
-			enable_restriction = true
-			allowed_services   = ["bigquery.googleapis.com", "storage.googleapis.com"]
-		}
-
-		ingress_policies {
-			ingress_from {
-				sources {
-					access_level = google_access_context_manager_access_level.test-access.name
-				}
-				identity_type = "ANY_IDENTITY"
-			}
-
-			ingress_to {
-				resources = [ "*" ]
-				roles = ["bigquery.dataEditor", "storage.objectAdmin"]
-			}
-		}
-
-		egress_policies {
-			egress_from {
-				identity_type = "ANY_USER_ACCOUNT"
-			}
-			egress_to {
-				resources = [ "*" ]
-				roles = ["bigquery.dataAdmin"]
-			}
-		}
-  }
-}
-```
 ## Example Usage - Access Context Manager Service Perimeter Basic
 
 
@@ -346,51 +230,116 @@ resource "google_access_context_manager_access_policy" "access-policy" {
 
 
 ```hcl
-resource "google_access_context_manager_access_policy" "access-policy" {
-  parent = "organizations/123456789"
-  title  = "Policy with Granular Controls Support"
+resource "google_access_context_manager_service_perimeters" "service-perimeter" {
+  parent = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}"
+
+  service_perimeters {
+    name   = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}/servicePerimeters/"
+    title  = ""
+    status {
+      restricted_services = ["storage.googleapis.com"]
+    }
+  }
+
+  service_perimeters {
+    name   = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}/servicePerimeters/"
+    title  = ""
+    status {
+      restricted_services = ["bigtable.googleapis.com"]
+      		vpcAccessibleServices = {
+			enableRestriction = true
+			allowedServices = ["bigquery.googleapis.com"]
+		}
+    }
+  }
 }
 
-resource "google_access_context_manager_service_perimeter" "granular-controls-perimeter" {
-  parent         = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}"
-  name           = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}/servicePerimeters/%s"
+resource "google_access_context_manager_access_level" "access-level" {
+  parent = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}"
+  name   = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}/accessLevels/access"
+  title  = "access"
+  basic {
+    conditions {
+      device_policy {
+        require_screen_lock = false
+        os_constraints {
+          os_type = "DESKTOP_CHROME_OS"
+        }
+      }
+      regions = [
+        "CH",
+        "IT",
+        "US",
+      ]
+    }
+  }
+}
+
+resource "google_access_context_manager_access_policy" "access-policy" {
+  parent = "organizations/123456789"
+  title  = "my policy"
+}
+
+resource "google_access_context_manager_service_perimeter" "test-access" {
+  parent         = "accessPolicies/${google_access_context_manager_access_policy.test-access.name}"
+  name           = "accessPolicies/${google_access_context_manager_access_policy.test-access.name}/servicePerimeters/%s"
   title          = "%s"
   perimeter_type = "PERIMETER_TYPE_REGULAR"
   status {
-      restricted_services = ["bigquery.googleapis.com"]
+    restricted_services = ["bigquery.googleapis.com", "storage.googleapis.com"]
+		access_levels       = [google_access_context_manager_access_level.access-level.name]
 
-      vpc_accessible_services {
-          enable_restriction = true
-          allowed_services   = ["bigquery.googleapis.com"]
-      }
+		vpc_accessible_services {
+			enable_restriction = true
+			allowed_services   = ["bigquery.googleapis.com", "storage.googleapis.com"]
+		}
 
-      ingress_policies {
-          ingress_from {
-              sources {
-                 resource = "projects/1234" 
-              }
-              identities = ["group:database-admins@google.com"]
-              identities = ["principal://iam.googleapis.com/locations/global/workforcePools/1234/subject/janedoe"]
-              identities = ["principalSet://iam.googleapis.com/locations/global/workforcePools/1234/*"]
-          }
-          ingress_to {
-              resources = [ "*" ]
-              roles = ["roles/bigquery.admin", "organizations/1234/roles/bigquery_custom_role"]
-          }
-      }
+		ingress_policies {
+			ingress_from {
+				sources {
+					access_level = google_access_context_manager_access_level.test-access.name
+				}
+				identity_type = "ANY_IDENTITY"
+			}
 
-      egress_policies {
-          egress_from {
-              identities = ["group:database-admins@google.com"]
-              identities = ["principal://iam.googleapis.com/locations/global/workforcePools/1234/subject/janedoe"]
-              identities = ["principalSet://iam.googleapis.com/locations/global/workforcePools/1234/*"]
-          }
-          egress_to {
-              resources = [ "*" ]
-              roles = ["roles/bigquery.admin", "organizations/1234/roles/bigquery_custom_role"]
-          }
-      }
-   }
+			ingress_to {
+				resources = [ "*" ]
+				roles = ["bigquery.dataEditor", "storage.objectAdmin"]
+			}
+		}
+
+		egress_policies {
+			egress_from {
+				identity_type = "ANY_USER_ACCOUNT"
+			}
+			egress_to {
+				resources = [ "*" ]
+				roles = ["bigquery.dataAdmin"]
+			}
+		}
+  }
+}
+```
+## Example Usage - Access Context Manager Service Perimeter Weakened For Testing
+
+
+```hcl
+resource "google_access_context_manager_access_policy" "access-policy" {
+  parent = "organizations/123456789"
+  title  = "my policy"
+}
+
+resource "google_access_context_manager_service_perimeter" "service-perimeter" {
+  parent = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}"
+  name   = "accessPolicies/${google_access_context_manager_access_policy.access-policy.name}/servicePerimeters/restrict_all"
+  title  = "restrict_all"
+  status {
+    # weakened_for_testing is required for unsupported services
+    # drive.googleapis.com is expected to be indefinitely unsupported
+    restricted_services = ["drive.googleapis.com"]
+  }
+
+  weakened_for_testing = true
 }
 ```
 

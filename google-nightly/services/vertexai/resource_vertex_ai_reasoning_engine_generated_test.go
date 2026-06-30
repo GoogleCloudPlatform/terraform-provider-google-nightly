@@ -58,93 +58,6 @@ var (
 	_ = vertexai.Product
 )
 
-func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineAgentGatewayExample(t *testing.T) {
-	t.Parallel()
-
-	randomSuffix := acctest.RandString(t, 10)
-
-	context := map[string]interface{}{
-		"name":          "tf-test-reasoning-engine" + randomSuffix,
-		"random_suffix": randomSuffix,
-	}
-
-	acctest.VcrTest(t, resource.TestCase{
-		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
-		CheckDestroy:             testAccCheckVertexAIReasoningEngineDestroyProducer(t),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccVertexAIReasoningEngine_vertexAiReasoningEngineAgentGatewayExample(context),
-			},
-			{
-				ResourceName:            "google_vertex_ai_reasoning_engine.reasoning_engine",
-				ImportState:             true,
-				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"deletion_policy", "labels", "region", "spec.0.source_code_spec.0.inline_source", "terraform_labels"},
-			},
-			{
-				ResourceName:       "google_vertex_ai_reasoning_engine.reasoning_engine",
-				RefreshState:       true,
-				ExpectNonEmptyPlan: true,
-				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
-			},
-		},
-	})
-}
-
-func testAccVertexAIReasoningEngine_vertexAiReasoningEngineAgentGatewayExample(context map[string]interface{}) string {
-	return acctest.Nprintf(`
-data "google_project" "project" {
-  provider = google-nightly
-}
-
-resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
-  provider = google-nightly
-
-  display_name = "%{name}"
-  description  = "A basic reasoning engine"
-  region       = "us-central1"
-
-  spec {
-    identity_type = "AGENT_IDENTITY"
-
-    deployment_spec {
-      agent_gateway_config {
-        client_to_agent_config {
-          agent_gateway = google_network_services_agent_gateway.default.id
-        }
-      }
-    }
-
-    source_code_spec {
-      inline_source {
-        source_archive = filebase64("./test-fixtures/source.tar.gz")
-      }
-
-      python_spec {
-        entrypoint_module = "simple_agent"
-        entrypoint_object = "fixed_name_generator"
-        version           = "3.14"
-      }
-    }
-  }
-}
-
-resource "google_network_services_agent_gateway" "default" {
-  provider = google-nightly
-
-  name     = "%{name}"
-  location = "us-central1"
-
-  protocols = ["MCP"]
-
-  google_managed {
-    governed_access_path = "CLIENT_TO_AGENT"
-  }
-}
-`, context)
-}
-
 func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineDeletionPolicyExample(t *testing.T) {
 	t.Parallel()
 
@@ -863,6 +776,93 @@ resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
 
 data "google_project" "project" {
   provider = google-beta
+}
+`, context)
+}
+
+func TestAccVertexAIReasoningEngine_vertexAiReasoningEngineAgentGatewayExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"name":          "tf-test-reasoning-engine" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		CheckDestroy:             testAccCheckVertexAIReasoningEngineDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccVertexAIReasoningEngine_vertexAiReasoningEngineAgentGatewayExample(context),
+			},
+			{
+				ResourceName:            "google_vertex_ai_reasoning_engine.reasoning_engine",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"deletion_policy", "labels", "region", "spec.0.source_code_spec.0.inline_source", "terraform_labels"},
+			},
+			{
+				ResourceName:       "google_vertex_ai_reasoning_engine.reasoning_engine",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccVertexAIReasoningEngine_vertexAiReasoningEngineAgentGatewayExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+data "google_project" "project" {
+  provider = google-nightly
+}
+
+resource "google_vertex_ai_reasoning_engine" "reasoning_engine" {
+  provider = google-nightly
+
+  display_name = "%{name}"
+  description  = "A basic reasoning engine"
+  region       = "us-central1"
+
+  spec {
+    identity_type = "AGENT_IDENTITY"
+
+    deployment_spec {
+      agent_gateway_config {
+        client_to_agent_config {
+          agent_gateway = google_network_services_agent_gateway.default.id
+        }
+      }
+    }
+
+    source_code_spec {
+      inline_source {
+        source_archive = filebase64("./test-fixtures/source.tar.gz")
+      }
+
+      python_spec {
+        entrypoint_module = "simple_agent"
+        entrypoint_object = "fixed_name_generator"
+        version           = "3.14"
+      }
+    }
+  }
+}
+
+resource "google_network_services_agent_gateway" "default" {
+  provider = google-nightly
+
+  name     = "%{name}"
+  location = "us-central1"
+
+  protocols = ["MCP"]
+
+  google_managed {
+    governed_access_path = "CLIENT_TO_AGENT"
+  }
 }
 `, context)
 }
