@@ -69,7 +69,7 @@ var (
 )
 
 var DEFAULT_SCRATCH_DISK_SIZE_GB = 375
-var VALID_SCRATCH_DISK_SIZES_GB = []int{375, 3000, 3500, 7000}
+var VALID_SCRATCH_DISK_SIZES_GB = []int{375, 3000, 3500, 7000, 14000}
 
 func ResourceComputeInstanceTemplate() *schema.Resource {
 	return &schema.Resource{
@@ -179,7 +179,7 @@ func ResourceComputeInstanceTemplate() *schema.Resource {
 							Optional:    true,
 							ForceNew:    true,
 							Computed:    true,
-							Description: `The size of the image in gigabytes. If not specified, it will inherit the size of its base image. For SCRATCH disks, the size must be one of 375, 3000, 3500 or 7000 GB, with a default of 375 GB.`,
+							Description: `The size of the image in gigabytes. If not specified, it will inherit the size of its base image. For SCRATCH disks, the size must be one of 375, 3000, 3500, 7000 or 14000 GB, with a default of 375 GB.`,
 						},
 
 						"disk_type": {
@@ -1418,12 +1418,12 @@ func resourceComputeInstanceTemplateScratchDiskCustomizeDiffFunc(diff tpgresourc
 		}
 
 		diskSize := diff.Get(fmt.Sprintf("disk.%d.disk_size_gb", i)).(int)
-		if typee == "SCRATCH" && !(diskSize == 375 || diskSize == 3000 || diskSize == 3500 || diskSize == 7000) { // see VALID_SCRATCH_DISK_SIZES_GB
+		if typee == "SCRATCH" && !(diskSize == 375 || diskSize == 3000 || diskSize == 3500 || diskSize == 7000 || diskSize == 14000) { // see VALID_SCRATCH_DISK_SIZES_GB
 			return fmt.Errorf("SCRATCH disks must be one of %v GB, disk %d is %d", VALID_SCRATCH_DISK_SIZES_GB, i, diskSize)
 		}
 
 		interfacee := diff.Get(fmt.Sprintf("disk.%d.interface", i)).(string)
-		if typee == "SCRATCH" && (diskSize == 3000 || diskSize == 3500 || diskSize == 7000) && interfacee != "NVME" {
+		if typee == "SCRATCH" && (diskSize == 3000 || diskSize == 3500 || diskSize == 7000 || diskSize == 14000) && interfacee != "NVME" {
 			return fmt.Errorf("SCRATCH disks with a size of %d GB must have an interface of NVME. disk %d has interface %s", diskSize, i, interfacee)
 		}
 	}
