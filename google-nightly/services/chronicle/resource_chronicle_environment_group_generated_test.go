@@ -53,7 +53,7 @@ var (
 	_ = chronicle.Product
 )
 
-func TestAccChronicleEnvironment_chronicleEnvironmentUpdateExample(t *testing.T) {
+func TestAccChronicleEnvironmentGroup_chronicleEnvironmentgroupUpdateExample(t *testing.T) {
 	t.Parallel()
 
 	randomSuffix := acctest.RandString(t, 10)
@@ -70,40 +70,40 @@ func TestAccChronicleEnvironment_chronicleEnvironmentUpdateExample(t *testing.T)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
-		CheckDestroy:             testAccCheckChronicleEnvironmentDestroyProducer(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		CheckDestroy:             testAccCheckChronicleEnvironmentGroupDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
-				Config: testAccChronicleEnvironment_chronicleEnvironmentBasicExample(context),
+				Config: testAccChronicleEnvironmentGroup_chronicleEnvironmentgroupBasicExample(context),
 			},
 			{
-				ResourceName:            "google_chronicle_environment.sample",
+				ResourceName:            "google_chronicle_environment_group.sample",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"deletion_protection", "instance", "location"},
+				ImportStateVerifyIgnore: []string{"instance", "location"},
 			},
 			{
-				ResourceName:       "google_chronicle_environment.sample",
+				ResourceName:       "google_chronicle_environment_group.sample",
 				RefreshState:       true,
 				ExpectNonEmptyPlan: true,
 				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
 			{
-				Config: testAccChronicleEnvironment_chronicleEnvironmentFullExample(context_1),
+				Config: testAccChronicleEnvironmentGroup_chronicleEnvironmentgroupFullExample(context_1),
 				ConfigPlanChecks: resource.ConfigPlanChecks{
 					PreApply: []plancheck.PlanCheck{
-						plancheck.ExpectResourceAction("google_chronicle_environment.sample", plancheck.ResourceActionUpdate),
+						plancheck.ExpectResourceAction("google_chronicle_environment_group.sample", plancheck.ResourceActionUpdate),
 					},
 				},
 			},
 			{
-				ResourceName:            "google_chronicle_environment.sample",
+				ResourceName:            "google_chronicle_environment_group.sample",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"deletion_protection", "instance", "location"},
+				ImportStateVerifyIgnore: []string{"instance", "location"},
 			},
 			{
-				ResourceName:       "google_chronicle_environment.sample",
+				ResourceName:       "google_chronicle_environment_group.sample",
 				RefreshState:       true,
 				ExpectNonEmptyPlan: true,
 				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
@@ -112,50 +112,42 @@ func TestAccChronicleEnvironment_chronicleEnvironmentUpdateExample(t *testing.T)
 	})
 }
 
-func testAccChronicleEnvironment_chronicleEnvironmentBasicExample(context map[string]interface{}) string {
+func testAccChronicleEnvironmentGroup_chronicleEnvironmentgroupBasicExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
-resource "google_chronicle_environment" "sample" {
+resource "google_chronicle_environment_group" "sample" {
+  provider = google-beta
   location = "us"
   instance = "%{chronicle_id}"
 
-  display_name = "MyEnvironment"
-  description = "MyEnvironment is managed with Terraform"
-  contact = "Contact"
-  contact_emails = "example@example.com"
-  contact_phone = "00000"
-  aliases_json            = jsonencode([])
-  data_access_scopes_json = jsonencode([])
-  retention_duration = 3
-
-  deletion_protection  = false
+  display_name = "myEnvironmentGroup"
+  description = "My Environment Description"
+  environments_ids = [
+    "Default Environment"
+  ]
 }
 `, context)
 }
 
-func testAccChronicleEnvironment_chronicleEnvironmentFullExample(context map[string]interface{}) string {
+func testAccChronicleEnvironmentGroup_chronicleEnvironmentgroupFullExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
-resource "google_chronicle_environment" "sample" {
+resource "google_chronicle_environment_group" "sample" {
+  provider = google-beta
   location = "us"
   instance = "%{chronicle_id}"
-  
-  display_name = "MyEnvironment"
-  description = "updated description"
-  contact = "updatedContactName"
-  contact_emails = "example2@example.com"
-  contact_phone = "010101"
-  aliases_json            = jsonencode([])
-  data_access_scopes_json = jsonencode([])
-  retention_duration = 3
 
-  deletion_protection  = false
+  display_name = "myEnvironmentGroup1"
+  description = "My Environment Description1"
+  environments_ids = [
+    "Default Environment"
+  ]
 }
 `, context)
 }
 
-func testAccCheckChronicleEnvironmentDestroyProducer(t *testing.T) func(s *terraform.State) error {
+func testAccCheckChronicleEnvironmentGroupDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {
-			if rs.Type != "google_chronicle_environment" {
+			if rs.Type != "google_chronicle_environment_group" {
 				continue
 			}
 			if strings.HasPrefix(name, "data.") {
@@ -163,7 +155,7 @@ func testAccCheckChronicleEnvironmentDestroyProducer(t *testing.T) func(s *terra
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(chronicle.Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/environments/{{environment_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(chronicle.Product, config)+"projects/{{project}}/locations/{{location}}/instances/{{instance}}/environmentGroups/{{environment_group_id}}")
 			if err != nil {
 				return err
 			}
@@ -182,7 +174,7 @@ func testAccCheckChronicleEnvironmentDestroyProducer(t *testing.T) func(s *terra
 				UserAgent: config.UserAgent,
 			})
 			if err == nil {
-				return fmt.Errorf("ChronicleEnvironment still exists at %s", url)
+				return fmt.Errorf("ChronicleEnvironmentGroup still exists at %s", url)
 			}
 		}
 
