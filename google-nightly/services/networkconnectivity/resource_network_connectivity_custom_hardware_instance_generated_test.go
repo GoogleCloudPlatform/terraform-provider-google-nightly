@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -20,6 +21,7 @@ package networkconnectivity_test
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -41,6 +43,7 @@ import (
 var (
 	_ = fmt.Sprintf
 	_ = log.Print
+	_ = regexp.MatchString
 	_ = strconv.Atoi
 	_ = strings.Trim
 	_ = time.Now
@@ -82,7 +85,7 @@ func TestAccNetworkConnectivityCustomHardwareInstance_networkConnectivityCustomH
 				ResourceName:            "google_network_connectivity_custom_hardware_instance.instance",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"custom_hardware_instance_id", "labels", "location", "terraform_labels"},
+				ImportStateVerifyIgnore: []string{"labels", "location", "terraform_labels"},
 			},
 			{
 				ResourceName:       "google_network_connectivity_custom_hardware_instance.instance",
@@ -102,7 +105,7 @@ func TestAccNetworkConnectivityCustomHardwareInstance_networkConnectivityCustomH
 				ResourceName:            "google_network_connectivity_custom_hardware_instance.instance",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"custom_hardware_instance_id", "labels", "location", "terraform_labels"},
+				ImportStateVerifyIgnore: []string{"labels", "location", "terraform_labels"},
 			},
 			{
 				ResourceName:       "google_network_connectivity_custom_hardware_instance.instance",
@@ -116,10 +119,12 @@ func TestAccNetworkConnectivityCustomHardwareInstance_networkConnectivityCustomH
 
 func testAccNetworkConnectivityCustomHardwareInstance_networkConnectivityCustomHardwareInstanceBasicExample(context map[string]interface{}) string {
 	return acctest.Nprintf(`
+provider "google-nightly" {}
+
 resource "google_network_connectivity_custom_hardware_instance" "instance" {
-  provider = google-beta
-  custom_hardware_instance_id = "%{resource_name}"
-  location                    = "us-south1"
+  provider = google-nightly
+  name = "%{resource_name}"
+  location = "us-south1"
   labels = {
     env = "%{env_label}"
   }
@@ -138,7 +143,7 @@ func testAccCheckNetworkConnectivityCustomHardwareInstanceDestroyProducer(t *tes
 			}
 
 			config := acctest.GoogleProviderConfig(t)
-			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(networkconnectivity.Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}")
+			url, err := tpgresource.ReplaceVarsForTest(config, rs, transport_tpg.BaseUrl(networkconnectivity.Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}")
 			if err != nil {
 				return err
 			}

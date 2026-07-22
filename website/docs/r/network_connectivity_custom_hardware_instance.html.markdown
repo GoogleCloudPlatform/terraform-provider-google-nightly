@@ -23,8 +23,6 @@ description: |-
 
 Description
 
-~> **Warning:** This resource is in beta, and should be used with the terraform-provider-google-beta provider.
-See [Provider Versions](../guides/provider_versions.html.markdown) for more details on beta resources.
 
 
 <div class = "oics-button" style="float: right; margin: 0 0 -15px">
@@ -36,10 +34,12 @@ See [Provider Versions](../guides/provider_versions.html.markdown) for more deta
 
 
 ```hcl
+provider "google-nightly" {}
+
 resource "google_network_connectivity_custom_hardware_instance" "instance" {
-  provider = google-beta
-  custom_hardware_instance_id = "ch-test-instance"
-  location                    = "us-south1"
+  provider = google-nightly
+  name = "ch-test-instance"
+  location = "us-south1"
   labels = {
     env = "test"
   }
@@ -51,16 +51,14 @@ resource "google_network_connectivity_custom_hardware_instance" "instance" {
 The following arguments are supported:
 
 
+* `name` -
+  (Required)
+  Identifier. The name of a CustomHardwareInstance.
+  This is populated by the service.
+
 * `location` -
   (Required)
   Resource ID segment making up resource `name`. It identifies the resource within its parent collection as described in https://google.aip.dev/122.
-
-* `custom_hardware_instance_id` -
-  (Required)
-  Unique id of the CustomHardwareInstance.
-  This is restricted to letters, numbers and with the first
-  character being a letter, the last a letter or a number. Matching the regex
-  `^[a-zA-Z0-9-]*[a-zA-Z0-9]$`.
 
 
 * `labels` -
@@ -84,14 +82,10 @@ The following arguments are supported:
 
 In addition to the arguments listed above, the following computed attributes are exported:
 
-* `id` - an identifier for the resource with format `projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}`
+* `id` - an identifier for the resource with format `projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}`
 
 * `create_time` -
   Time when the CustomHardwareInstance was created.
-
-* `name` -
-  Identifier. The name of a CustomHardwareInstance.
-  This is populated by the service.
 
 * `update_time` -
   Time when the CustomHardwareInstance was updated.
@@ -118,17 +112,17 @@ This resource provides the following
 
 CustomHardwareInstance can be imported using any of these accepted formats:
 
-* `projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}`
-* `{{project}}/{{location}}/{{custom_hardware_instance_id}}`
-* `{{location}}/{{custom_hardware_instance_id}}`
+* `projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}`
+* `{{project}}/{{location}}/{{name}}`
+* `{{location}}/{{name}}`
 
 In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hashicorp.com/terraform/language/block/import#identity) to import CustomHardwareInstance using identity values. For example:
 
 ```tf
 import {
   identity = {
+    name = "<-required value->"
     location = "<-required value->"
-    customHardwareInstanceId = "<-required value->"
     project = "<-optional value->"
   }
   to = google_network_connectivity_custom_hardware_instance.default
@@ -139,7 +133,7 @@ In Terraform v1.5.0 and later, use an [`import` block](https://developer.hashico
 
 ```tf
 import {
-  id = "projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}"
+  id = "projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}"
   to = google_network_connectivity_custom_hardware_instance.default
 }
 ```
@@ -147,9 +141,9 @@ import {
 When using the [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import), CustomHardwareInstance can be imported using one of the formats above. For example:
 
 ```
-$ terraform import google_network_connectivity_custom_hardware_instance.default projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}
-$ terraform import google_network_connectivity_custom_hardware_instance.default {{project}}/{{location}}/{{custom_hardware_instance_id}}
-$ terraform import google_network_connectivity_custom_hardware_instance.default {{location}}/{{custom_hardware_instance_id}}
+$ terraform import google_network_connectivity_custom_hardware_instance.default projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}
+$ terraform import google_network_connectivity_custom_hardware_instance.default {{project}}/{{location}}/{{name}}
+$ terraform import google_network_connectivity_custom_hardware_instance.default {{location}}/{{name}}
 ```
 
 ## User Project Overrides

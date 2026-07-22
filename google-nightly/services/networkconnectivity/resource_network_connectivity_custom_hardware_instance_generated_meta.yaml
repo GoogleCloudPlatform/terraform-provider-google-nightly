@@ -1,4 +1,5 @@
 # Copyright IBM Corp. 2014, 2026
+# Copyright 2026 Google LLC
 # SPDX-License-Identifier: MPL-2.0
 resource: google_network_connectivity_custom_hardware_instance
 generation_type: mmv1
@@ -10,8 +11,6 @@ autogen_status: true
 autogen_version: 1
 fields:
     - api_field: createTime
-    - field: custom_hardware_instance_id
-      provider_only: true
     - field: effective_labels
       provider_only: true
     - api_field: labels

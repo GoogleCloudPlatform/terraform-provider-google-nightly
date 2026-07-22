@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -183,22 +184,19 @@ func deleteResourceNetworkConnectivityCustomHardwareInstance(config *transport_t
 	var deletionerror error
 	resourceName := "NetworkConnectivityCustomHardwareInstance"
 	var name string
-	// Id detected in the delete URL, attempt to use id.
-	if obj["id"] != nil {
-		name = tpgresource.GetResourceNameFromSelfLink(obj["id"].(string))
-	} else if obj["name"] != nil {
-		name = tpgresource.GetResourceNameFromSelfLink(obj["name"].(string))
-	} else {
-		log.Printf("[INFO][SWEEPER_LOG] %s resource name and id were nil", resourceName)
+	if obj["name"] == nil {
+		log.Printf("[INFO][SWEEPER_LOG] %s resource name was nil", resourceName)
 		return fmt.Errorf("%s resource name was nil", resourceName)
 	}
+
+	name = tpgresource.GetResourceNameFromSelfLink(obj["name"].(string))
 
 	// Skip resources that shouldn't be sweeped
 	if !sweeper.IsSweepableTestResource(name) {
 		return nil
 	}
 
-	deleteTemplate := "https://networkconnectivity.googleapis.com/v1beta/projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}"
+	deleteTemplate := "https://networkconnectivity.googleapis.com/v1beta/projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}"
 
 	url, err := tpgresource.ReplaceVars(d, config, deleteTemplate)
 	if err != nil {

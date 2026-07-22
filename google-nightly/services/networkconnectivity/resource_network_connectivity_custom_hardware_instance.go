@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -122,11 +123,11 @@ func ResourceNetworkConnectivityCustomHardwareInstance() *schema.Resource {
 			Version: 1,
 			SchemaFunc: func() map[string]*schema.Schema {
 				return map[string]*schema.Schema{
-					"location": {
+					"name": {
 						Type:              schema.TypeString,
 						RequiredForImport: true,
 					},
-					"custom_hardware_instance_id": {
+					"location": {
 						Type:              schema.TypeString,
 						RequiredForImport: true,
 					},
@@ -142,20 +143,19 @@ func ResourceNetworkConnectivityCustomHardwareInstance() *schema.Resource {
 		},
 
 		Schema: map[string]*schema.Schema{
-			"custom_hardware_instance_id": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
-				Description: `Unique id of the CustomHardwareInstance.
-This is restricted to letters, numbers and with the first
-character being a letter, the last a letter or a number. Matching the regex
-'^[a-zA-Z0-9-]*[a-zA-Z0-9]$'.`,
-			},
 			"location": {
 				Type:        schema.TypeString,
 				Required:    true,
 				ForceNew:    true,
 				Description: `Resource ID segment making up resource 'name'. It identifies the resource within its parent collection as described in https://google.aip.dev/122.`,
+			},
+			"name": {
+				Type:             schema.TypeString,
+				Required:         true,
+				ForceNew:         true,
+				DiffSuppressFunc: tpgresource.CompareSelfLinkOrResourceName,
+				Description: `Identifier. The name of a CustomHardwareInstance.
+This is populated by the service.`,
 			},
 			"labels": {
 				Type:     schema.TypeMap,
@@ -176,12 +176,6 @@ Please refer to the field 'effective_labels' for all of the labels present on th
 				Computed:    true,
 				Description: `All of labels (key/value pairs) present on the resource in GCP, including the labels configured through Terraform, other clients and services.`,
 				Elem:        &schema.Schema{Type: schema.TypeString},
-			},
-			"name": {
-				Type:     schema.TypeString,
-				Computed: true,
-				Description: `Identifier. The name of a CustomHardwareInstance.
-This is populated by the service.`,
 			},
 			"terraform_labels": {
 				Type:     schema.TypeMap,
@@ -226,6 +220,12 @@ func resourceNetworkConnectivityCustomHardwareInstanceCreate(d *schema.ResourceD
 	}
 
 	obj := make(map[string]interface{})
+	nameProp, err := expandNetworkConnectivityCustomHardwareInstanceName(d.Get("name"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("name"); !tpgresource.IsEmptyValue(reflect.ValueOf(nameProp)) && (ok || !reflect.DeepEqual(v, nameProp)) {
+		obj["name"] = nameProp
+	}
 	effectiveLabelsProp, err := expandNetworkConnectivityCustomHardwareInstanceEffectiveLabels(d.Get("effective_labels"), d, config)
 	if err != nil {
 		return err
@@ -233,7 +233,7 @@ func resourceNetworkConnectivityCustomHardwareInstanceCreate(d *schema.ResourceD
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances?customHardwareInstanceId={{custom_hardware_instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances?customHardwareInstanceId={{name}}")
 	if err != nil {
 		return err
 	}
@@ -268,7 +268,7 @@ func resourceNetworkConnectivityCustomHardwareInstanceCreate(d *schema.ResourceD
 	}
 
 	// Store the ID now
-	id, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}")
+	id, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}")
 	if err != nil {
 		return fmt.Errorf("Error constructing id: %s", err)
 	}
@@ -288,14 +288,14 @@ func resourceNetworkConnectivityCustomHardwareInstanceCreate(d *schema.ResourceD
 
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
+		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
+			if err = identity.Set("name", nameValue.(string)); err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
 			if err = identity.Set("location", locationValue.(string)); err != nil {
 				return fmt.Errorf("Error setting location: %s", err)
-			}
-		}
-		if customHardwareInstanceIdValue, ok := d.GetOk("custom_hardware_instance_id"); ok && customHardwareInstanceIdValue.(string) != "" {
-			if err = identity.Set("custom_hardware_instance_id", customHardwareInstanceIdValue.(string)); err != nil {
-				return fmt.Errorf("Error setting custom_hardware_instance_id: %s", err)
 			}
 		}
 		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
@@ -317,7 +317,7 @@ func resourceNetworkConnectivityCustomHardwareInstanceRead(d *schema.ResourceDat
 		return err
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -374,16 +374,16 @@ func resourceNetworkConnectivityCustomHardwareInstanceRead(d *schema.ResourceDat
 
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
+		if v, ok := identity.GetOk("name"); !ok && v == "" {
+			err = identity.Set("name", d.Get("name").(string))
+			if err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
 		if v, ok := identity.GetOk("location"); !ok && v == "" {
 			err = identity.Set("location", d.Get("location").(string))
 			if err != nil {
 				return fmt.Errorf("Error setting location: %s", err)
-			}
-		}
-		if v, ok := identity.GetOk("custom_hardware_instance_id"); !ok && v == "" {
-			err = identity.Set("custom_hardware_instance_id", d.Get("custom_hardware_instance_id").(string))
-			if err != nil {
-				return fmt.Errorf("Error setting custom_hardware_instance_id: %s", err)
 			}
 		}
 		if v, ok := identity.GetOk("project"); !ok && v == "" {
@@ -420,14 +420,14 @@ func resourceNetworkConnectivityCustomHardwareInstanceUpdate(d *schema.ResourceD
 	}
 	identity, err := d.Identity()
 	if err == nil && identity != nil {
+		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
+			if err = identity.Set("name", nameValue.(string)); err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
 		if locationValue, ok := d.GetOk("location"); ok && locationValue.(string) != "" {
 			if err = identity.Set("location", locationValue.(string)); err != nil {
 				return fmt.Errorf("Error setting location: %s", err)
-			}
-		}
-		if customHardwareInstanceIdValue, ok := d.GetOk("custom_hardware_instance_id"); ok && customHardwareInstanceIdValue.(string) != "" {
-			if err = identity.Set("custom_hardware_instance_id", customHardwareInstanceIdValue.(string)); err != nil {
-				return fmt.Errorf("Error setting custom_hardware_instance_id: %s", err)
 			}
 		}
 		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
@@ -455,7 +455,7 @@ func resourceNetworkConnectivityCustomHardwareInstanceUpdate(d *schema.ResourceD
 		obj["labels"] = effectiveLabelsProp
 	}
 
-	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -531,7 +531,7 @@ func resourceNetworkConnectivityCustomHardwareInstanceDelete(d *schema.ResourceD
 		return fmt.Errorf("Error fetching project for CustomHardwareInstance: %s", err)
 	}
 	billingProject = project
-	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}")
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}")
 	if err != nil {
 		return err
 	}
@@ -575,15 +575,15 @@ func resourceNetworkConnectivityCustomHardwareInstanceDelete(d *schema.ResourceD
 func resourceNetworkConnectivityCustomHardwareInstanceImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	config := meta.(*transport_tpg.Config)
 	if err := tpgresource.ParseImportId([]string{
-		"^projects/(?P<project>[^/]+)/locations/(?P<location>[^/]+)/customHardwareInstances/(?P<custom_hardware_instance_id>[^/]+)$",
-		"^(?P<project>[^/]+)/(?P<location>[^/]+)/(?P<custom_hardware_instance_id>[^/]+)$",
-		"^(?P<location>[^/]+)/(?P<custom_hardware_instance_id>[^/]+)$",
+		"^projects/(?P<project>[^/]+)/locations/(?P<location>[^/]+)/customHardwareInstances/(?P<name>[^/]+)$",
+		"^(?P<project>[^/]+)/(?P<location>[^/]+)/(?P<name>[^/]+)$",
+		"^(?P<location>[^/]+)/(?P<name>[^/]+)$",
 	}, d, config); err != nil {
 		return nil, err
 	}
 
 	// Replace import id for the resource id
-	id, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/customHardwareInstances/{{custom_hardware_instance_id}}")
+	id, err := tpgresource.ReplaceVars(d, config, "projects/{{project}}/locations/{{location}}/customHardwareInstances/{{name}}")
 	if err != nil {
 		return nil, fmt.Errorf("Error constructing id: %s", err)
 	}
@@ -592,7 +592,16 @@ func resourceNetworkConnectivityCustomHardwareInstanceImport(d *schema.ResourceD
 	return []*schema.ResourceData{d}, nil
 }
 
+func flattenNetworkConnectivityCustomHardwareInstanceName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	parts := strings.Split(d.Get("name").(string), "/")
+	return parts[len(parts)-1]
+}
+
 func flattenNetworkConnectivityCustomHardwareInstanceCreateTime(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenNetworkConnectivityCustomHardwareInstanceUpdateTime(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -609,14 +618,6 @@ func flattenNetworkConnectivityCustomHardwareInstanceLabels(v interface{}, d *sc
 	}
 
 	return transformed
-}
-
-func flattenNetworkConnectivityCustomHardwareInstanceName(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
-}
-
-func flattenNetworkConnectivityCustomHardwareInstanceUpdateTime(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
-	return v
 }
 
 func flattenNetworkConnectivityCustomHardwareInstanceTerraformLabels(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -638,6 +639,10 @@ func flattenNetworkConnectivityCustomHardwareInstanceEffectiveLabels(v interface
 	return v
 }
 
+func expandNetworkConnectivityCustomHardwareInstanceName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandNetworkConnectivityCustomHardwareInstanceEffectiveLabels(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (map[string]string, error) {
 	if v == nil {
 		return map[string]string{}, nil
@@ -652,16 +657,16 @@ func expandNetworkConnectivityCustomHardwareInstanceEffectiveLabels(v interface{
 func ResourceNetworkConnectivityCustomHardwareInstanceFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
 	var err error
 
-	if err = d.Set("create_time", flattenNetworkConnectivityCustomHardwareInstanceCreateTime(res["createTime"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomHardwareInstance: %s", err)
-	}
-	if err = d.Set("labels", flattenNetworkConnectivityCustomHardwareInstanceLabels(res["labels"], d, config)); err != nil {
-		return fmt.Errorf("Error reading CustomHardwareInstance: %s", err)
-	}
 	if err = d.Set("name", flattenNetworkConnectivityCustomHardwareInstanceName(res["name"], d, config)); err != nil {
 		return fmt.Errorf("Error reading CustomHardwareInstance: %s", err)
 	}
+	if err = d.Set("create_time", flattenNetworkConnectivityCustomHardwareInstanceCreateTime(res["createTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomHardwareInstance: %s", err)
+	}
 	if err = d.Set("update_time", flattenNetworkConnectivityCustomHardwareInstanceUpdateTime(res["updateTime"], d, config)); err != nil {
+		return fmt.Errorf("Error reading CustomHardwareInstance: %s", err)
+	}
+	if err = d.Set("labels", flattenNetworkConnectivityCustomHardwareInstanceLabels(res["labels"], d, config)); err != nil {
 		return fmt.Errorf("Error reading CustomHardwareInstance: %s", err)
 	}
 	if err = d.Set("terraform_labels", flattenNetworkConnectivityCustomHardwareInstanceTerraformLabels(res["labels"], d, config)); err != nil {
