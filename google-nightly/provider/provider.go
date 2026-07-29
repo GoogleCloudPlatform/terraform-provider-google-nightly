@@ -472,6 +472,11 @@ func Provider() *schema.Provider {
 				Optional:     true,
 				ValidateFunc: ValidateCustomEndpoint,
 			},
+			"cloud_support_custom_endpoint": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ValidateFunc: ValidateCustomEndpoint,
+			},
 			"cloud_tasks_custom_endpoint": {
 				Type:         schema.TypeString,
 				Optional:     true,

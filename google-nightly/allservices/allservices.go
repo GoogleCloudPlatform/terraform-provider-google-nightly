@@ -69,6 +69,7 @@ import (
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudrunv2"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudscheduler"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudsecuritycompliance"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudsupport"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/cloudtasks"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/colab"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/composer"
