@@ -1022,7 +1022,7 @@ pick a specific range to use.
 
 * `stack_type` - (Optional) The IP Stack Type of the cluster.
 Default value is `IPV4`.
-Possible values are `IPV4` and `IPV4_IPV6`.
+Possible values are `IPV4`, `IPV4_IPV6`, and `IPV6`.
 
 * `additional_pod_ranges_config` - (Optional) The configuration for additional pod secondary ranges at
 the cluster level. Used for Autopilot clusters and Standard clusters with which control of the

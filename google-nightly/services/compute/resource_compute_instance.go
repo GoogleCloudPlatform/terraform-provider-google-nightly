@@ -1586,7 +1586,7 @@ be from 0 to 999,999,999 inclusive.`,
 				ForceNew:         true,
 				ConflictsWith:    []string{"zones"},
 				DiffSuppressFunc: compareZonesDiffSuppress,
-				Description:      `The zone of the instance. If self_link is provided, this value is ignored. If neither self_link nor zone are provided, the provider zone is used.`,
+				Description:      `The zone in which you want to create the instance. If a zone isn't provided, the provider zone is used. Mutually exclusive with zones.`,
 			},
 
 			"zones": {
@@ -1606,11 +1606,11 @@ be from 0 to 999,999,999 inclusive.`,
 						"zone": {
 							Type:        schema.TypeString,
 							Required:    true,
-							Description: `The zone of the instance.`,
+							Description: `The zone in which you want to create the instance.`,
 						},
 					},
 				},
-				Description: `A list of two zones in the same region where the instance can exist. Mutually exclusive with zone.`,
+				Description: `A set of at least two zones in the same region where the instance can be created. Compute Engine selects a zone from this set based on resource availability. If multiple zones have available resources, Compute Engine automatically selects one. Mutually exclusive with zone.`,
 			},
 
 			"cpu_platform": {

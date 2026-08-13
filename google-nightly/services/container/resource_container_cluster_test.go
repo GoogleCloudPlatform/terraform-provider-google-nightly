@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 // ----------------------------------------------------------------------------
 //
@@ -4496,6 +4497,34 @@ func TestAccContainerCluster_withIPAllocationPolicy_specificSizes(t *testing.T) 
 				ImportState:             true,
 				ImportStateVerify:       true,
 				ImportStateVerifyIgnore: []string{"deletion_protection"},
+			},
+		},
+	})
+}
+
+func TestAccContainerCluster_stackType_withIPV6Only(t *testing.T) {
+	t.Parallel()
+
+	clusterName := fmt.Sprintf("tf-test-cluster-%s", acctest.RandString(t, 10))
+	containerNetName := fmt.Sprintf("tf-test-cluster-%s", acctest.RandString(t, 10))
+	resourceName := "google_container_cluster.with_stack_type"
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckContainerClusterDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccContainerCluster_stackType_withIPV6OnlyConfig(containerNetName, clusterName),
+				Check: resource.ComposeTestCheckFunc(
+					resource.TestCheckResourceAttr(resourceName, "ip_allocation_policy.0.stack_type", "IPV6"),
+				),
+			},
+			{
+				ResourceName:            resourceName,
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"deletion_protection", "private_cluster_config"},
 			},
 		},
 	})
@@ -12394,6 +12423,71 @@ resource "google_container_cluster" "with_ip_allocation_policy" {
   deletion_protection = false
 }
 `, containerNetName, clusterName)
+}
+
+func testAccContainerCluster_stackType_withIPV6OnlyConfig(containerNetName, clusterName string) string {
+	return fmt.Sprintf(`
+resource "google_compute_network" "container_network" {
+  name                    = "%s"
+  auto_create_subnetworks = false
+  enable_ula_internal_ipv6 = true
+}
+
+resource "google_compute_subnetwork" "nodes_subnetwork" {
+  name             = "%s-nodes"
+  network          = google_compute_network.container_network.name
+  region           = "us-central1"
+  stack_type       = "IPV6_ONLY"
+  ipv6_access_type = "EXTERNAL"
+}
+
+resource "google_compute_subnetwork" "psc_subnetwork" {
+  name             = "%s-psc"
+  network          = google_compute_network.container_network.name
+  region           = "us-central1"
+  stack_type       = "IPV6_ONLY"
+  ipv6_access_type = "INTERNAL"
+}
+
+resource "google_container_cluster" "with_stack_type" {
+  name       = "%s"
+  location   = "us-central1-c"
+  network    = google_compute_network.container_network.name
+  subnetwork = google_compute_subnetwork.nodes_subnetwork.name
+
+  release_channel {
+    channel = "RAPID"
+  }
+
+  initial_node_count       = 1
+  datapath_provider        = "ADVANCED_DATAPATH"
+  enable_l4_ilb_subsetting = true
+
+  dns_config {
+    cluster_dns        = "CLOUD_DNS"
+    cluster_dns_scope  = "VPC_SCOPE"
+    cluster_dns_domain = "example.com"
+  }
+
+  control_plane_endpoints_config {
+    dns_endpoint_config {
+      allow_external_traffic = true
+    }
+    ip_endpoints_config {
+      enabled = false
+    }
+  }
+
+  private_cluster_config {
+    private_endpoint_subnetwork = google_compute_subnetwork.psc_subnetwork.name
+  }
+
+  ip_allocation_policy {
+    stack_type = "IPV6"
+  }
+  deletion_protection = false
+}
+`, containerNetName, clusterName, clusterName, clusterName)
 }
 
 func testAccContainerCluster_stackType_withDualStack(containerNetName, clusterName, stack string) string {
