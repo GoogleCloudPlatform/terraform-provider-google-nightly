@@ -247,6 +247,11 @@ func Provider() *schema.Provider {
 				Optional:     true,
 				ValidateFunc: ValidateCustomEndpoint,
 			},
+			"agentic_applications_custom_endpoint": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ValidateFunc: ValidateCustomEndpoint,
+			},
 			"agent_identity_custom_endpoint": {
 				Type:         schema.TypeString,
 				Optional:     true,

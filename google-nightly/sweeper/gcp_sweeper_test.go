@@ -21,6 +21,7 @@ import (
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/accessapproval"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/accesscontextmanager"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/activedirectory"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/agenticapplications"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/agentidentity"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/agentregistry"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/alloydb"
