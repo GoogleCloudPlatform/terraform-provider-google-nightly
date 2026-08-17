@@ -194,6 +194,7 @@ import (
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storage"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storagebatchoperations"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storagecontrol"
+	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storageftp"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storageinsights"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/storagetransfer"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
