@@ -41,13 +41,11 @@ locals {
 }
 
 data "google_compute_image" "debian_12" {
-  provider = google-private
   family   = "debian-12"
   project  = "debian-cloud"
 }
 
 resource "google_compute_region_disk" "regional_disk" {
-  provider                  = google-private
   name                      = "hac-bs-rd"
   physical_block_size_bytes = 4096
   type                      = "pd-balanced"
@@ -58,7 +56,6 @@ resource "google_compute_region_disk" "regional_disk" {
 }
 
 resource "google_compute_instance" "vm" {
-  provider     = google-private
   name         = "hac-bs-inst"
   machine_type = "e2-micro"
   zones {
@@ -81,7 +78,6 @@ resource "google_compute_instance" "vm" {
 }
 
 resource "google_compute_ha_controller" "default" {
-  provider            = google-private
   name                = "hac-bs"
   region              = local.region
   instance_name       = google_compute_instance.vm.name
@@ -111,13 +107,11 @@ locals {
 }
 
 data "google_compute_image" "debian_12" {
-  provider = google-private
   family   = "debian-12"
   project  = "debian-cloud"
 }
 
 resource "google_compute_region_disk" "regional_disk" {
-  provider                  = google-private
   name                      = "hac-rv-rd"
   physical_block_size_bytes = 4096
   type                      = "pd-balanced"
@@ -128,7 +122,6 @@ resource "google_compute_region_disk" "regional_disk" {
 }
 
 resource "google_compute_reservation" "reservation_zone1" {
-  provider = google-private
   name     = "hac-rv-rv" # same name as in zone 2
   zone     = local.zone1
 
@@ -147,7 +140,6 @@ resource "google_compute_reservation" "reservation_zone1" {
 }
 
 resource "google_compute_reservation" "reservation_zone2" {
-  provider = google-private
   name     = "hac-rv-rv" # same name as in zone 1
   zone     = local.zone2
 
@@ -166,7 +158,6 @@ resource "google_compute_reservation" "reservation_zone2" {
 }
 
 resource "google_compute_instance" "vm" {
-  provider     = google-private
   name         = "hac-rv-inst"
   machine_type = "e2-micro"
   zones {
@@ -198,7 +189,6 @@ resource "google_compute_instance" "vm" {
 }
 
 resource "google_compute_ha_controller" "default" {
-  provider            = google-private
   name                = "hac-rv"
   region              = local.region
   instance_name       = google_compute_instance.vm.name
@@ -248,13 +238,11 @@ locals {
 }
 
 data "google_compute_image" "debian_12" {
-  provider = google-private
   family   = "debian-12"
   project  = "debian-cloud"
 }
 
 resource "google_compute_region_disk" "regional_disk" {
-  provider                  = google-private
   name                      = "hac-st-rd"
   physical_block_size_bytes = 4096
   type                      = "pd-balanced"
@@ -265,7 +253,6 @@ resource "google_compute_region_disk" "regional_disk" {
 }
 
 resource "google_compute_node_template" "node_template1" {
-  provider  = google-private
   name      = "hac-st-ntmpl"
   region    = local.region
   node_type = "n1-node-96-624"
@@ -276,7 +263,6 @@ resource "google_compute_node_template" "node_template1" {
 }
 
 resource "google_compute_node_template" "node_template2" {
-  provider  = google-private
   name      = "hac-st-ntmpl2"
   region    = local.region
   node_type = "n1-node-96-624"
@@ -287,7 +273,6 @@ resource "google_compute_node_template" "node_template2" {
 }
 
 resource "google_compute_node_group" "sole_tenant_group1" {
-  provider      = google-private
   name          = "hac-st-stgrp1"
   zone          = local.zone1
   node_template = google_compute_node_template.node_template1.id
@@ -295,7 +280,6 @@ resource "google_compute_node_group" "sole_tenant_group1" {
 }
 
 resource "google_compute_node_group" "sole_tenant_group2" {
-  provider      = google-private
   name          = "hac-st-stgrp2"
   zone          = local.zone2
   node_template = google_compute_node_template.node_template2.id
@@ -303,7 +287,6 @@ resource "google_compute_node_group" "sole_tenant_group2" {
 }
 
 resource "google_compute_instance" "vm" {
-  provider     = google-private
   name         = "hac-st-inst"
   machine_type = "n1-standard-1"
   zones {
@@ -340,7 +323,6 @@ resource "google_compute_instance" "vm" {
 }
 
 resource "google_compute_ha_controller" "default" {
-  provider            = google-private
   name                = "hac-st"
   region              = local.region
   instance_name       = google_compute_instance.vm.name
