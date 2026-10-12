@@ -463,6 +463,118 @@ resource "google_compute_ha_controller" "default" {
 `, context)
 }
 
+func TestAccComputeHaController_computeHaControllerBackendServiceExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"hac_name":      "tf-test-hac-rbs" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		CheckDestroy:             testAccCheckComputeHaControllerDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccComputeHaController_computeHaControllerBackendServiceExample(context),
+			},
+			{
+				ResourceName:            "google_compute_ha_controller.default",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"region"},
+			},
+			{
+				ResourceName:       "google_compute_ha_controller.default",
+				RefreshState:       true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccComputeHaController_computeHaControllerBackendServiceExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+locals {
+  region  = "us-central1"
+  zone1   = "us-central1-a"
+  zone2   = "us-central1-b"
+  network = "default"
+}
+
+data "google_compute_image" "debian_12" {
+  family  = "debian-12"
+  project = "debian-cloud"
+}
+
+resource "google_compute_region_disk" "regional_disk" {
+  name                      = "%{hac_name}-rd"
+  physical_block_size_bytes = 4096
+  type                      = "pd-balanced"
+  region                    = local.region
+  replica_zones             = [local.zone1, local.zone2]
+  size                      = 10
+  image                     = data.google_compute_image.debian_12.self_link
+}
+
+resource "google_compute_instance" "vm" {
+  name         = "%{hac_name}-inst"
+  machine_type = "e2-micro"
+  zones {
+    zone = local.zone1
+  }
+  zones {
+    zone = local.zone2
+  }
+
+  boot_disk {
+    auto_delete = false
+    source      = google_compute_region_disk.regional_disk.self_link
+  }
+
+  network_interface {
+    network = local.network
+  }
+
+  allow_stopping_for_update = true
+}
+
+resource "google_compute_region_backend_service" "bs" {
+  name                  = "%{hac_name}-bs"
+  region                = local.region
+  protocol              = "UNSPECIFIED"
+  load_balancing_scheme = "INTERNAL"
+  network               = local.network
+
+  ha_policy {
+    fast_ip_move = "DISABLED"
+  }
+
+  connection_draining_timeout_sec = 0
+}
+
+resource "google_compute_ha_controller" "default" {
+  name                = "%{hac_name}"
+  region              = local.region
+  instance_name       = google_compute_instance.vm.name
+  failover_initiation = "MANUAL_ONLY"
+
+  backend_services = [google_compute_region_backend_service.bs.self_link]
+
+  zone_configuration {
+    zone = local.zone1
+  }
+  zone_configuration {
+    zone = local.zone2
+  }
+}
+`, context)
+}
+
 func testAccCheckComputeHaControllerDestroyProducer(t *testing.T) func(s *terraform.State) error {
 	return func(s *terraform.State) error {
 		for name, rs := range s.RootModule().Resources {

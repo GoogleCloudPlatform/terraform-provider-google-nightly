@@ -346,6 +346,89 @@ resource "google_compute_ha_controller" "default" {
   }
 }
 ```
+<div class = "oics-button" style="float: right; margin: 0 0 -15px">
+  <a href="https://console.cloud.google.com/cloudshell/open?cloudshell_git_repo=https%3A%2F%2Fgithub.com%2Fterraform-google-modules%2Fdocs-examples.git&cloudshell_image=gcr.io%2Fcloudshell-images%2Fcloudshell%3Alatest&cloudshell_print=.%2Fmotd&cloudshell_tutorial=.%2Ftutorial.md&cloudshell_working_dir=compute_ha_controller_backend_service&open_in_editor=main.tf" target="_blank">
+    <img alt="Open in Cloud Shell" src="//gstatic.com/cloudssh/images/open-btn.svg" style="max-height: 44px; margin: 32px auto; max-width: 100%;">
+  </a>
+</div>
+## Example Usage - Compute Ha Controller Backend Service
+
+
+```hcl
+locals {
+  region  = "us-central1"
+  zone1   = "us-central1-a"
+  zone2   = "us-central1-b"
+  network = "default"
+}
+
+data "google_compute_image" "debian_12" {
+  family  = "debian-12"
+  project = "debian-cloud"
+}
+
+resource "google_compute_region_disk" "regional_disk" {
+  name                      = "hac-rbs-rd"
+  physical_block_size_bytes = 4096
+  type                      = "pd-balanced"
+  region                    = local.region
+  replica_zones             = [local.zone1, local.zone2]
+  size                      = 10
+  image                     = data.google_compute_image.debian_12.self_link
+}
+
+resource "google_compute_instance" "vm" {
+  name         = "hac-rbs-inst"
+  machine_type = "e2-micro"
+  zones {
+    zone = local.zone1
+  }
+  zones {
+    zone = local.zone2
+  }
+
+  boot_disk {
+    auto_delete = false
+    source      = google_compute_region_disk.regional_disk.self_link
+  }
+
+  network_interface {
+    network = local.network
+  }
+
+  allow_stopping_for_update = true
+}
+
+resource "google_compute_region_backend_service" "bs" {
+  name                  = "hac-rbs-bs"
+  region                = local.region
+  protocol              = "UNSPECIFIED"
+  load_balancing_scheme = "INTERNAL"
+  network               = local.network
+
+  ha_policy {
+    fast_ip_move = "DISABLED"
+  }
+
+  connection_draining_timeout_sec = 0
+}
+
+resource "google_compute_ha_controller" "default" {
+  name                = "hac-rbs"
+  region              = local.region
+  instance_name       = google_compute_instance.vm.name
+  failover_initiation = "MANUAL_ONLY"
+
+  backend_services = [google_compute_region_backend_service.bs.self_link]
+
+  zone_configuration {
+    zone = local.zone1
+  }
+  zone_configuration {
+    zone = local.zone2
+  }
+}
+```
 
 ## Argument Reference
 

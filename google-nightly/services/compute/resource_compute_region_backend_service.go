@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -257,6 +258,7 @@ When the load balancing scheme is INTERNAL, this field is not used.`,
 			},
 			"backend": {
 				Type:        schema.TypeSet,
+				Computed:    true,
 				Optional:    true,
 				Description: `The set of backends that serve this RegionBackendService.`,
 				Elem:        computeRegionBackendServiceBackendSchema(),
@@ -830,6 +832,7 @@ Supported values are:
 						},
 						"leader": {
 							Type:     schema.TypeList,
+							Computed: true,
 							Optional: true,
 							Description: `Selects one of the network endpoints attached to the backend NEGs of this service as the
 active endpoint (the leader) that receives all traffic.`,
@@ -838,6 +841,7 @@ active endpoint (the leader) that receives all traffic.`,
 								Schema: map[string]*schema.Schema{
 									"backend_group": {
 										Type:             schema.TypeString,
+										Computed:         true,
 										Optional:         true,
 										DiffSuppressFunc: tpgresource.CompareSelfLinkOrResourceName,
 										Description: `A fully-qualified URL of the zonal Network Endpoint Group (NEG) that the leader is
@@ -845,6 +849,7 @@ attached to.`,
 									},
 									"network_endpoint": {
 										Type:        schema.TypeList,
+										Computed:    true,
 										Optional:    true,
 										Description: `The network endpoint within the leader.backendGroup that is designated as the leader.`,
 										MaxItems:    1,
@@ -852,6 +857,7 @@ attached to.`,
 											Schema: map[string]*schema.Schema{
 												"instance": {
 													Type:     schema.TypeString,
+													Computed: true,
 													Optional: true,
 													Description: `The name of the VM instance of the leader network endpoint. The instance must
 already be attached to the NEG specified in the haPolicy.leader.backendGroup.`,
@@ -6258,8 +6264,9 @@ func resourceComputeRegionBackendServiceEncoder(d *schema.ResourceData, meta int
 
 	// To remove subsetting on an ILB, "NONE" must be specified. If subsetting
 	// isn't specified, we set the value to NONE to make this use case work.
-	_, ok := obj["subsetting"]
-	if !ok {
+	_, hasSubsetting := obj["subsetting"]
+	_, hasHaPolicy := obj["haPolicy"]
+	if !hasSubsetting && !hasHaPolicy {
 		loadBalancingScheme, ok := obj["loadBalancingScheme"]
 		// External load balancing scheme does not support subsetting
 		if !ok || loadBalancingScheme.(string) != "EXTERNAL" {
