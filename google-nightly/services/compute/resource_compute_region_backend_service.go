@@ -1980,6 +1980,8 @@ func resourceComputeRegionBackendServiceCreate(d *schema.ResourceData, meta inte
 	}
 
 	headers := make(http.Header)
+	// security_policy isn't set by Create
+	delete(obj, "securityPolicy")
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 		Config:    config,
 		Method:    "POST",
@@ -2430,7 +2432,7 @@ func resourceComputeRegionBackendServiceUpdate(d *schema.ResourceData, meta inte
 		obj["region"] = regionProp
 	}
 
-	obj, err = resourceComputeRegionBackendServiceEncoder(d, meta, obj)
+	obj, err = resourceComputeRegionBackendServiceUpdateEncoder(d, meta, obj)
 	if err != nil {
 		return err
 	}
@@ -2482,6 +2484,11 @@ func resourceComputeRegionBackendServiceUpdate(d *schema.ResourceData, meta inte
 			return err
 		} else if v, ok := d.GetOkExists("security_policy"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, securityPolicyProp)) {
 			obj["securityPolicy"] = securityPolicyProp
+		}
+
+		obj, err = resourceComputeRegionBackendServiceUpdateEncoder(d, meta, obj)
+		if err != nil {
+			return err
 		}
 
 		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/backendServices/{{name}}/setSecurityPolicy")
@@ -6306,6 +6313,19 @@ func resourceComputeRegionBackendServiceEncoder(d *schema.ResourceData, meta int
 	}
 
 	obj["backends"] = backends
+	return obj, nil
+}
+
+func resourceComputeRegionBackendServiceUpdateEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
+	// update_encoder replaces encoder on Update, so apply the shared encoder first.
+	obj, err := resourceComputeRegionBackendServiceEncoder(d, meta, obj)
+	if err != nil {
+		return nil, err
+	}
+
+	// params (e.g. resourceManagerTags) can only be set on create. Since updates are sent as a
+	// full PUT, it must be removed here or the API rejects the request.
+	delete(obj, "params")
 	return obj, nil
 }
 
