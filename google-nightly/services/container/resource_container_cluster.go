@@ -2918,6 +2918,22 @@ func ResourceContainerCluster() *schema.Resource {
 					},
 				},
 			},
+			"schedule_upgrade_config": {
+				Type:        schema.TypeList,
+				Optional:    true,
+				Computed:    true,
+				MaxItems:    1,
+				Description: `Configuration for scheduled upgrades on the cluster.`,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"enabled": {
+							Type:        schema.TypeBool,
+							Required:    true,
+							Description: `Whether scheduled upgrades are enabled.`,
+						},
+					},
+				},
+			},
 			"enterprise_config": {
 				Type:        schema.TypeList,
 				Optional:    true,
@@ -3451,6 +3467,9 @@ func resourceContainerClusterCreate(d *schema.ResourceData, meta interface{}) er
 
 	if v, ok := d.GetOk("workload_alts_config"); ok {
 		cluster.WorkloadAltsConfig = expandWorkloadAltsConfig(v)
+	}
+	if v, ok := d.GetOk("schedule_upgrade_config"); ok {
+		cluster.ScheduleUpgradeConfig = expandScheduleUpgradeConfig(v)
 	}
 
 	req := &container.CreateClusterRequest{
@@ -4029,6 +4048,10 @@ func resourceContainerClusterRead(d *schema.ResourceData, meta interface{}) erro
 	}
 
 	if err := d.Set("workload_alts_config", flattenWorkloadAltsConfig(cluster.WorkloadAltsConfig)); err != nil {
+		return err
+	}
+
+	if err := d.Set("schedule_upgrade_config", flattenScheduleUpgradeConfig(cluster.ScheduleUpgradeConfig)); err != nil {
 		return err
 	}
 
@@ -5591,6 +5614,27 @@ func resourceContainerClusterUpdate(d *schema.ResourceData, meta interface{}) er
 		}
 
 		log.Printf("[INFO] GKE cluster %s's WorkloadALTSConfig has been updated", d.Id())
+	}
+	if d.HasChange("schedule_upgrade_config") {
+		suc := expandScheduleUpgradeConfig(d.Get("schedule_upgrade_config"))
+		if suc == nil {
+			suc = &container.ScheduleUpgradeConfig{
+				Enabled:         false,
+				ForceSendFields: []string{"Enabled"},
+			}
+		}
+		req := &container.UpdateClusterRequest{
+			Update: &container.ClusterUpdate{
+				DesiredScheduleUpgradeConfig: suc,
+			},
+		}
+
+		updateF := updateFunc(req, "updating GKE cluster ScheduleUpgradeConfig")
+		if err := updateF(); err != nil {
+			return err
+		}
+
+		log.Printf("[INFO] GKE cluster %s's ScheduleUpgradeConfig has been updated", d.Id())
 	}
 
 	if d.HasChange("user_managed_keys_config") {
@@ -7470,6 +7514,19 @@ func expandWorkloadAltsConfig(configured interface{}) *container.WorkloadALTSCon
 	}
 }
 
+func expandScheduleUpgradeConfig(configured interface{}) *container.ScheduleUpgradeConfig {
+	l := configured.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil
+	}
+
+	config := l[0].(map[string]interface{})
+	return &container.ScheduleUpgradeConfig{
+		Enabled:         config["enabled"].(bool),
+		ForceSendFields: []string{"Enabled"},
+	}
+}
+
 func expandRBACBindingConfig(configured interface{}) *container.RBACBindingConfig {
 	l := configured.([]interface{})
 	if len(l) == 0 || l[0] == nil {
@@ -8684,6 +8741,17 @@ func flattenWorkloadAltsConfig(c *container.WorkloadALTSConfig) []map[string]int
 	return []map[string]interface{}{
 		{
 			"enable_alts": c.EnableAlts,
+		},
+	}
+}
+
+func flattenScheduleUpgradeConfig(c *container.ScheduleUpgradeConfig) []map[string]interface{} {
+	if c == nil {
+		return nil
+	}
+	return []map[string]interface{}{
+		{
+			"enabled": c.Enabled,
 		},
 	}
 }

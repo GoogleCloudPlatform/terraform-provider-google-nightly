@@ -40,6 +40,10 @@ func init() {
 		ListAndAction:  listAndActionComputeRegionSecurityPolicy,
 		DeleteFunction: testSweepComputeRegionSecurityPolicy,
 	}
+	// Add dependencies
+	s.Dependencies = []string{
+		"ComputeNetworkEdgeSecurityService",
+	}
 
 	// Register the sweeper
 	sweeper.AddTestSweepers(s)
@@ -59,7 +63,7 @@ func listAndActionComputeRegionSecurityPolicy(action sweeper.ResourceAction) err
 	t := &testing.T{}
 	billingId := envvar.GetTestBillingAccountFromEnv(t)
 	// Build URL substitution maps individually to ensure proper formatting
-	intermediateValues := make([]map[string]string, 7)
+	intermediateValues := make([]map[string]string, 8)
 	intermediateValues[0] = map[string]string{}
 	intermediateValues[0]["region"] = "us-south1"
 	intermediateValues[1] = map[string]string{}
@@ -73,7 +77,9 @@ func listAndActionComputeRegionSecurityPolicy(action sweeper.ResourceAction) err
 	intermediateValues[5] = map[string]string{}
 	intermediateValues[5]["region"] = "southamerica-west1"
 	intermediateValues[6] = map[string]string{}
-	intermediateValues[6]["region"] = "us-central1"
+	intermediateValues[6]["region"] = "southamerica-east1"
+	intermediateValues[7] = map[string]string{}
+	intermediateValues[7]["region"] = "us-central1"
 
 	// Create configs from intermediate values
 	for _, values := range intermediateValues {
