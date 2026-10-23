@@ -55,6 +55,24 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
+import "os"
+
+const DefaultHaControllerAPIVersion = "2026-10-01-preview"
+const HaControllerAPIVersionEnvVar = "GOOGLE_COMPUTE_HA_CONTROLLER_API_VERSION"
+
+func HaControllerAPIVersion() string {
+	if v := os.Getenv(HaControllerAPIVersionEnvVar); v != "" {
+		return v
+	}
+	return DefaultHaControllerAPIVersion
+}
+
+func HaControllerPreviewURL(rawURL string) (string, error) {
+	u := strings.Replace(rawURL, "/compute/alpha/", "/compute/v1/", 1)
+	u = strings.Replace(u, "/compute/beta/", "/compute/v1/", 1)
+	return transport_tpg.AddQueryParams(u, map[string]string{"$apiVersion": HaControllerAPIVersion()})
+}
+
 var (
 	_ = bytes.Clone
 	_ = context.WithCancel
@@ -466,6 +484,11 @@ func resourceComputeHaControllerCreate(d *schema.ResourceData, meta interface{})
 	}
 
 	headers := make(http.Header)
+	url, err = HaControllerPreviewURL(url)
+	if err != nil {
+		return err
+	}
+	headers.Set("X-Goog-Api-Version", HaControllerAPIVersion())
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 		Config:    config,
 		Method:    "POST",
@@ -549,6 +572,11 @@ func resourceComputeHaControllerRead(d *schema.ResourceData, meta interface{}) e
 	}
 
 	headers := make(http.Header)
+	url, err = HaControllerPreviewURL(url)
+	if err != nil {
+		return err
+	}
+	headers.Set("X-Goog-Api-Version", HaControllerAPIVersion())
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 		Config:    config,
 		Method:    "GET",
@@ -651,6 +679,11 @@ func resourceComputeHaControllerDelete(d *schema.ResourceData, meta interface{})
 	}
 
 	headers := make(http.Header)
+	url, err = HaControllerPreviewURL(url)
+	if err != nil {
+		return err
+	}
+	headers.Set("X-Goog-Api-Version", HaControllerAPIVersion())
 
 	log.Printf("[DEBUG] Deleting HaController %q", d.Id())
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{

@@ -737,3 +737,24 @@ func IsAgentConnectivityTemplateInUse(err error) (bool, string) {
 	}
 	return false, ""
 }
+
+// Retry when a referenced subnetwork is not ready yet during an async LRO.
+// This is a post-operation error so it uses tpgresource.CommonOpError instead of googleapi.Error.
+func IsSubnetworkNotReadyLROError(err error) (bool, string) {
+	if err != nil && strings.Contains(err.Error(), "subnetworks") && strings.Contains(err.Error(), "is not ready") {
+		return true, "Subnetwork is not ready"
+	}
+	return false, ""
+}
+
+// Dataproc returns a 400 error with reason "badRequest" (instead of GCE's "resourceNotReady")
+// when a referenced GCE resource such as a subnetwork or network is not yet ready.
+func DataprocResourceNotReady(err error) (bool, string) {
+	if gerr, ok := err.(*googleapi.Error); ok {
+		if gerr.Code == 400 && strings.Contains(gerr.Body, "The resource") && strings.Contains(gerr.Body, "is not ready") {
+			log.Printf("[DEBUG] Dismissed error as a retryable operation: %s", err)
+			return true, "Waiting for Dataproc resource dependency to be ready"
+		}
+	}
+	return false, ""
+}

@@ -590,6 +590,10 @@ func testAccCheckComputeHaControllerDestroyProducer(t *testing.T) func(s *terraf
 			if err != nil {
 				return err
 			}
+			url, err = compute.HaControllerPreviewURL(url)
+			if err != nil {
+				return err
+			}
 
 			billingProject := ""
 

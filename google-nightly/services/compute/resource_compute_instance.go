@@ -1995,29 +1995,29 @@ func getInstanceFromZones(config *transport_tpg.Config, d *schema.ResourceData, 
 	log.Printf("[DEBUG] Checking instance existence concurrently for %s across zones: %v", name, zones)
 
 	for i, z := range zones {
+		url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("{{ComputeBasePath}}projects/{{project}}/zones/%s/instances/{{name}}", z))
+		if err != nil {
+			results[i] = instanceFetchResult{zone: z, instance: nil, err: err}
+			continue
+		}
+		url, err = transport_tpg.AddQueryParams(url, map[string]string{"view": "FULL"})
+		if err != nil {
+			results[i] = instanceFetchResult{zone: z, instance: nil, err: err}
+			continue
+		}
 		wg.Add(1)
-		go func(index int, zoneName string) {
+		go func(index int, zoneName, rawURL string) {
 			defer wg.Done()
 			log.Printf("[DEBUG] Querying instance %s in zone %s", name, zoneName)
-			url, err := tpgresource.ReplaceVars(d, config, fmt.Sprintf("{{ComputeBasePath}}projects/{{project}}/zones/%s/instances/{{name}}", zoneName))
-			if err != nil {
-				results[index] = instanceFetchResult{zone: zoneName, instance: nil, err: err}
-				return
-			}
-			url, err = transport_tpg.AddQueryParams(url, map[string]string{"view": "FULL"})
-			if err != nil {
-				results[index] = instanceFetchResult{zone: zoneName, instance: nil, err: err}
-				return
-			}
 			res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 				Config:    config,
 				Method:    "GET",
 				Project:   project,
-				RawURL:    url,
+				RawURL:    rawURL,
 				UserAgent: userAgent,
 			})
 			results[index] = instanceFetchResult{zone: zoneName, instance: res, err: err}
-		}(i, z)
+		}(i, z, url)
 	}
 	wg.Wait()
 

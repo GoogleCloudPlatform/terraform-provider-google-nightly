@@ -58,8 +58,11 @@ func TestAccComputeHaController_failoverThenDelete_noDiff(t *testing.T) {
 				PreConfig: func() {
 					config := acctest.GoogleProviderConfig(t)
 
-					url := fmt.Sprintf("%sprojects/%s/regions/%s/haControllers/%s",
-						transport_tpg.BaseUrl(tpgcompute.Product, config), config.Project, region, hacName)
+					url, err := tpgcompute.HaControllerPreviewURL(fmt.Sprintf("%sprojects/%s/regions/%s/haControllers/%s",
+						transport_tpg.BaseUrl(tpgcompute.Product, config), config.Project, region, hacName))
+					if err != nil {
+						t.Fatalf("Failed to build HaController URL: %v", err)
+					}
 
 					res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 						Config:    config,
@@ -90,8 +93,11 @@ func TestAccComputeHaController_failoverThenDelete_noDiff(t *testing.T) {
 						"failoverToZone": targetZone,
 					}
 
-					failoverURL := fmt.Sprintf("%sprojects/%s/regions/%s/haControllers/%s/failover",
-						transport_tpg.BaseUrl(tpgcompute.Product, config), config.Project, region, hacName)
+					failoverURL, err := tpgcompute.HaControllerPreviewURL(fmt.Sprintf("%sprojects/%s/regions/%s/haControllers/%s/failover",
+						transport_tpg.BaseUrl(tpgcompute.Product, config), config.Project, region, hacName))
+					if err != nil {
+						t.Fatalf("Failed to build HaController failover URL: %v", err)
+					}
 
 					op, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 						Config:    config,
