@@ -605,6 +605,13 @@ EOF
       code = "..."
     }
   }
+
+  message_transforms {
+    compression {
+      compression_algorithm = "ZLIB"
+      compression_mode      = "COMPRESS"
+    }
+  }
 }
 `, context)
 }
@@ -734,7 +741,7 @@ resource "google_pubsub_topic" "example" {
 
   message_transforms {
     ai_inference {
-      endpoint = "projects/%{project_name}/locations/us-central1/publishers/google/models/gemini-2.5-flash"
+      endpoint = "projects/%{project_name}/locations/global/publishers/google/models/gemini-3.5-flash"
       unstructured_inference {
         parameters = {
           "max_tokens" = 25000
