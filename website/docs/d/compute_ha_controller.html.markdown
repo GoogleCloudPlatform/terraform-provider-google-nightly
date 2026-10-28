@@ -29,7 +29,7 @@ Get information about a Compute Engine HaController.
 
 ```hcl
 data "google_compute_ha_controller" "default" {
-  name = google_compute_ha_controller.default.name
+  name = google_compute_ha_controller.ha_controller.name
 }
 ```
 

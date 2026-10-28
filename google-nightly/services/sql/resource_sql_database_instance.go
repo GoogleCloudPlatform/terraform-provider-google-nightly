@@ -1270,6 +1270,13 @@ API (for read pools, effective_availability_type may differ from availability_ty
 				Description:      `The MySQL, PostgreSQL or SQL Server version to use. Supported values include MYSQL_5_6, MYSQL_5_7, MYSQL_8_0, MYSQL_8_4, POSTGRES_9_6, POSTGRES_10, POSTGRES_11, POSTGRES_12, POSTGRES_13, POSTGRES_14, POSTGRES_15, POSTGRES_16, POSTGRES_17, POSTGRES_18, SQLSERVER_2022_STANDARD, SQLSERVER_2022_ENTERPRISE, SQLSERVER_2022_EXPRESS, SQLSERVER_2022_WEB, SQLSERVER_2025_STANDARD, SQLSERVER_2025_ENTERPRISE, SQLSERVER_2025_EXPRESS, SQLSERVER_2025_WEB. Database Version Policies includes an up-to-date reference of supported versions.`,
 				DiffSuppressFunc: databaseVersionDiffSuppress,
 			},
+			"database_center_integration": {
+				Type:             schema.TypeString,
+				Optional:         true,
+				DiffSuppressFunc: databaseCenterIntegrationDiffSuppress,
+				ValidateFunc:     validation.StringInSlice([]string{"ENABLED", "DISABLED"}, false),
+				Description:      `The Database Center integration control.`,
+			},
 			"switch_transaction_logs_to_cloud_storage_enabled": {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -1930,11 +1937,12 @@ func resourceSqlDatabaseInstanceCreate(d *schema.ResourceData, meta interface{})
 	databaseVersion := d.Get("database_version").(string)
 
 	instance := &sqladmin.DatabaseInstance{
-		Name:                 name,
-		Region:               region,
-		DatabaseVersion:      databaseVersion,
-		MasterInstanceName:   d.Get("master_instance_name").(string),
-		ReplicaConfiguration: expandReplicaConfiguration(d.Get("replica_configuration").([]interface{})),
+		Name:                      name,
+		Region:                    region,
+		DatabaseVersion:           databaseVersion,
+		DatabaseCenterIntegration: d.Get("database_center_integration").(string),
+		MasterInstanceName:        d.Get("master_instance_name").(string),
+		ReplicaConfiguration:      expandReplicaConfiguration(d.Get("replica_configuration").([]interface{})),
 	}
 
 	if d.Get("enforce_new_sql_network_architecture").(bool) {
@@ -2117,7 +2125,8 @@ func resourceSqlDatabaseInstanceCreate(d *schema.ResourceData, meta interface{})
 	// If we've created an instance as a clone or pitr, we need to update it to set any user defined settings
 	if len(s.([]interface{})) != 0 && (cloneContext != nil || pointInTimeRestoreContext != nil) && desiredSettings != nil {
 		instanceUpdate := &sqladmin.DatabaseInstance{
-			Settings: desiredSettings,
+			Settings:                  desiredSettings,
+			DatabaseCenterIntegration: d.Get("database_center_integration").(string),
 		}
 		_settings := s.([]interface{})[0].(map[string]interface{})
 		instanceUpdate.Settings.SettingsVersion = int64(_settings["version"].(int))
@@ -2160,6 +2169,7 @@ func resourceSqlDatabaseInstanceCreate(d *schema.ResourceData, meta interface{})
 			return err
 		}
 	}
+
 	if d.HasChange("blue_green_deployment") {
 		if err := handleBlueGreenDeploymentUpdate(d, config, project, region, d.Timeout(schema.TimeoutCreate), userAgent); err != nil {
 			return err
@@ -2723,6 +2733,9 @@ func resourceSqlDatabaseInstanceRead(d *schema.ResourceData, meta interface{}) e
 	if err := d.Set("database_version", instance.DatabaseVersion); err != nil {
 		return fmt.Errorf("Error setting database_version: %s", err)
 	}
+	if err := d.Set("database_center_integration", instance.DatabaseCenterIntegration); err != nil {
+		return fmt.Errorf("Error setting database_center_integration: %s", err)
+	}
 	if err := d.Set("connection_name", instance.ConnectionName); err != nil {
 		return fmt.Errorf("Error setting connection_name: %s", err)
 	}
@@ -2880,6 +2893,7 @@ func resourceSqlDatabaseInstanceUpdate(d *schema.ResourceData, meta interface{})
 			}
 		}
 	}
+
 	if !isBlueGreenSwitchover(d) {
 		var op *sqladmin.Operation
 		var instance *sqladmin.DatabaseInstance
@@ -3158,7 +3172,8 @@ func resourceSqlDatabaseInstanceUpdate(d *schema.ResourceData, meta interface{})
 
 		desiredSetting := d.Get("settings")
 		instance = &sqladmin.DatabaseInstance{
-			Settings: expandSqlDatabaseInstanceSettings(desiredSetting.([]interface{}), databaseVersion),
+			Settings:                  expandSqlDatabaseInstanceSettings(desiredSetting.([]interface{}), databaseVersion),
+			DatabaseCenterIntegration: d.Get("database_center_integration").(string),
 		}
 
 		// A disk_size decrease is a storage shrink, which is carried out by the dedicated
@@ -3429,6 +3444,15 @@ func serverCertificateRotationModeDiffSuppress(_, oldMode, newMode string, _ *sc
 	return false
 }
 
+func databaseCenterIntegrationDiffSuppress(_, old, new string, d *schema.ResourceData) bool {
+	// Replicas inherit database_center_integration from their primary instance.
+	// When unset in configuration on a replica, suppress the diff against the inherited state.
+	if !sqlDatabaseIsMaster(d) && new == "" {
+		return true
+	}
+	return false
+}
+
 func parseDenyMaintenancePeriodDate(date string) (int, int, int, bool) {
 	date = strings.TrimPrefix(date, "0-")
 	parts := strings.Split(date, "-")
@@ -3489,6 +3513,7 @@ func resourceSqlDatabaseInstanceDelete(d *schema.ResourceData, meta interface{})
 	if d.Get("deletion_protection").(bool) {
 		return fmt.Errorf("Error, failed to delete instance because deletion_protection is set to true. Set it to false to proceed with instance deletion")
 	}
+
 	if bgdStateMap := getExistingBgdStateMap(d); bgdStateMap != nil {
 		deploymentName, _ := bgdStateMap["deployment_name"].(string)
 		deleteOldSourceCfg, _ := bgdStateMap["delete_old_source_on_destroy"].(bool)
@@ -4381,6 +4406,7 @@ func normalizeDRReplicaName(drReplicaName, project string) string {
 	}
 	return fmt.Sprintf("%s:%s", project, drReplicaName)
 }
+
 func blueGreenDeploymentCustomizeDiff(_ context.Context, d *schema.ResourceDiff, meta interface{}) error {
 	if d.Id() != "" && d.HasChange("database_version") {
 		if _, n := d.GetChange("blue_green_deployment"); len(n.([]interface{})) > 0 && n.([]interface{})[0] != nil {
