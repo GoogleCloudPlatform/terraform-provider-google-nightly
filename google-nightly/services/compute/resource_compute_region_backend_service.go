@@ -1469,16 +1469,14 @@ subjectAltNames.`,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"dns_name": {
-										Type:         schema.TypeString,
-										Optional:     true,
-										Description:  `The SAN specified as a DNS Name.`,
-										ExactlyOneOf: []string{},
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: `The SAN specified as a DNS Name.`,
 									},
 									"uniform_resource_identifier": {
-										Type:         schema.TypeString,
-										Optional:     true,
-										Description:  `The SAN specified as a URI.`,
-										ExactlyOneOf: []string{},
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: `The SAN specified as a URI.`,
 									},
 								},
 							},
@@ -2027,7 +2025,7 @@ func resourceComputeRegionBackendServiceCreate(d *schema.ResourceData, meta inte
 		}
 		obj["security_policy"] = securityPolicyProp
 
-		url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/regions/{{region}}/backendServices/{{name}}/setSecurityPolicy")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/backendServices/{{name}}/setSecurityPolicy")
 		if err != nil {
 			return err
 		}

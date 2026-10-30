@@ -432,7 +432,7 @@ func TestAccDataprocMetastoreService_dataprocMetastoreServicePrivateServiceConne
 				ResourceName:            "google_dataproc_metastore_service.default",
 				ImportState:             true,
 				ImportStateVerify:       true,
-				ImportStateVerifyIgnore: []string{"labels", "location", "service_id", "tags", "terraform_labels"},
+				ImportStateVerifyIgnore: []string{"deletion_policy", "labels", "location", "service_id", "tags", "terraform_labels"},
 			},
 			{
 				ResourceName:       "google_dataproc_metastore_service.default",
@@ -460,9 +460,10 @@ resource "google_compute_subnetwork" "subnet" {
 }
 
 resource "google_dataproc_metastore_service" "default" {
-  service_id = "%{metastore_service_name}"
-  location   = "us-central1"
-  tier       = "DEVELOPER"
+  service_id      = "%{metastore_service_name}"
+  location        = "us-central1"
+  tier            = "DEVELOPER"
+  deletion_policy = "FORCE"
 
   hive_metastore_config {
     version = "3.1.2"
@@ -536,7 +537,9 @@ func TestAccDataprocMetastoreService_dataprocMetastoreServiceDpms2Example(t *tes
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
+		"instance_size":          "EXTRA_SMALL",
 		"metastore_service_name": "tf-test-ms-dpms2" + randomSuffix,
+		"scaling_factor":         nil,
 		"random_suffix":          randomSuffix,
 	}
 
@@ -579,7 +582,8 @@ resource "google_dataproc_metastore_service" "dpms2" {
   }
 
   scaling_config {
-    instance_size = "EXTRA_SMALL"
+    instance_size  = "%{instance_size}"
+    scaling_factor = "%{scaling_factor}"
   }
 }
 `, context)
@@ -591,7 +595,9 @@ func TestAccDataprocMetastoreService_dataprocMetastoreServiceDpms2ScalingFactorE
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
+		"instance_size":          nil,
 		"metastore_service_name": "tf-test-ms-dpms2sf" + randomSuffix,
+		"scaling_factor":         2,
 		"random_suffix":          randomSuffix,
 	}
 
@@ -634,7 +640,8 @@ resource "google_dataproc_metastore_service" "dpms2_scaling_factor" {
   }
 
   scaling_config {
-    scaling_factor = "2"
+    instance_size  = "%{instance_size}"
+    scaling_factor = "%{scaling_factor}"
   }
 }
 `, context)
@@ -646,7 +653,9 @@ func TestAccDataprocMetastoreService_dataprocMetastoreServiceDpms2ScalingFactorL
 	randomSuffix := acctest.RandString(t, 10)
 
 	context := map[string]interface{}{
+		"instance_size":          nil,
 		"metastore_service_name": "tf-test-ms-dpms2sflt1" + randomSuffix,
+		"scaling_factor":         "0.1",
 		"random_suffix":          randomSuffix,
 	}
 
@@ -689,7 +698,8 @@ resource "google_dataproc_metastore_service" "dpms2_scaling_factor_lt1" {
   }
 
   scaling_config {
-    scaling_factor = "0.1"
+    instance_size  = "%{instance_size}"
+    scaling_factor = "%{scaling_factor}"
   }
 }
 `, context)

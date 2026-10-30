@@ -601,7 +601,6 @@ func ResourceVertexAIReasoningEngine() *schema.Resource {
 																		},
 																	},
 																},
-																ExactlyOneOf: []string{},
 															},
 														},
 													},
@@ -742,10 +741,9 @@ minute-level granularity.`,
 										Elem: &schema.Resource{
 											Schema: map[string]*schema.Schema{
 												"default_ttl": {
-													Type:         schema.TypeString,
-													Optional:     true,
-													Description:  `The default TTL duration of the memories in the Memory Bank.`,
-													ExactlyOneOf: []string{},
+													Type:        schema.TypeString,
+													Optional:    true,
+													Description: `The default TTL duration of the memories in the Memory Bank.`,
 												},
 												"granular_ttl_config": {
 													Type:        schema.TypeList,
@@ -6546,7 +6544,7 @@ func expandVertexAIReasoningEngineTrafficConfigTrafficSplitManualTargetsRuntimeR
 
 	// Keyword resolution for LATEST or PREVIOUS by querying live API runtimeRevisions
 	if s == "LATEST" || s == "PREVIOUS" {
-		url, err := tpgresource.ReplaceVars(d, config, "{{VertexAIBasePath}}projects/{{project}}/locations/{{region}}/reasoningEngines/{{name}}/runtimeRevisions")
+		url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{region}}/reasoningEngines/{{name}}/runtimeRevisions")
 		if err != nil || strings.Contains(url, "{{name}}") {
 			return nil, fmt.Errorf("cannot resolve keyword %q: reasoning engine resource name is not yet available (deploy using 'traffic_split_always_latest {}' first)", s)
 		}

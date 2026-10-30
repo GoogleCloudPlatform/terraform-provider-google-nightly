@@ -989,7 +989,6 @@ by a locally installed custom policy implementation.`,
 									},
 								},
 							},
-							ExactlyOneOf: []string{},
 						},
 						"policy": {
 							Type:        schema.TypeList,
@@ -1040,7 +1039,6 @@ The possible values are:
 									},
 								},
 							},
-							ExactlyOneOf: []string{},
 						},
 					},
 				},
@@ -1619,16 +1617,14 @@ subjectAltNames.`,
 							Elem: &schema.Resource{
 								Schema: map[string]*schema.Schema{
 									"dns_name": {
-										Type:         schema.TypeString,
-										Optional:     true,
-										Description:  `The SAN specified as a DNS Name.`,
-										ExactlyOneOf: []string{},
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: `The SAN specified as a DNS Name.`,
 									},
 									"uniform_resource_identifier": {
-										Type:         schema.TypeString,
-										Optional:     true,
-										Description:  `The SAN specified as a URI.`,
-										ExactlyOneOf: []string{},
+										Type:        schema.TypeString,
+										Optional:    true,
+										Description: `The SAN specified as a URI.`,
 									},
 								},
 							},
@@ -2194,7 +2190,7 @@ func resourceComputeBackendServiceCreate(d *schema.ResourceData, meta interface{
 			sBody["securityPolicy"] = link
 		}
 
-		securityPolicyPath := "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}/setSecurityPolicy?prettyPrint=false"
+		securityPolicyPath := transport_tpg.BaseUrl(Product, config) + "projects/{{project}}/global/backendServices/{{name}}/setSecurityPolicy?prettyPrint=false"
 		sUrl, err := tpgresource.ReplaceVars(d, config, securityPolicyPath)
 		if err != nil {
 			return err
@@ -2231,7 +2227,7 @@ func resourceComputeBackendServiceCreate(d *schema.ResourceData, meta interface{
 			eBody["securityPolicy"] = link
 		}
 
-		edgeSecurityPolicyPath := "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}/setEdgeSecurityPolicy?prettyPrint=false"
+		edgeSecurityPolicyPath := transport_tpg.BaseUrl(Product, config) + "projects/{{project}}/global/backendServices/{{name}}/setEdgeSecurityPolicy?prettyPrint=false"
 		eUrl, err := tpgresource.ReplaceVars(d, config, edgeSecurityPolicyPath)
 		if err != nil {
 			return err
@@ -2700,7 +2696,7 @@ func resourceComputeBackendServiceUpdate(d *schema.ResourceData, meta interface{
 			sBody["securityPolicy"] = link
 		}
 
-		securityPolicyPath := "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}/setSecurityPolicy?prettyPrint=false"
+		securityPolicyPath := transport_tpg.BaseUrl(Product, config) + "projects/{{project}}/global/backendServices/{{name}}/setSecurityPolicy?prettyPrint=false"
 		sUrl, err := tpgresource.ReplaceVars(d, config, securityPolicyPath)
 		if err != nil {
 			return err
@@ -2737,7 +2733,7 @@ func resourceComputeBackendServiceUpdate(d *schema.ResourceData, meta interface{
 			eBody["securityPolicy"] = link
 		}
 
-		edgeSecurityPolicyPath := "{{ComputeBasePath}}projects/{{project}}/global/backendServices/{{name}}/setEdgeSecurityPolicy?prettyPrint=false"
+		edgeSecurityPolicyPath := transport_tpg.BaseUrl(Product, config) + "projects/{{project}}/global/backendServices/{{name}}/setEdgeSecurityPolicy?prettyPrint=false"
 		eUrl, err := tpgresource.ReplaceVars(d, config, edgeSecurityPolicyPath)
 		if err != nil {
 			return err

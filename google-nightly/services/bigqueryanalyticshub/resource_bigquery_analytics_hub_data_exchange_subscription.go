@@ -272,16 +272,14 @@ For Data Exchange subscriptions, this map may contain multiple entries if the Da
 							Required: true,
 						},
 						"linked_dataset": {
-							Type:         schema.TypeString,
-							Computed:     true,
-							Description:  `Output only. Name of the linked dataset, e.g. projects/subscriberproject/datasets/linkedDataset`,
-							ExactlyOneOf: []string{},
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: `Output only. Name of the linked dataset, e.g. projects/subscriberproject/datasets/linkedDataset`,
 						},
 						"linked_pubsub_subscription": {
-							Type:         schema.TypeString,
-							Computed:     true,
-							Description:  `Output only. Name of the Pub/Sub subscription, e.g. projects/subscriberproject/subscriptions/subscriptions/sub_id`,
-							ExactlyOneOf: []string{},
+							Type:        schema.TypeString,
+							Computed:    true,
+							Description: `Output only. Name of the Pub/Sub subscription, e.g. projects/subscriberproject/subscriptions/subscriptions/sub_id`,
 						},
 						"listing": {
 							Type:        schema.TypeString,
@@ -539,7 +537,7 @@ func resourceBigqueryAnalyticsHubDataExchangeSubscriptionRead(d *schema.Resource
 	if shouldTriggerRefreshAPI {
 		log.Printf("[DEBUG] Attempting to refresh BigQuery Analytics Hub Subscription %q (ID: %s)", d.Get("name").(string), d.Id())
 
-		refreshUrl, err := tpgresource.ReplaceVars(d, config, "{{BigqueryAnalyticsHubBasePath}}projects/{{project}}/locations/{{location}}/subscriptions/{{subscription_id}}:refresh")
+		refreshUrl, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/subscriptions/{{subscription_id}}:refresh")
 		if err != nil {
 			return fmt.Errorf("Error constructing refresh URL for DataExchangeSubscription %q: %s", d.Id(), err)
 		}
