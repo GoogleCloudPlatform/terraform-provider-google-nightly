@@ -46,7 +46,7 @@ The following arguments are supported:
 
 
 * `region` -
-  (Required)
+  (Optional)
   The region where the HA Controller will be created.
 
 * `project` - (Optional) The ID of the project in which the resource belongs.

@@ -653,10 +653,6 @@ The following arguments are supported:
   A set of exactly two distinct zone configurations.
   Structure is [documented below](#nested_zone_configuration).
 
-* `region` -
-  (Required)
-  The region where the HA Controller will be created.
-
 
 * `description` -
   (Optional)
@@ -680,6 +676,10 @@ The following arguments are supported:
   The full URL of the backend service.
   Currently, you can specify only one backend service,
   and it must be an L4 Internal Load Balancer (ILB).
+
+* `region` -
+  (Optional)
+  The region where the HA Controller will be created.
 
 * `project` - (Optional) The ID of the project in which the resource belongs.
     If it is not provided, the provider project is used.
@@ -850,7 +850,7 @@ In Terraform v1.12.0 and later, use an [`identity` block](https://developer.hash
 import {
   identity = {
     name = "<-required value->"
-    region = "<-required value->"
+    region = "<-optional value->"
     project = "<-optional value->"
   }
   to = google_compute_ha_controller.default

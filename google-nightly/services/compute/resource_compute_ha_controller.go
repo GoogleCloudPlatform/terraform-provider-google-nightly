@@ -146,7 +146,7 @@ func ResourceComputeHaController() *schema.Resource {
 					},
 					"region": {
 						Type:              schema.TypeString,
-						RequiredForImport: true,
+						OptionalForImport: true,
 					},
 					"project": {
 						Type:              schema.TypeString,
@@ -174,14 +174,6 @@ The instance must exist in one of the two zones specified in the zone_configurat
 				ForceNew: true,
 				Description: `The name for the resource.
 The name must be 1-63 characters long and comply with RFC1035.`,
-			},
-			"region": {
-				Type:             schema.TypeString,
-				Computed:         true,
-				Optional:         true,
-				ForceNew:         true,
-				DiffSuppressFunc: tpgresource.CompareSelfLinkOrResourceName,
-				Description:      `The region where the HA Controller will be created.`,
 			},
 			"zone_configuration": {
 				Type:        schema.TypeSet,
@@ -276,6 +268,14 @@ Possible values:
 						},
 					},
 				},
+			},
+			"region": {
+				Type:             schema.TypeString,
+				Computed:         true,
+				Optional:         true,
+				ForceNew:         true,
+				DiffSuppressFunc: tpgresource.CompareSelfLinkOrResourceName,
+				Description:      `The region where the HA Controller will be created.`,
 			},
 			"project": {
 				Type:     schema.TypeString,
