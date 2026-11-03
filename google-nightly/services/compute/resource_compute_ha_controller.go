@@ -127,11 +127,13 @@ func ResourceComputeHaController() *schema.Resource {
 
 		Timeouts: &schema.ResourceTimeout{
 			Create: schema.DefaultTimeout(20 * time.Minute),
+			Update: schema.DefaultTimeout(20 * time.Minute),
 			Delete: schema.DefaultTimeout(20 * time.Minute),
 		},
 
 		CustomizeDiff: customdiff.All(
 			validateComputeHaControllerZoneConfiguration,
+			validateComputeHaControllerDeletionPolicy,
 			tpgresource.DefaultProviderProject,
 			tpgresource.DefaultProviderDeletionPolicy("DELETE"),
 		),
@@ -193,22 +195,23 @@ The name must be 1-63 characters long and comply with RFC1035.`,
 				Description: `The full URL of the backend service.
 Currently, you can specify only one backend service,
 and it must be an L4 Internal Load Balancer (ILB).`,
+				MaxItems: 1,
 				Elem: &schema.Schema{
 					Type:             schema.TypeString,
-					DiffSuppressFunc: tpgresource.CompareResourceNames,
+					DiffSuppressFunc: tpgresource.CompareSelfLinkRelativePaths,
 				},
+				ConflictsWith: []string{"networking_auto_configuration"},
 			},
 			"description": {
 				Type:     schema.TypeString,
 				Optional: true,
-				ForceNew: true,
 				Description: `A description of this resource.
 Maximum length of 2048 characters.`,
 			},
 			"failover_initiation": {
 				Type:         schema.TypeString,
+				Computed:     true,
 				Optional:     true,
-				ForceNew:     true,
 				ValidateFunc: verify.ValidateEnum([]string{"AUTOMATIC", "MANUAL_ONLY", ""}),
 				Description: `Specifies how to initiate failover. Valid values are the following:
 * 'AUTOMATIC': Automatically detects zonal outages and performs failover.
@@ -243,10 +246,11 @@ then Terraform automatically allocates the IP address based on
 the stack_type.`,
 									},
 									"ipv6_address": {
-										Type:     schema.TypeString,
-										Computed: true,
-										Optional: true,
-										ForceNew: true,
+										Type:             schema.TypeString,
+										Computed:         true,
+										Optional:         true,
+										ForceNew:         true,
+										DiffSuppressFunc: autoNetIPv6DiffSuppress,
 										Description: `The IPv6 address. If you don't provide this value,
 then Terraform automatically allocates the IPv6 address based on
 the stack_type.`,
@@ -268,6 +272,7 @@ Possible values:
 						},
 					},
 				},
+				ConflictsWith: []string{"backend_services"},
 			},
 			"region": {
 				Type:             schema.TypeString,
@@ -308,10 +313,11 @@ func computeHaControllerZoneConfigurationSchema() *schema.Resource {
 	return &schema.Resource{
 		Schema: map[string]*schema.Schema{
 			"zone": {
-				Type:        schema.TypeString,
-				Required:    true,
-				ForceNew:    true,
-				Description: `The name of the zone. The zone must be unique for each block.`,
+				Type:             schema.TypeString,
+				Required:         true,
+				ForceNew:         true,
+				DiffSuppressFunc: tpgresource.CompareSelfLinkOrResourceName,
+				Description:      `The name of the zone. The zone must be unique for each block.`,
 			},
 			"instance_network_interface": {
 				Type:     schema.TypeList,
@@ -355,41 +361,14 @@ of the network interface.`,
 				},
 			},
 			"node_affinities": {
-				Type:     schema.TypeList,
+				Type:     schema.TypeSet,
 				Optional: true,
 				ForceNew: true,
 				Description: `Specifies node affinities or anti-affinities to determine
 which sole-tenant nodes your instances and managed instance groups (MIGs) use
 as host systems.`,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"key": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							ForceNew:    true,
-							Description: `The key for the node affinity label.`,
-						},
-						"operator": {
-							Type:         schema.TypeString,
-							Optional:     true,
-							ForceNew:     true,
-							ValidateFunc: verify.ValidateEnum([]string{"IN", "NOT_IN", ""}),
-							Description: `Defines the operation of node selection.
-Possible values:
-- 'IN': Requires Compute Engine to seek for matched nodes.
-- 'NOT_IN': Requires Compute Engine to avoid certain nodes. Possible values: ["IN", "NOT_IN"]`,
-						},
-						"values": {
-							Type:        schema.TypeList,
-							Optional:    true,
-							ForceNew:    true,
-							Description: `Corresponds to the label values of Node resource.`,
-							Elem: &schema.Schema{
-								Type: schema.TypeString,
-							},
-						},
-					},
-				},
+				Elem: computeHaControllerZoneConfigurationZoneConfigurationNodeAffinitiesSchema(),
+				// Default schema.HashSchema is used.
 			},
 			"reservation_affinity": {
 				Type:        schema.TypeList,
@@ -449,6 +428,39 @@ Limited to a single value.`,
 	}
 }
 
+func computeHaControllerZoneConfigurationZoneConfigurationNodeAffinitiesSchema() *schema.Resource {
+	return &schema.Resource{
+		Schema: map[string]*schema.Schema{
+			"key": {
+				Type:        schema.TypeString,
+				Required:    true,
+				ForceNew:    true,
+				Description: `The key for the node affinity label.`,
+			},
+			"operator": {
+				Type:         schema.TypeString,
+				Required:     true,
+				ForceNew:     true,
+				ValidateFunc: verify.ValidateEnum([]string{"IN", "NOT_IN"}),
+				Description: `Defines the operation of node selection.
+Possible values:
+- 'IN': Requires Compute Engine to seek for matched nodes.
+- 'NOT_IN': Requires Compute Engine to avoid certain nodes. Possible values: ["IN", "NOT_IN"]`,
+			},
+			"values": {
+				Type:        schema.TypeSet,
+				Required:    true,
+				ForceNew:    true,
+				Description: `Corresponds to the label values of Node resource.`,
+				Elem: &schema.Schema{
+					Type: schema.TypeString,
+				},
+				Set: schema.HashString,
+			},
+		},
+	}
+}
+
 func resourceComputeHaControllerCreate(d *schema.ResourceData, meta interface{}) error {
 	config := meta.(*transport_tpg.Config)
 	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
@@ -466,7 +478,7 @@ func resourceComputeHaControllerCreate(d *schema.ResourceData, meta interface{})
 	descriptionProp, err := expandComputeHaControllerDescription(d.Get("description"), d, config)
 	if err != nil {
 		return err
-	} else if v, ok := d.GetOkExists("description"); !tpgresource.IsEmptyValue(reflect.ValueOf(descriptionProp)) && (ok || !reflect.DeepEqual(v, descriptionProp)) {
+	} else if v, ok := d.GetOkExists("description"); ok || !reflect.DeepEqual(v, descriptionProp) {
 		obj["description"] = descriptionProp
 	}
 	instanceNameProp, err := expandComputeHaControllerInstanceName(d.Get("instance_name"), d, config)
@@ -683,7 +695,134 @@ func resourceComputeHaControllerRead(d *schema.ResourceData, meta interface{}) e
 }
 
 func resourceComputeHaControllerUpdate(d *schema.ResourceData, meta interface{}) error {
-	// Only the root field "deletion_policy", "labels", "terraform_labels", and virtual fields are mutable
+	clientSideFields := map[string]bool{"deletion_policy": true}
+	clientSideOnly := true
+	for field := range ResourceComputeHaController().Schema {
+		if d.HasChange(field) && !clientSideFields[field] {
+			clientSideOnly = false
+			break
+		}
+	}
+	if clientSideOnly {
+		log.Print("[DEBUG] Only client-side changes detected. Cancelling update operation.")
+		return resourceComputeHaControllerRead(d, meta)
+	}
+
+	config := meta.(*transport_tpg.Config)
+	userAgent, err := tpgresource.GenerateUserAgentString(d, config.UserAgent)
+	if err != nil {
+		return err
+	}
+	identity, err := d.Identity()
+	if err == nil && identity != nil {
+		if nameValue, ok := d.GetOk("name"); ok && nameValue.(string) != "" {
+			if err = identity.Set("name", nameValue.(string)); err != nil {
+				return fmt.Errorf("Error setting name: %s", err)
+			}
+		}
+		if regionValue, ok := d.GetOk("region"); ok && regionValue.(string) != "" {
+			if err = identity.Set("region", regionValue.(string)); err != nil {
+				return fmt.Errorf("Error setting region: %s", err)
+			}
+		}
+		if projectValue, ok := d.GetOk("project"); ok && projectValue.(string) != "" {
+			if err = identity.Set("project", projectValue.(string)); err != nil {
+				return fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG] (Update) identity not set: %s", err)
+	}
+
+	billingProject := ""
+
+	project, err := tpgresource.GetProject(d, config)
+	if err != nil {
+		return fmt.Errorf("Error fetching project for HaController: %s", err)
+	}
+	billingProject = project
+
+	obj := make(map[string]interface{})
+	descriptionProp, err := expandComputeHaControllerDescription(d.Get("description"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("description"); ok || !reflect.DeepEqual(v, descriptionProp) {
+		obj["description"] = descriptionProp
+	}
+	failoverInitiationProp, err := expandComputeHaControllerFailoverInitiation(d.Get("failover_initiation"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("failover_initiation"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, failoverInitiationProp)) {
+		obj["failoverInitiation"] = failoverInitiationProp
+	}
+
+	obj, err = resourceComputeHaControllerUpdateEncoder(d, meta, obj)
+	if err != nil {
+		return err
+	}
+
+	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/regions/{{region}}/haControllers/{{name}}")
+	if err != nil {
+		return err
+	}
+
+	log.Printf("[DEBUG] Updating HaController %q: %#v", d.Id(), obj)
+	headers := make(http.Header)
+	updateMask := []string{}
+
+	if d.HasChange("description") {
+		updateMask = append(updateMask, "description")
+	}
+
+	if d.HasChange("failover_initiation") {
+		updateMask = append(updateMask, "failoverInitiation")
+	}
+	// updateMask is a URL parameter but not present in the schema, so ReplaceVars
+	// won't set it
+	url, err = transport_tpg.AddQueryParams(url, map[string]string{"updateMask": strings.Join(updateMask, ",")})
+	if err != nil {
+		return err
+	}
+
+	url, err = HaControllerPreviewURL(url)
+	if err != nil {
+		return err
+	}
+	headers.Set("X-Goog-Api-Version", HaControllerAPIVersion())
+
+	// err == nil indicates that the billing_project value was found
+	if bp, err := tpgresource.GetBillingProject(d, config); err == nil {
+		billingProject = bp
+	}
+
+	// if updateMask is empty we are not updating anything so skip the post
+	if len(updateMask) > 0 {
+		res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
+			Config:    config,
+			Method:    "PATCH",
+			Project:   billingProject,
+			RawURL:    url,
+			UserAgent: userAgent,
+			Body:      obj,
+			Timeout:   d.Timeout(schema.TimeoutUpdate),
+			Headers:   headers,
+		})
+
+		if err != nil {
+			return fmt.Errorf("Error updating HaController %q: %s", d.Id(), err)
+		} else {
+			log.Printf("[DEBUG] Finished updating HaController %q: %#v", d.Id(), res)
+		}
+
+		err = ComputeOperationWaitTime(
+			config, res, project, "Updating HaController", userAgent,
+			d.Timeout(schema.TimeoutUpdate))
+
+		if err != nil {
+			return err
+		}
+	}
+
 	return resourceComputeHaControllerRead(d, meta)
 }
 
@@ -807,13 +946,16 @@ func flattenComputeHaControllerZoneConfiguration(v interface{}, d *schema.Resour
 		item["zone"] = zone
 
 		if resAffRaw, ok := configMap["reservationAffinity"]; ok && resAffRaw != nil {
-			if transformedResAff := flattenReservationAffinity(resAffRaw.(map[string]interface{})); transformedResAff != nil {
-				item["reservation_affinity"] = transformedResAff
+			resAffMap := resAffRaw.(map[string]interface{})
+			if consumeType, _ := resAffMap["consumeReservationType"].(string); consumeType != "" && consumeType != "UNSPECIFIED" {
+				if transformedResAff := flattenReservationAffinity(resAffMap); len(transformedResAff) > 0 {
+					item["reservation_affinity"] = transformedResAff
+				}
 			}
 		}
 
 		if nodeAffRaw, ok := configMap["nodeAffinities"]; ok {
-			if transformedNodeAffs := flattenComputeHaControllerZoneConfigurationNodeAffinities(nodeAffRaw); len(transformedNodeAffs) > 0 {
+			if transformedNodeAffs := flattenComputeHaControllerZoneConfigurationNodeAffinities(nodeAffRaw); transformedNodeAffs != nil && transformedNodeAffs.Len() > 0 {
 				item["node_affinities"] = transformedNodeAffs
 			}
 		}
@@ -946,7 +1088,7 @@ func getConfiguredComputeHaControllerZoneConfigurationNicIpv6(d *schema.Resource
 	return ""
 }
 
-func flattenComputeHaControllerZoneConfigurationNodeAffinities(raw interface{}) []interface{} {
+func flattenComputeHaControllerZoneConfigurationNodeAffinities(raw interface{}) *schema.Set {
 	if raw == nil {
 		return nil
 	}
@@ -968,12 +1110,12 @@ func flattenComputeHaControllerZoneConfigurationNodeAffinities(raw interface{}) 
 		if val, ok := nodeAff["operator"]; ok && val != nil {
 			transformedNodeAff["operator"] = val
 		}
-		if val, ok := nodeAff["values"]; ok && val != nil {
-			transformedNodeAff["values"] = val
+		if val, ok := nodeAff["values"].([]interface{}); ok {
+			transformedNodeAff["values"] = schema.NewSet(schema.HashString, val)
 		}
 		transformed = append(transformed, transformedNodeAff)
 	}
-	return transformed
+	return schema.NewSet(schema.HashResource(computeHaControllerZoneConfigurationSchema().Schema["node_affinities"].Elem.(*schema.Resource)), transformed)
 }
 
 func flattenComputeHaControllerNetworkingAutoConfiguration(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -1190,11 +1332,35 @@ func expandComputeHaControllerZoneConfigurationNodeAffinities(raw interface{}) [
 			transformedItem["operator"] = val
 		}
 		if val, ok := nodeAff["values"]; ok && val != nil {
-			transformedItem["values"] = val
+			if sdkSet, ok := val.(*schema.Set); ok {
+				transformedItem["values"] = tpgresource.ConvertStringArr(sdkSet.List())
+			} else {
+				transformedItem["values"] = val
+			}
 		}
 		transformed = append(transformed, transformedItem)
 	}
 	return transformed
+}
+
+func validateComputeHaControllerDeletionPolicy(_ context.Context, d *schema.ResourceDiff, meta interface{}) error {
+	return validateComputeHaControllerDeletionPolicyFunc(d)
+}
+
+func validateComputeHaControllerDeletionPolicyFunc(d tpgresource.TerraformResourceDiff) error {
+	if policy, _ := d.Get("deletion_policy").(string); policy != "" && policy != "DELETE" && policy != "PREVENT" && policy != "ABANDON" {
+		return fmt.Errorf("expected deletion_policy to be one of [\"PREVENT\" \"ABANDON\" \"DELETE\"], got %q", policy)
+	}
+	if oldName, newName := d.GetChange("name"); oldName != nil && oldName != "" && oldName == newName {
+		if oldPolicy, newPolicy := d.GetChange("deletion_policy"); oldPolicy == "ABANDON" || newPolicy == "ABANDON" {
+			for _, f := range []string{"instance_name", "zone_configuration", "networking_auto_configuration", "backend_services"} {
+				if d.HasChange(f) {
+					return fmt.Errorf("cannot replace ComputeHaController %q with the same name when deletion_policy = \"ABANDON\" (triggered by changing %q). Set deletion_policy = \"DELETE\" or change \"name\" first", newName, f)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func validateComputeHaControllerZoneConfiguration(_ context.Context, d *schema.ResourceDiff, meta interface{}) error {
@@ -1314,6 +1480,11 @@ func expandComputeHaControllerBackendServices(v interface{}, d tpgresource.Terra
 
 func expandComputeHaControllerRegion(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
+}
+
+func resourceComputeHaControllerUpdateEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
+	obj["name"] = d.Get("name")
+	return obj, nil
 }
 
 func ResourceComputeHaControllerFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {

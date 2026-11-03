@@ -81,7 +81,7 @@ func TestAccComputeHaController_computeHaControllerBasicExample(t *testing.T) {
 			},
 			{
 				ResourceName:       "google_compute_ha_controller.ha_controller",
-				RefreshState:       true,
+				ImportState:        true,
 				ExpectNonEmptyPlan: true,
 				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
@@ -183,7 +183,7 @@ func TestAccComputeHaController_computeHaControllerReservationsExample(t *testin
 			},
 			{
 				ResourceName:       "google_compute_ha_controller.ha_controller",
-				RefreshState:       true,
+				ImportState:        true,
 				ExpectNonEmptyPlan: true,
 				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
@@ -356,7 +356,7 @@ func TestAccComputeHaController_computeHaControllerSoleTenancyExample(t *testing
 			},
 			{
 				ResourceName:       "google_compute_ha_controller.ha_controller",
-				RefreshState:       true,
+				ImportState:        true,
 				ExpectNonEmptyPlan: true,
 				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
@@ -516,7 +516,7 @@ func TestAccComputeHaController_computeHaControllerBackendServiceExample(t *test
 			},
 			{
 				ResourceName:       "google_compute_ha_controller.ha_controller",
-				RefreshState:       true,
+				ImportState:        true,
 				ExpectNonEmptyPlan: true,
 				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
@@ -637,7 +637,7 @@ func TestAccComputeHaController_computeHaControllerMultiNicStaticIpExample(t *te
 			},
 			{
 				ResourceName:       "google_compute_ha_controller.ha_controller",
-				RefreshState:       true,
+				ImportState:        true,
 				ExpectNonEmptyPlan: true,
 				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},

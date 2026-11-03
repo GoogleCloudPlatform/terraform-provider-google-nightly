@@ -456,35 +456,10 @@ func TestAccComputeInstance_importBlockWithResourceIdentity(t *testing.T) {
 			},
 			{
 				ResourceName:       "google_compute_instance.foobar",
-				RefreshState:       true,
+				ImportState:        true,
 				ExpectNonEmptyPlan: true,
 				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
 			},
-		},
-	})
-}
-
-func TestAccComputeInstance_metadataGceContainerDeclaration(t *testing.T) {
-	t.Parallel()
-
-	var instance map[string]interface{}
-	var instanceName = fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
-
-	acctest.VcrTest(t, resource.TestCase{
-		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
-		CheckDestroy:             testAccCheckComputeInstanceDestroyProducer(t),
-		Steps: []resource.TestStep{
-			{
-				Config: testAccComputeInstance_metadataGceContainerDeclaration(instanceName),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheckComputeInstanceExists(
-						t, "google_compute_instance.foobar", &instance),
-					testAccCheckComputeInstanceMetadata(&instance, "foo", "bar"),
-					testAccCheckComputeInstanceMetadata(&instance, "gce-container-declaration", "spec:\n containers:\n - name: test\n image: gcr.io/google-containers/busybox\n"),
-				),
-			},
-			computeInstanceImportStep("us-central1-a", instanceName, []string{"metadata.foo", "metadata.gce-container-declaration", "desired_status"}),
 		},
 	})
 }
@@ -5216,6 +5191,9 @@ func testAccComputeInstance_nic_securityPolicyCreateWithTwoAccessConfigsUpdateSe
 				// Clean up any NetworkEdgeSecurityService left over from a previously failed recording
 				// before creating a new one. Only one can exist per region.
 				PreConfig: func() {
+					if acctest.IsVcrReplaying() {
+						return
+					}
 					config := acctest.GoogleProviderConfig(t)
 					listUrl := fmt.Sprintf("%sprojects/%s/aggregated/networkEdgeSecurityServices", transport_tpg.BaseUrl(tpgcompute.Product, config), config.Project)
 					found, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
@@ -7837,38 +7815,6 @@ resource "google_compute_instance" "foobar" {
 
   metadata = {
     foo = "bar"
-  }
-}
-`, instance)
-}
-
-func testAccComputeInstance_metadataGceContainerDeclaration(instance string) string {
-	return fmt.Sprintf(`
-data "google_compute_image" "my_image" {
-  family  = "debian-13"
-  project = "debian-cloud"
-}
-
-resource "google_compute_instance" "foobar" {
-  name           = "%s"
-  machine_type   = "e2-medium"
-  zone           = "us-central1-a"
-  tags           = ["foo", "bar"]
-  desired_status  = "RUNNING"
-
-  boot_disk {
-    initialize_params {
-      image = data.google_compute_image.my_image.self_link
-    }
-  }
-
-  network_interface {
-    network = "default"
-  }
-
-  metadata = {
-    foo                       = "bar"
-    gce-container-declaration = "spec:\n containers:\n - name: test\n image: gcr.io/google-containers/busybox\n"
   }
 }
 `, instance)

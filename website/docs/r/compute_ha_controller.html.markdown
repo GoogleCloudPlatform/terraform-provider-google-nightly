@@ -752,18 +752,18 @@ The following arguments are supported:
 <a name="nested_zone_configuration_node_affinities"></a>The `node_affinities` block supports:
 
 * `key` -
-  (Optional)
+  (Required)
   The key for the node affinity label.
 
 * `operator` -
-  (Optional)
+  (Required)
   Defines the operation of node selection.
   Possible values:
   - `IN`: Requires Compute Engine to seek for matched nodes.
   - `NOT_IN`: Requires Compute Engine to avoid certain nodes.
 
 * `values` -
-  (Optional)
+  (Required)
   Corresponds to the label values of Node resource.
 
 <a name="nested_zone_configuration_instance_network_interface"></a>The `instance_network_interface` block supports:
@@ -832,6 +832,7 @@ This resource provides the following
 [Timeouts](https://developer.hashicorp.com/terraform/plugin/sdkv2/resources/retries-and-customizable-timeouts) configuration options:
 
 - `create` - Default is 20 minutes.
+- `update` - Default is 20 minutes.
 - `delete` - Default is 20 minutes.
 
 ## Import
