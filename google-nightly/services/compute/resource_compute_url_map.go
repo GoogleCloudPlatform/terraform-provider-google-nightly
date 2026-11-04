@@ -35,7 +35,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
@@ -69,7 +68,6 @@ var (
 	_ = strconv.Atoi
 	_ = strings.Trim
 	_ = time.Now
-	_ = errwrap.Wrap
 	_ = cty.BoolVal
 	_ = diag.Diagnostic{}
 	_ = customdiff.All
@@ -4981,14 +4979,15 @@ func resourceComputeUrlMapCreate(d *schema.ResourceData, meta interface{}) error
 
 	headers := make(http.Header)
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
-		Config:    config,
-		Method:    "POST",
-		Project:   billingProject,
-		RawURL:    url,
-		UserAgent: userAgent,
-		Body:      obj,
-		Timeout:   d.Timeout(schema.TimeoutCreate),
-		Headers:   headers,
+		Config:     config,
+		Method:     "POST",
+		Project:    billingProject,
+		RawURL:     url,
+		UserAgent:  userAgent,
+		Body:       obj,
+		Timeout:    d.Timeout(schema.TimeoutCreate),
+		Headers:    headers,
+		ApiVersion: "2026-11-01",
 	})
 	if err != nil {
 		return fmt.Errorf("Error creating UrlMap: %s", err)
@@ -5059,12 +5058,13 @@ func resourceComputeUrlMapRead(d *schema.ResourceData, meta interface{}) error {
 
 	headers := make(http.Header)
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
-		Config:    config,
-		Method:    "GET",
-		Project:   billingProject,
-		RawURL:    url,
-		UserAgent: userAgent,
-		Headers:   headers,
+		Config:     config,
+		Method:     "GET",
+		Project:    billingProject,
+		RawURL:     url,
+		UserAgent:  userAgent,
+		Headers:    headers,
+		ApiVersion: "2026-11-01",
 	})
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, fmt.Sprintf("ComputeUrlMap %q", d.Id()))
@@ -5240,14 +5240,15 @@ func resourceComputeUrlMapUpdate(d *schema.ResourceData, meta interface{}) error
 	}
 
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
-		Config:    config,
-		Method:    "PUT",
-		Project:   billingProject,
-		RawURL:    url,
-		UserAgent: userAgent,
-		Body:      obj,
-		Timeout:   d.Timeout(schema.TimeoutUpdate),
-		Headers:   headers,
+		Config:     config,
+		Method:     "PUT",
+		Project:    billingProject,
+		RawURL:     url,
+		UserAgent:  userAgent,
+		Body:       obj,
+		Timeout:    d.Timeout(schema.TimeoutUpdate),
+		Headers:    headers,
+		ApiVersion: "2026-11-01",
 	})
 
 	if err != nil {
@@ -5304,14 +5305,15 @@ func resourceComputeUrlMapDelete(d *schema.ResourceData, meta interface{}) error
 
 	log.Printf("[DEBUG] Deleting UrlMap %q", d.Id())
 	res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
-		Config:    config,
-		Method:    "DELETE",
-		Project:   billingProject,
-		RawURL:    url,
-		UserAgent: userAgent,
-		Body:      obj,
-		Timeout:   d.Timeout(schema.TimeoutDelete),
-		Headers:   headers,
+		Config:     config,
+		Method:     "DELETE",
+		Project:    billingProject,
+		RawURL:     url,
+		UserAgent:  userAgent,
+		Body:       obj,
+		Timeout:    d.Timeout(schema.TimeoutDelete),
+		Headers:    headers,
+		ApiVersion: "2026-11-01",
 	})
 	if err != nil {
 		return transport_tpg.HandleNotFoundError(err, d, "UrlMap")

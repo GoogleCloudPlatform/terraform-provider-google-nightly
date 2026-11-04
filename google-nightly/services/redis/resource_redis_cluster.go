@@ -35,7 +35,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
@@ -69,7 +68,6 @@ var (
 	_ = strconv.Atoi
 	_ = strings.Trim
 	_ = time.Now
-	_ = errwrap.Wrap
 	_ = cty.BoolVal
 	_ = diag.Diagnostic{}
 	_ = customdiff.All
@@ -656,6 +654,24 @@ If not provided, MULTI_ZONE will be used as default Possible values: ["MULTI_ZON
 							Type:        schema.TypeString,
 							Optional:    true,
 							Description: `Immutable. The zone for single zone Memorystore Redis cluster.`,
+						},
+						"zones": {
+							Type:     schema.TypeList,
+							Optional: true,
+							ForceNew: true,
+							Description: `Specify the zones of a multi-zone cluster where Redis Cluster
+allocates resources. This flag isn't applicable for single-zone clusters.`,
+							Elem: &schema.Schema{
+								Type: schema.TypeString,
+							},
+						},
+						"active_zones": {
+							Type:        schema.TypeList,
+							Computed:    true,
+							Description: `The exact list of zones where the cluster currently has active VMs.`,
+							Elem: &schema.Schema{
+								Type: schema.TypeString,
+							},
 						},
 					},
 				},
@@ -1740,6 +1756,10 @@ func flattenRedisClusterZoneDistributionConfig(v interface{}, d *schema.Resource
 		flattenRedisClusterZoneDistributionConfigMode(original["mode"], d, config)
 	transformed["zone"] =
 		flattenRedisClusterZoneDistributionConfigZone(original["zone"], d, config)
+	transformed["zones"] =
+		flattenRedisClusterZoneDistributionConfigZones(original["zones"], d, config)
+	transformed["active_zones"] =
+		flattenRedisClusterZoneDistributionConfigActiveZones(original["activeZones"], d, config)
 	return []interface{}{transformed}
 }
 func flattenRedisClusterZoneDistributionConfigMode(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -1747,6 +1767,14 @@ func flattenRedisClusterZoneDistributionConfigMode(v interface{}, d *schema.Reso
 }
 
 func flattenRedisClusterZoneDistributionConfigZone(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenRedisClusterZoneDistributionConfigZones(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenRedisClusterZoneDistributionConfigActiveZones(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -2632,6 +2660,20 @@ func expandRedisClusterZoneDistributionConfig(v interface{}, d tpgresource.Terra
 		transformed["zone"] = transformedZone
 	}
 
+	transformedZones, err := expandRedisClusterZoneDistributionConfigZones(original["zones"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedZones); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["zones"] = transformedZones
+	}
+
+	transformedActiveZones, err := expandRedisClusterZoneDistributionConfigActiveZones(original["active_zones"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedActiveZones); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["activeZones"] = transformedActiveZones
+	}
+
 	return transformed, nil
 }
 
@@ -2640,6 +2682,14 @@ func expandRedisClusterZoneDistributionConfigMode(v interface{}, d tpgresource.T
 }
 
 func expandRedisClusterZoneDistributionConfigZone(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandRedisClusterZoneDistributionConfigZones(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandRedisClusterZoneDistributionConfigActiveZones(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 

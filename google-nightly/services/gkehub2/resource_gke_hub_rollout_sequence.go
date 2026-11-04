@@ -35,7 +35,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
@@ -183,7 +182,7 @@ func pollSequenceInitialization(d *schema.ResourceData, meta interface{}) error 
 		return transport_tpg.SuccessPollResult()
 	}
 
-	return transport_tpg.PollingWaitTime(pollRead, checkResponse, "Polling RolloutSequence initialization", 1*time.Hour, 1)
+	return transport_tpg.PollingWaitTime(pollRead, checkResponse, "Polling RolloutSequence initialization", 1*time.Hour, 1, config.SleepUnit)
 }
 
 // Fetches the current targetControlPlaneVersion and targetNodeVersion values of the RolloutSequence resource.
@@ -302,7 +301,6 @@ var (
 	_ = strconv.Atoi
 	_ = strings.Trim
 	_ = time.Now
-	_ = errwrap.Wrap
 	_ = cty.BoolVal
 	_ = diag.Diagnostic{}
 	_ = customdiff.All

@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -34,7 +35,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -43,7 +43,6 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/verify"
-	"github.com/mitchellh/hashstructure"
 )
 
 func IpCidrRangeDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
@@ -2481,13 +2480,18 @@ func waitUntilInstanceHasDesiredStatus(config *transport_tpg.Config, d *schema.R
 			status, _ := instance["status"].(string)
 			return instance["id"], status, nil
 		}
+		var pollInterval time.Duration
+		if config.SleepUnit > 0 && config.SleepUnit != time.Second {
+			pollInterval = config.SleepUnit
+		}
 		stateChangeConf := retry.StateChangeConf{
-			Delay:      5 * config.SleepUnit,
-			Pending:    getAllStatusBut(status),
-			Refresh:    stateRefreshFunc,
-			Target:     []string{status},
-			Timeout:    d.Timeout(schema.TimeoutUpdate),
-			MinTimeout: 2 * config.SleepUnit,
+			Delay:        5 * config.SleepUnit,
+			Pending:      getAllStatusBut(status),
+			Refresh:      stateRefreshFunc,
+			Target:       []string{status},
+			Timeout:      d.Timeout(schema.TimeoutUpdate),
+			MinTimeout:   2 * config.SleepUnit,
+			PollInterval: pollInterval,
 		}
 		_, err := stateChangeConf.WaitForState()
 
@@ -3754,7 +3758,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 					UserAgent: userAgent,
 				})
 				if err != nil {
-					return errwrap.Wrapf("Error getting subnetwork value: {{err}}", err)
+					return fmt.Errorf("Error getting subnetwork value: %w", err)
 				}
 				networkSelfLink := subnetRes["network"].(string)
 				nf, err := tpgresource.ParseNetworkFieldValue(networkSelfLink, d, config)
@@ -3826,7 +3830,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				}
 				url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/updateNetworkInterface")
 				if err != nil {
-					return errwrap.Wrapf("Error generating URL: {{err}}", err)
+					return fmt.Errorf("Error generating URL: %w", err)
 				}
 				url, err = transport_tpg.AddQueryParams(url, map[string]string{"networkInterface": networkName})
 				if err != nil {
@@ -3841,7 +3845,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 					Body:      niBody,
 				})
 				if err != nil {
-					return errwrap.Wrapf("Error removing alias_ip_range: {{err}}", err)
+					return fmt.Errorf("Error removing alias_ip_range: %w", err)
 				}
 				opErr := ComputeOperationWaitTime(config, res, project, "updating alias ip ranges", userAgent, d.Timeout(schema.TimeoutUpdate))
 				if opErr != nil {
@@ -3875,7 +3879,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			}
 			url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/updateNetworkInterface")
 			if err != nil {
-				return errwrap.Wrapf("Error generating URL: {{err}}", err)
+				return fmt.Errorf("Error generating URL: %w", err)
 			}
 			url, err = transport_tpg.AddQueryParams(url, map[string]string{"networkInterface": networkName})
 			if err != nil {
@@ -3890,7 +3894,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				Body:      niBody,
 			})
 			if err != nil {
-				return errwrap.Wrapf("Error updating network interface: {{err}}", err)
+				return fmt.Errorf("Error updating network interface: %w", err)
 			}
 			opErr := ComputeOperationWaitTime(config, res, project, "network interface to update", userAgent, d.Timeout(schema.TimeoutUpdate))
 			if opErr != nil {
@@ -3911,7 +3915,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				}
 				url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/updateNetworkInterface")
 				if err != nil {
-					return errwrap.Wrapf("Error generating URL: {{err}}", err)
+					return fmt.Errorf("Error generating URL: %w", err)
 				}
 				url, err = transport_tpg.AddQueryParams(url, map[string]string{"networkInterface": networkName})
 				if err != nil {
@@ -3926,7 +3930,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 					Body:      ni,
 				})
 				if err != nil {
-					return errwrap.Wrapf("Error removing alias_ipv6_range: {{err}}", err)
+					return fmt.Errorf("Error removing alias_ipv6_range: %w", err)
 				}
 				opErr := ComputeOperationWaitTime(config, res, project, "updating alias ipv6 ranges", userAgent, d.Timeout(schema.TimeoutUpdate))
 				if opErr != nil {
@@ -3959,7 +3963,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			}
 			url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/updateNetworkInterface")
 			if err != nil {
-				return errwrap.Wrapf("Error generating URL: {{err}}", err)
+				return fmt.Errorf("Error generating URL: %w", err)
 			}
 			url, err = transport_tpg.AddQueryParams(url, map[string]string{"networkInterface": networkName})
 			if err != nil {
@@ -3974,7 +3978,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				Body:      niBody,
 			})
 			if err != nil {
-				return errwrap.Wrapf("Error updating network interface: {{err}}", err)
+				return fmt.Errorf("Error updating network interface: %w", err)
 			}
 			opErr := ComputeOperationWaitTime(config, res, project, "network interface to update", userAgent, d.Timeout(schema.TimeoutUpdate))
 			if opErr != nil {
@@ -4007,7 +4011,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			}
 			url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/updateNetworkInterface")
 			if err != nil {
-				return errwrap.Wrapf("Error generating URL: {{err}}", err)
+				return fmt.Errorf("Error generating URL: %w", err)
 			}
 			url, err = transport_tpg.AddQueryParams(url, map[string]string{"networkInterface": networkName})
 			if err != nil {
@@ -4022,7 +4026,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				Body:      niBody,
 			})
 			if err != nil {
-				return errwrap.Wrapf("Error updating network interface: {{err}}", err)
+				return fmt.Errorf("Error updating network interface: %w", err)
 			}
 			opErr := ComputeOperationWaitTime(config, res, project, "network interface to update", userAgent, d.Timeout(schema.TimeoutUpdate))
 			if opErr != nil {
@@ -4055,7 +4059,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			}
 			url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/updateNetworkInterface")
 			if err != nil {
-				return errwrap.Wrapf("Error generating URL: {{err}}", err)
+				return fmt.Errorf("Error generating URL: %w", err)
 			}
 			url, err = transport_tpg.AddQueryParams(url, map[string]string{"networkInterface": networkName})
 			if err != nil {
@@ -4070,7 +4074,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				Body:      niBody,
 			})
 			if err != nil {
-				return errwrap.Wrapf("Error updating network interface: {{err}}", err)
+				return fmt.Errorf("Error updating network interface: %w", err)
 			}
 			opErr := ComputeOperationWaitTime(config, res, project, "network interface to update", userAgent, d.Timeout(schema.TimeoutUpdate))
 			if opErr != nil {
@@ -4103,7 +4107,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			}
 			url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/updateNetworkInterface")
 			if err != nil {
-				return errwrap.Wrapf("Error generating URL: {{err}}", err)
+				return fmt.Errorf("Error generating URL: %w", err)
 			}
 			url, err = transport_tpg.AddQueryParams(url, map[string]string{"networkInterface": networkName})
 			if err != nil {
@@ -4118,7 +4122,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				Body:      niBody,
 			})
 			if err != nil {
-				return errwrap.Wrapf("Error updating network interface: {{err}}", err)
+				return fmt.Errorf("Error updating network interface: %w", err)
 			}
 			opErr := ComputeOperationWaitTime(config, res, project, "network interface to update", userAgent, d.Timeout(schema.TimeoutUpdate))
 			if opErr != nil {
@@ -4151,7 +4155,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			}
 			url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/updateNetworkInterface")
 			if err != nil {
-				return errwrap.Wrapf("Error generating URL: {{err}}", err)
+				return fmt.Errorf("Error generating URL: %w", err)
 			}
 			url, err = transport_tpg.AddQueryParams(url, map[string]string{"networkInterface": networkName})
 			if err != nil {
@@ -4166,7 +4170,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				Body:      niBody,
 			})
 			if err != nil {
-				return errwrap.Wrapf("Error updating network interface: {{err}}", err)
+				return fmt.Errorf("Error updating network interface: %w", err)
 			}
 			opErr := ComputeOperationWaitTime(config, res, project, "network interface to update", userAgent, d.Timeout(schema.TimeoutUpdate))
 			if opErr != nil {
@@ -4291,17 +4295,18 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 		// Keep track of disks currently in state.
 		// Since changing any field within the disk needs to detach+reattach it,
 		// keep track of the hash of the full disk.
-		oDisks := map[uint64]string{}
+		oDisks := map[string]string{}
 		for _, disk := range o.([]interface{}) {
 			diskConfig := disk.(map[string]interface{})
 			computeDisk, err := expandAttachedDisk(diskConfig, d, config)
 			if err != nil {
 				return err
 			}
-			hash, err := hashstructure.Hash(computeDisk, nil)
+			hashBytes, err := json.Marshal(computeDisk)
 			if err != nil {
 				return err
 			}
+			hash := string(hashBytes)
 			computeDiskDeviceName, _ := computeDisk["deviceName"].(string)
 			if _, ok := currDisks[computeDiskDeviceName]; ok {
 				oDisks[hash] = computeDiskDeviceName
@@ -4312,7 +4317,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 		// Since changing any field within the disk needs to detach+reattach it,
 		// keep track of the hash of the full disk.
 		// If a disk with a certain hash is only in the new config, it should be attached.
-		nDisks := map[uint64]struct{}{}
+		nDisks := map[string]struct{}{}
 		var attach []map[string]interface{}
 		for _, disk := range n.([]interface{}) {
 			diskConfig := disk.(map[string]interface{})
@@ -4320,10 +4325,11 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			if err != nil {
 				return err
 			}
-			hash, err := hashstructure.Hash(computeDisk, nil)
+			hashBytes, err := json.Marshal(computeDisk)
 			if err != nil {
 				return err
 			}
+			hash := string(hashBytes)
 			nDisks[hash] = struct{}{}
 
 			if _, ok := oDisks[hash]; !ok {
@@ -4337,7 +4343,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			if _, ok := nDisks[hash]; !ok {
 				url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/detachDisk")
 				if err != nil {
-					return errwrap.Wrapf("Error generating URL: {{err}}", err)
+					return fmt.Errorf("Error generating URL: %w", err)
 				}
 				url, err = transport_tpg.AddQueryParams(url, map[string]string{"deviceName": deviceName})
 				if err != nil {
@@ -4351,7 +4357,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 					UserAgent: userAgent,
 				})
 				if err != nil {
-					return errwrap.Wrapf("Error detaching disk: %s", err)
+					return fmt.Errorf("Error detaching disk: %w", err)
 				}
 
 				opErr := ComputeOperationWaitTime(config, res, project, "detaching disk", userAgent, d.Timeout(schema.TimeoutUpdate))
@@ -4366,7 +4372,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 		for _, diskBody := range attach {
 			url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/attachDisk")
 			if err != nil {
-				return errwrap.Wrapf("Error generating URL: {{err}}", err)
+				return fmt.Errorf("Error generating URL: %w", err)
 			}
 			res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 				Config:    config,
@@ -4377,7 +4383,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				Body:      diskBody,
 			})
 			if err != nil {
-				return errwrap.Wrapf("Error attaching disk : {{err}}", err)
+				return fmt.Errorf("Error attaching disk : %w", err)
 			}
 
 			opErr := ComputeOperationWaitTime(config, res, project, "attaching disk", userAgent, d.Timeout(schema.TimeoutUpdate))
@@ -4529,7 +4535,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				} else {
 					res, err = startInstanceOperation(d, config)
 					if err != nil {
-						return errwrap.Wrapf("Error starting instance: {{err}}", err)
+						return fmt.Errorf("Error starting instance: %w", err)
 					}
 				}
 			} else if desiredStatus == "TERMINATED" {
@@ -4587,7 +4593,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 		if statusBeforeUpdate != "TERMINATED" {
 			url, err := tpgresource.ReplaceVars(d, config, "{{ComputeBasePath}}projects/{{project}}/zones/{{zone}}/instances/{{name}}/stop")
 			if err != nil {
-				return errwrap.Wrapf("Error generating URL: {{err}}", err)
+				return fmt.Errorf("Error generating URL: %w", err)
 			}
 			res, err := transport_tpg.SendRequest(transport_tpg.SendRequestOptions{
 				Config:    config,
@@ -4597,7 +4603,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 				UserAgent: userAgent,
 			})
 			if err != nil {
-				return errwrap.Wrapf("Error stopping instance: {{err}}", err)
+				return fmt.Errorf("Error stopping instance: %w", err)
 			}
 
 			opErr := ComputeOperationWaitTime(config, res, project, "stopping instance", userAgent, d.Timeout(schema.TimeoutUpdate))
@@ -4842,7 +4848,7 @@ func resourceComputeInstanceUpdate(d *schema.ResourceData, meta interface{}) err
 			(statusBeforeUpdate == "TERMINATED" && desiredStatus == "RUNNING") {
 			startRes, err := startInstanceOperation(d, config)
 			if err != nil {
-				return errwrap.Wrapf("Error starting instance: {{err}}", err)
+				return fmt.Errorf("Error starting instance: %w", err)
 			}
 
 			opErr := ComputeOperationWaitTime(config, startRes, project,

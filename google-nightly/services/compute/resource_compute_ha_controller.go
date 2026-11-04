@@ -36,7 +36,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
@@ -88,7 +87,6 @@ var (
 	_ = strconv.Atoi
 	_ = strings.Trim
 	_ = time.Now
-	_ = errwrap.Wrap
 	_ = cty.BoolVal
 	_ = diag.Diagnostic{}
 	_ = customdiff.All
@@ -1370,10 +1368,16 @@ func validateComputeHaControllerZoneConfiguration(_ context.Context, d *schema.R
 func validateComputeHaControllerZoneConfigurationFunc(d tpgresource.TerraformResourceDiff) error {
 	zoneBlocks := extractZoneBlocksFromDiff(d, "zone_configuration", "instance_network_interface")
 	if len(zoneBlocks) < 2 {
-		return fmt.Errorf("zone_configuration must contain 2 elements")
+		return fmt.Errorf("zone_configuration must contain 2 distinct zones")
+	}
+
+	var rootHacRegion string
+	if regVal, ok := d.Get("region").(string); ok && regVal != "" {
+		rootHacRegion = tpgresource.GetResourceNameFromSelfLink(regVal)
 	}
 
 	seenZones := make(map[string]bool, len(zoneBlocks))
+	var firstZonesConfigRegion string
 	var firstZone string
 	var firstZoneNics map[string]zoneNicDiffSpec
 
@@ -1390,6 +1394,16 @@ func validateComputeHaControllerZoneConfigurationFunc(d tpgresource.TerraformRes
 		}
 		seenZones[zone] = true
 
+		region := tpgresource.GetRegionFromZone(zone)
+		if region == "" {
+			return fmt.Errorf("invalid zone format for: %s", zone)
+		}
+		if firstZonesConfigRegion == "" {
+			firstZonesConfigRegion = region
+		} else if region != firstZonesConfigRegion {
+			return fmt.Errorf("zones must belong to the same region, found %s and %s", firstZonesConfigRegion, region)
+		}
+
 		currentZoneNics, err := validateZoneNicBlocks(zBlock.nics, zone, "instance_network_interface", -1)
 		if err != nil {
 			return err
@@ -1400,6 +1414,9 @@ func validateComputeHaControllerZoneConfigurationFunc(d tpgresource.TerraformRes
 		} else if err := validateZoneNicsSymmetry(firstZone, firstZoneNics, zone, currentZoneNics, "zone_configuration", "instance_network_interface"); err != nil {
 			return err
 		}
+	}
+	if rootHacRegion != "" && firstZonesConfigRegion != "" && firstZonesConfigRegion != rootHacRegion {
+		return fmt.Errorf("zones in zone_configuration belong to region %s, expected %s", firstZonesConfigRegion, rootHacRegion)
 	}
 	return nil
 }

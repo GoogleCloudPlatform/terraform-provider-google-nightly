@@ -35,7 +35,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
@@ -103,7 +102,6 @@ var (
 	_ = strconv.Atoi
 	_ = strings.Trim
 	_ = time.Now
-	_ = errwrap.Wrap
 	_ = cty.BoolVal
 	_ = diag.Diagnostic{}
 	_ = customdiff.All
@@ -587,9 +585,37 @@ func resourceSecretManagerSecretVersionDelete(d *schema.ResourceData, meta inter
 
 func resourceSecretManagerSecretVersionImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	config := meta.(*transport_tpg.Config)
-	_ = config
 
 	name := d.Id()
+	if name == "" {
+		identity, err := d.Identity()
+		if err != nil {
+			return nil, fmt.Errorf("Error getting identity: %s", err)
+		}
+		secretVal, _ := identity.GetOk("secret")
+		versionVal, _ := identity.GetOk("version")
+		projectVal, _ := identity.GetOk("project")
+		secretStr, _ := secretVal.(string)
+		versionStr, _ := versionVal.(string)
+		projectStr, _ := projectVal.(string)
+		if projectStr != "" {
+			if err := d.Set("project", projectStr); err != nil {
+				return nil, fmt.Errorf("Error setting project: %s", err)
+			}
+		}
+		if strings.HasPrefix(secretStr, "projects/") {
+			name = fmt.Sprintf("%s/versions/%s", secretStr, versionStr)
+		} else {
+			if projectStr == "" {
+				projectStr, err = tpgresource.GetProject(d, config)
+				if err != nil {
+					return nil, err
+				}
+			}
+			name = fmt.Sprintf("projects/%s/secrets/%s/versions/%s", projectStr, secretStr, versionStr)
+		}
+		d.SetId(name)
+	}
 	if err := d.Set("name", name); err != nil {
 		return nil, fmt.Errorf("Error setting name: %s", err)
 	}
@@ -616,9 +642,9 @@ func resourceSecretManagerSecretVersionImport(d *schema.ResourceData, meta inter
 	}
 
 	if err := tpgresource.SetResourceIdentityAttributes(d, map[string]interface{}{
-		"project": parts[1],
-		"secret":  parts[2],
-		"version": parts[3],
+		"project": d.Get("project"),
+		"secret":  d.Get("secret"),
+		"version": d.Get("version"),
 	}); err != nil {
 		return nil, err
 	}

@@ -41,7 +41,6 @@ import (
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/resourcemanager"
 	_ "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/services/tags"
 	"github.com/hashicorp/terraform-provider-google-nightly/google-nightly/tpgresource"
-	"github.com/stretchr/testify/assert"
 
 	transport_tpg "github.com/hashicorp/terraform-provider-google-nightly/google-nightly/transport"
 )
@@ -250,7 +249,9 @@ func TestCheckForCommonAliasIp(t *testing.T) {
 		oldInterface := map[string]interface{}{"aliasIpRanges": tc.old}
 		newInterface := map[string]interface{}{"aliasIpRanges": tc.new}
 		result := tpgcompute.CheckForCommonAliasIp(oldInterface, newInterface)
-		assert.Equal(t, tc.expected, result)
+		if !reflect.DeepEqual(result, tc.expected) {
+			t.Errorf("got %v, want %v", result, tc.expected)
+		}
 	}
 }
 
@@ -276,7 +277,9 @@ func TestFlattenWorkloadIdentityConfigHTTP_identityType(t *testing.T) {
 				"identity_type":                identityType,
 			},
 		}
-		assert.Equal(t, want, got)
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
 	}
 }
 

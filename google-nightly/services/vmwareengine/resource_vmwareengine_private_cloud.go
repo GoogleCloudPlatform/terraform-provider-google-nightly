@@ -35,7 +35,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
@@ -149,7 +148,6 @@ var (
 	_ = strconv.Atoi
 	_ = strings.Trim
 	_ = time.Now
-	_ = errwrap.Wrap
 	_ = cty.BoolVal
 	_ = diag.Diagnostic{}
 	_ = customdiff.All
@@ -1229,7 +1227,7 @@ func resourceVmwareenginePrivateCloudDelete(d *schema.ResourceData, meta interfa
 		}
 	}
 
-	err = transport_tpg.PollingWaitTime(privateCloudPollRead(d, meta), pollCheckForPrivateCloudAbsence, "Deleting PrivateCloud", d.Timeout(schema.TimeoutDelete), 10)
+	err = transport_tpg.PollingWaitTime(privateCloudPollRead(d, meta), pollCheckForPrivateCloudAbsence, "Deleting PrivateCloud", d.Timeout(schema.TimeoutDelete), 10, config.SleepUnit)
 	if err != nil {
 		return fmt.Errorf("Error waiting to delete PrivateCloud: %s", err)
 	}

@@ -36,7 +36,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/errwrap"
 	"github.com/hashicorp/go-cty/cty"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/customdiff"
@@ -106,7 +105,6 @@ var (
 	_ = strconv.Atoi
 	_ = strings.Trim
 	_ = time.Now
-	_ = errwrap.Wrap
 	_ = cty.BoolVal
 	_ = diag.Diagnostic{}
 	_ = customdiff.All
@@ -474,6 +472,26 @@ func ResourceVertexAIReasoningEngine() *schema.Resource {
 																															Type:        schema.TypeString,
 																															Required:    true,
 																															Description: `The IANA standard MIME type of the source data.`,
+																														},
+																													},
+																												},
+																											},
+																											"speech_metadata": {
+																												Type:        schema.TypeList,
+																												Optional:    true,
+																												Description: `Turn-level metadata for speech generation. May be set alongside 'text' to attach speaker and style information to a text part.`,
+																												MaxItems:    1,
+																												Elem: &schema.Resource{
+																													Schema: map[string]*schema.Schema{
+																														"speaker": {
+																															Type:        schema.TypeString,
+																															Optional:    true,
+																															Description: `Identifies which speaker is speaking this turn.`,
+																														},
+																														"style": {
+																															Type:        schema.TypeString,
+																															Optional:    true,
+																															Description: `Natural language description of the vocal style (e.g., "cheerful").`,
 																														},
 																													},
 																												},
@@ -3477,6 +3495,7 @@ func flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfi
 			"code_execution_result": flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsCodeExecutionResult(original["codeExecutionResult"], d, config),
 			"video_metadata":        flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsVideoMetadata(original["videoMetadata"], d, config),
 			"audio_transcription":   flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsAudioTranscription(original["audioTranscription"], d, config),
+			"speech_metadata":       flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadata(original["speechMetadata"], d, config),
 		})
 	}
 	return transformed
@@ -3745,6 +3764,29 @@ func flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfi
 }
 
 func flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsAudioTranscriptionWordsWord(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadata(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["speaker"] =
+		flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadataSpeaker(original["speaker"], d, config)
+	transformed["style"] =
+		flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadataStyle(original["style"], d, config)
+	return []interface{}{transformed}
+}
+func flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadataSpeaker(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadataStyle(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -5815,6 +5857,13 @@ func expandVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfig
 			transformed["audioTranscription"] = transformedAudioTranscription
 		}
 
+		transformedSpeechMetadata, err := expandVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadata(original["speech_metadata"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedSpeechMetadata); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["speechMetadata"] = transformedSpeechMetadata
+		}
+
 		req = append(req, transformed)
 	}
 	return req, nil
@@ -6239,6 +6288,43 @@ func expandVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfig
 }
 
 func expandVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsAudioTranscriptionWordsWord(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadata(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedSpeaker, err := expandVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadataSpeaker(original["speaker"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedSpeaker); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["speaker"] = transformedSpeaker
+	}
+
+	transformedStyle, err := expandVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadataStyle(original["style"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedStyle); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["style"] = transformedStyle
+	}
+
+	return transformed, nil
+}
+
+func expandVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadataSpeaker(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandVertexAIReasoningEngineContextSpecMemoryBankConfigCustomizationConfigsGenerateMemoriesExamplesConversationSourceEventsContentPartsSpeechMetadataStyle(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
