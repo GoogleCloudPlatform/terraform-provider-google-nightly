@@ -8,7 +8,6 @@ require (
 	cloud.google.com/go/bigtable v1.58.0
 	github.com/dnaeon/go-vcr v1.2.0
 	github.com/google/go-cmp v0.7.0
-	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/hashicorp/go-cty v1.5.0
 	github.com/hashicorp/go-version v1.9.0
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
@@ -19,7 +18,6 @@ require (
 	github.com/hashicorp/terraform-plugin-mux v0.23.1
 	github.com/hashicorp/terraform-plugin-sdk/v2 v2.40.1
 	github.com/hashicorp/terraform-plugin-testing v1.16.0
-	github.com/sirupsen/logrus v1.10.2
 	go4.org/netipx v0.0.0-20260823151212-3075585bcbeb
 	golang.org/x/oauth2 v0.37.0
 	google.golang.org/api v0.310.0
@@ -68,7 +66,7 @@ require (
 	github.com/hashicorp/hc-install v0.10.0 // indirect
 	github.com/hashicorp/hcl/v2 v2.25.0 // indirect
 	github.com/hashicorp/logutils v1.0.0 // indirect
-	github.com/hashicorp/terraform-exec v0.25.3 // indirect
+	github.com/hashicorp/terraform-exec v0.26.0 // indirect
 	github.com/hashicorp/terraform-json v0.29.0 // indirect
 	github.com/hashicorp/terraform-registry-address v0.5.0 // indirect
 	github.com/hashicorp/terraform-svchost v0.2.1 // indirect

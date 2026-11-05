@@ -172,6 +172,11 @@ func ResourceGeminiGeminiGcpEnablementSetting() *schema.Resource {
 Format: projects/{project}
 The '{project}' segment can be the project ID or project number.`,
 			},
+			"has_custom_instructions": {
+				Type:        schema.TypeBool,
+				Optional:    true,
+				Description: `Indicates whether custom instructions are defined.`,
+			},
 			"labels": {
 				Type:     schema.TypeMap,
 				Optional: true,
@@ -296,6 +301,12 @@ func resourceGeminiGeminiGcpEnablementSettingCreate(d *schema.ResourceData, meta
 		return err
 	} else if v, ok := d.GetOkExists("release_channel"); !tpgresource.IsEmptyValue(reflect.ValueOf(releaseChannelProp)) && (ok || !reflect.DeepEqual(v, releaseChannelProp)) {
 		obj["releaseChannel"] = releaseChannelProp
+	}
+	hasCustomInstructionsProp, err := expandGeminiGeminiGcpEnablementSettingHasCustomInstructions(d.Get("has_custom_instructions"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("has_custom_instructions"); !tpgresource.IsEmptyValue(reflect.ValueOf(hasCustomInstructionsProp)) && (ok || !reflect.DeepEqual(v, hasCustomInstructionsProp)) {
+		obj["hasCustomInstructions"] = hasCustomInstructionsProp
 	}
 	effectiveLabelsProp, err := expandGeminiGeminiGcpEnablementSettingEffectiveLabels(d.Get("effective_labels"), d, config)
 	if err != nil {
@@ -562,6 +573,12 @@ func resourceGeminiGeminiGcpEnablementSettingUpdate(d *schema.ResourceData, meta
 	} else if v, ok := d.GetOkExists("release_channel"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, releaseChannelProp)) {
 		obj["releaseChannel"] = releaseChannelProp
 	}
+	hasCustomInstructionsProp, err := expandGeminiGeminiGcpEnablementSettingHasCustomInstructions(d.Get("has_custom_instructions"), d, config)
+	if err != nil {
+		return err
+	} else if v, ok := d.GetOkExists("has_custom_instructions"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, hasCustomInstructionsProp)) {
+		obj["hasCustomInstructions"] = hasCustomInstructionsProp
+	}
 	effectiveLabelsProp, err := expandGeminiGeminiGcpEnablementSettingEffectiveLabels(d.Get("effective_labels"), d, config)
 	if err != nil {
 		return err
@@ -607,6 +624,10 @@ func resourceGeminiGeminiGcpEnablementSettingUpdate(d *schema.ResourceData, meta
 
 	if d.HasChange("release_channel") {
 		updateMask = append(updateMask, "releaseChannel")
+	}
+
+	if d.HasChange("has_custom_instructions") {
+		updateMask = append(updateMask, "hasCustomInstructions")
 	}
 
 	if d.HasChange("effective_labels") {
@@ -795,6 +816,10 @@ func flattenGeminiGeminiGcpEnablementSettingReleaseChannel(v interface{}, d *sch
 	return v
 }
 
+func flattenGeminiGeminiGcpEnablementSettingHasCustomInstructions(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenGeminiGeminiGcpEnablementSettingTerraformLabels(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return v
@@ -835,6 +860,10 @@ func expandGeminiGeminiGcpEnablementSettingGeminiEnterpriseProject(v interface{}
 }
 
 func expandGeminiGeminiGcpEnablementSettingReleaseChannel(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandGeminiGeminiGcpEnablementSettingHasCustomInstructions(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -880,6 +909,9 @@ func ResourceGeminiGeminiGcpEnablementSettingFlatten(d *schema.ResourceData, met
 		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
 	}
 	if err = d.Set("release_channel", flattenGeminiGeminiGcpEnablementSettingReleaseChannel(res["releaseChannel"], d, config)); err != nil {
+		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
+	}
+	if err = d.Set("has_custom_instructions", flattenGeminiGeminiGcpEnablementSettingHasCustomInstructions(res["hasCustomInstructions"], d, config)); err != nil {
 		return fmt.Errorf("Error reading GeminiGcpEnablementSetting: %s", err)
 	}
 	if err = d.Set("terraform_labels", flattenGeminiGeminiGcpEnablementSettingTerraformLabels(res["labels"], d, config)); err != nil {

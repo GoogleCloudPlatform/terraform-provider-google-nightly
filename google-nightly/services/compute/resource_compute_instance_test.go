@@ -991,6 +991,8 @@ func TestAccComputeInstance_PTRRecord(t *testing.T) {
 }
 
 func TestAccComputeInstance_networkTier(t *testing.T) {
+	t.Parallel()
+
 	var instance map[string]interface{}
 	var instanceName = fmt.Sprintf("tf-test-%s", acctest.RandString(t, 10))
 
@@ -4817,6 +4819,8 @@ const errorDeleteAccessConfigWithSecPolicy = "Cannot delete an access config wit
 // The tests related to security_policy use network_edge_security_service resource
 // which can only exist one per region. Because of that, all the following tests must run serially.
 func TestAccComputeInstanceNetworkIntefaceWithSecurityPolicy(t *testing.T) {
+	t.Parallel()
+
 	testCases := map[string]func(t *testing.T){
 		"two_access_config": testAccComputeInstance_nic_securityPolicyCreateWithTwoAccessConfigs,
 		"two_nics_access_config_with_empty_nil_security_policy":   testAccComputeInstance_nic_securityPolicyCreateWithEmptyAndNullSecurityPolicies,
