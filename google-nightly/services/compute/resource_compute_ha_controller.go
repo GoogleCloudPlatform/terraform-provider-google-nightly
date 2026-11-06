@@ -280,6 +280,87 @@ Possible values:
 				DiffSuppressFunc: tpgresource.CompareSelfLinkOrResourceName,
 				Description:      `The region where the HA Controller will be created.`,
 			},
+			"creation_timestamp": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `The creation timestamp for the HA Controller in RFC3339 text format.`,
+			},
+			"self_link_with_id": {
+				Type:        schema.TypeString,
+				Computed:    true,
+				Description: `The server-defined URL for the HA Controller. This URL includes the resource ID.`,
+			},
+			"state": {
+				Type:     schema.TypeString,
+				Computed: true,
+				Description: `The current state of the HA Controller.
+Possible values are the following:
+- 'ACTIVE': The HA Controller is active and ready to fail over the instance.
+- 'CREATING': Compute Engine is creating the HA Controller.
+- 'DELETING': Compute Engine is deleting the HA Controller.
+- 'FAILOVER_IN_PROGRESS': The HA Controller is failing over the instance to the secondary zone.
+- 'FAILOVER_UNAVAILABLE': The HA Controller isn't ready to fail over the instance.
+- 'MULTI_ZONE_FAILURE': The instance requires a failover, but the secondary zone isn't available.
+- 'PENDING_FAILOVER': The instance requires a failover.
+- 'STARTING': Compute Engine is starting the HA Controller.
+- 'STOPPED': The HA Controller is stopped.
+- 'STOPPING': Compute Engine is stopping the HA Controller.
+- 'UPDATING': Compute Engine is updating the HA Controller.`,
+			},
+			"status": {
+				Type:        schema.TypeList,
+				Computed:    true,
+				Description: `The current status of the HA Controller.`,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"ongoing_failover": {
+							Type:        schema.TypeBool,
+							Computed:    true,
+							Description: `Indicates whether a failover operation is in progress.`,
+						},
+						"primary_instance": {
+							Type:     schema.TypeString,
+							Computed: true,
+							Description: `The URL of the instance in the primary zone. Compute Engine updates this field at the
+start of a failover operation.`,
+						},
+						"primary_zone": {
+							Type:     schema.TypeString,
+							Computed: true,
+							Description: `The name of the primary zone for the instance. Compute Engine updates this field at the
+start of a failover operation, so this zone might not be operational during a failover.`,
+						},
+						"ready_for_failover": {
+							Type:        schema.TypeBool,
+							Computed:    true,
+							Description: `Indicates whether the HA Controller is ready to fail over the instance to the secondary zone.`,
+						},
+						"zone_status": {
+							Type:        schema.TypeSet,
+							Computed:    true,
+							Description: `A map that contains the status of each configured zone, where each key is the name of the zone.`,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"zone": {
+										Type:     schema.TypeString,
+										Required: true,
+									},
+									"is_primary": {
+										Type:        schema.TypeBool,
+										Computed:    true,
+										Description: `Indicates whether this zone is the primary zone.`,
+									},
+									"is_zone_ready": {
+										Type:        schema.TypeBool,
+										Computed:    true,
+										Description: `Indicates whether this zone is ready for a failover.`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
 			"project": {
 				Type:     schema.TypeString,
 				Optional: true,
@@ -410,14 +491,11 @@ Limited to a single value.`,
 							Type:         schema.TypeString,
 							Optional:     true,
 							ForceNew:     true,
-							ValidateFunc: verify.ValidateEnum([]string{"NO_RESERVATION", "ANY_RESERVATION", "SPECIFIC_RESERVATION", "SPECIFIC_THEN_ANY_RESERVATION", "SPECIFIC_THEN_NO_RESERVATION", "ANY_RESERVATION_THEN_FAIL", ""}),
+							ValidateFunc: verify.ValidateEnum([]string{"NO_RESERVATION", "ANY_RESERVATION", "SPECIFIC_RESERVATION", ""}),
 							Description: `Specifies the type of reservation from which this instance can consume resources. Possible values:
 - 'NO_RESERVATION': The instance doesn't consume any reservations, even if existing, matching reservations have capacity available.
 - 'ANY_RESERVATION': The instance automatically consumes any reservation with matching properties.
-- 'SPECIFIC_RESERVATION': The instance consumes a specific, matching reservation. You must also provide key and values to consume the reservation. Otherwise, you encounter errors.
-- 'SPECIFIC_THEN_ANY_RESERVATION': The instance consumes a specific, matching reservation if available. Otherwise, the instance consumes any reservation with matching properties.
-- 'SPECIFIC_THEN_NO_RESERVATION': The instance consumes a specific, matching reservation if available. Otherwise, the instance doesn't consume any reservations.
-- 'ANY_RESERVATION_THEN_FAIL': The instance automatically consumes any reservation with matching properties. Otherwise, creating the instance fails. Possible values: ["NO_RESERVATION", "ANY_RESERVATION", "SPECIFIC_RESERVATION", "SPECIFIC_THEN_ANY_RESERVATION", "SPECIFIC_THEN_NO_RESERVATION", "ANY_RESERVATION_THEN_FAIL"]`,
+- 'SPECIFIC_RESERVATION': The instance consumes a specific, matching reservation. You must also provide key and values to consume the reservation. Otherwise, you encounter errors. Possible values: ["NO_RESERVATION", "ANY_RESERVATION", "SPECIFIC_RESERVATION"]`,
 						},
 					},
 				},
@@ -1162,11 +1240,84 @@ func flattenComputeHaControllerBackendServices(v interface{}, d *schema.Resource
 	return v
 }
 
+func flattenComputeHaControllerCreationTimestamp(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeHaControllerSelfLinkWithId(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeHaControllerState(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeHaControllerStatus(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["primary_zone"] =
+		flattenComputeHaControllerStatusPrimaryZone(original["primaryZone"], d, config)
+	transformed["primary_instance"] =
+		flattenComputeHaControllerStatusPrimaryInstance(original["primaryInstance"], d, config)
+	transformed["ongoing_failover"] =
+		flattenComputeHaControllerStatusOngoingFailover(original["ongoingFailover"], d, config)
+	transformed["ready_for_failover"] =
+		flattenComputeHaControllerStatusReadyForFailover(original["readyForFailover"], d, config)
+	transformed["zone_status"] =
+		flattenComputeHaControllerStatusZoneStatus(original["zoneStatus"], d, config)
+	return []interface{}{transformed}
+}
+func flattenComputeHaControllerStatusPrimaryZone(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeHaControllerStatusPrimaryInstance(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeHaControllerStatusOngoingFailover(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeHaControllerStatusReadyForFailover(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeHaControllerStatusZoneStatus(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return v
+	}
+	l := v.(map[string]interface{})
+	transformed := make([]interface{}, 0, len(l))
+	for k, raw := range l {
+		original := raw.(map[string]interface{})
+		transformed = append(transformed, map[string]interface{}{
+			"zone":          k,
+			"is_primary":    flattenComputeHaControllerStatusZoneStatusIsPrimary(original["isPrimary"], d, config),
+			"is_zone_ready": flattenComputeHaControllerStatusZoneStatusIsZoneReady(original["isZoneReady"], d, config),
+		})
+	}
+	return transformed
+}
+func flattenComputeHaControllerStatusZoneStatusIsPrimary(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenComputeHaControllerStatusZoneStatusIsZoneReady(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenComputeHaControllerRegion(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	if v == nil {
 		return v
 	}
-	return tpgresource.ConvertSelfLinkToV1(v.(string))
+	return tpgresource.GetResourceNameFromSelfLink(v.(string))
 }
 
 func expandComputeHaControllerName(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
@@ -1526,6 +1677,18 @@ func ResourceComputeHaControllerFlatten(d *schema.ResourceData, meta interface{}
 		return fmt.Errorf("Error reading HaController: %s", err)
 	}
 	if err = d.Set("backend_services", flattenComputeHaControllerBackendServices(res["backendServices"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaController: %s", err)
+	}
+	if err = d.Set("creation_timestamp", flattenComputeHaControllerCreationTimestamp(res["creationTimestamp"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaController: %s", err)
+	}
+	if err = d.Set("self_link_with_id", flattenComputeHaControllerSelfLinkWithId(res["selfLinkWithId"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaController: %s", err)
+	}
+	if err = d.Set("state", flattenComputeHaControllerState(res["state"], d, config)); err != nil {
+		return fmt.Errorf("Error reading HaController: %s", err)
+	}
+	if err = d.Set("status", flattenComputeHaControllerStatus(res["status"], d, config)); err != nil {
 		return fmt.Errorf("Error reading HaController: %s", err)
 	}
 	if err = d.Set("region", flattenComputeHaControllerRegion(res["region"], d, config)); err != nil {

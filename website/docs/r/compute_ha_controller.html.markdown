@@ -725,9 +725,6 @@ The following arguments are supported:
   - `NO_RESERVATION`: The instance doesn't consume any reservations, even if existing, matching reservations have capacity available.
   - `ANY_RESERVATION`: The instance automatically consumes any reservation with matching properties.
   - `SPECIFIC_RESERVATION`: The instance consumes a specific, matching reservation. You must also provide key and values to consume the reservation. Otherwise, you encounter errors.
-  - `SPECIFIC_THEN_ANY_RESERVATION`: The instance consumes a specific, matching reservation if available. Otherwise, the instance consumes any reservation with matching properties.
-  - `SPECIFIC_THEN_NO_RESERVATION`: The instance consumes a specific, matching reservation if available. Otherwise, the instance doesn't consume any reservations.
-  - `ANY_RESERVATION_THEN_FAIL`: The instance automatically consumes any reservation with matching properties. Otherwise, creating the instance fails.
 
 * `specific_reservation` -
   (Optional)
@@ -823,8 +820,71 @@ The following arguments are supported:
 In addition to the arguments listed above, the following computed attributes are exported:
 
 * `id` - an identifier for the resource with format `projects/{{project}}/regions/{{region}}/haControllers/{{name}}`
+
+* `creation_timestamp` -
+  The creation timestamp for the HA Controller in RFC3339 text format.
+
+* `self_link_with_id` -
+  The server-defined URL for the HA Controller. This URL includes the resource ID.
+
+* `state` -
+  The current state of the HA Controller.
+  Possible values are the following:
+  - `ACTIVE`: The HA Controller is active and ready to fail over the instance.
+  - `CREATING`: Compute Engine is creating the HA Controller.
+  - `DELETING`: Compute Engine is deleting the HA Controller.
+  - `FAILOVER_IN_PROGRESS`: The HA Controller is failing over the instance to the secondary zone.
+  - `FAILOVER_UNAVAILABLE`: The HA Controller isn't ready to fail over the instance.
+  - `MULTI_ZONE_FAILURE`: The instance requires a failover, but the secondary zone isn't available.
+  - `PENDING_FAILOVER`: The instance requires a failover.
+  - `STARTING`: Compute Engine is starting the HA Controller.
+  - `STOPPED`: The HA Controller is stopped.
+  - `STOPPING`: Compute Engine is stopping the HA Controller.
+  - `UPDATING`: Compute Engine is updating the HA Controller.
+
+* `status` -
+  The current status of the HA Controller.
+  Structure is [documented below](#nested_status).
 * `self_link` - The URI of the created resource.
 
+
+<a name="nested_status"></a>The `status` block contains:
+
+* `primary_zone` -
+  (Output)
+  The name of the primary zone for the instance. Compute Engine updates this field at the
+  start of a failover operation, so this zone might not be operational during a failover.
+
+* `primary_instance` -
+  (Output)
+  The URL of the instance in the primary zone. Compute Engine updates this field at the
+  start of a failover operation.
+
+* `ongoing_failover` -
+  (Output)
+  Indicates whether a failover operation is in progress.
+
+* `ready_for_failover` -
+  (Output)
+  Indicates whether the HA Controller is ready to fail over the instance to the secondary zone.
+
+* `zone_status` -
+  (Output)
+  A map that contains the status of each configured zone, where each key is the name of the zone.
+  Structure is [documented below](#nested_status_zone_status).
+
+
+<a name="nested_status_zone_status"></a>The `zone_status` block contains:
+
+* `zone` - (Required) The identifier for this object. Format specified above.
+
+* `is_primary` -
+  (Output)
+  Indicates whether this zone is the primary zone.
+
+* `is_zone_ready` -
+  (Output)
+  Indicates whether this zone is ready for a failover.
 
 ## Timeouts
 
