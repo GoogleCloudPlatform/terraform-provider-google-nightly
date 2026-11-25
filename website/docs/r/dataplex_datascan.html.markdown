@@ -1150,6 +1150,108 @@ resource "google_dataplex_datascan" "data_quality_template_reference" {
 }
 ```
 
+## Example Usage - Dataplex Datascan Anomaly Detection
+
+
+```hcl
+resource "google_bigquery_dataset" "source" {
+  provider   = google-nightly
+  dataset_id = "anomaly_detection_dataset"
+  location   = "us-central1"
+}
+
+resource "google_bigquery_table" "source" {
+  provider            = google-nightly
+  dataset_id          = google_bigquery_dataset.source.dataset_id
+  table_id            = "anomaly_detection_table"
+  deletion_protection = false
+
+  time_partitioning {
+    type  = "DAY"
+    field = "event_time"
+  }
+
+  schema = <<EOF
+[
+  {"name": "event_time", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "region", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "channel", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "sales_amount", "type": "NUMERIC", "mode": "NULLABLE"},
+  {"name": "order_count", "type": "INTEGER", "mode": "NULLABLE"}
+]
+EOF
+}
+
+resource "google_dataplex_datascan" "anomaly_detection" {
+  provider     = google-nightly
+  location     = "us-central1"
+  data_scan_id = "dataquality-anomaly"
+
+  data {
+    resource = "//bigquery.googleapis.com/projects/${google_bigquery_table.source.project}/datasets/${google_bigquery_table.source.dataset_id}/tables/${google_bigquery_table.source.table_id}"
+  }
+
+  execution_spec {
+    trigger {
+      on_demand {}
+    }
+    field = "event_time"
+  }
+
+  data_quality_spec {
+    anomaly_detection {
+      timestamp_column   = "event_time"
+      aggregation_window = "DAILY"
+
+      anomaly_detection_assets {
+        result_table         = "//bigquery.googleapis.com/projects/${google_bigquery_dataset.source.project}/datasets/${google_bigquery_dataset.source.dataset_id}/tables/anomaly_detection_results"
+        intermediate_dataset = "//bigquery.googleapis.com/projects/${google_bigquery_dataset.source.project}/datasets/${google_bigquery_dataset.source.dataset_id}"
+      }
+    }
+
+    rules {
+      column    = "sales_amount"
+      dimension = "VALIDITY"
+      name      = "sales-amount-anomalies"
+
+      data_anomaly_detection {
+        metrics                       = ["SUM", "AVG"]
+        segmentation_columns          = ["region"]
+        anomaly_probability_threshold = 0.9
+      }
+    }
+
+    rules {
+      column    = "order_count"
+      dimension = "VALIDITY"
+      name      = "order-count-anomalies"
+
+      data_anomaly_detection {
+        metrics = ["COUNT"]
+      }
+    }
+
+    rules {
+      dimension = "FRESHNESS"
+      name      = "freshness-anomalies"
+
+      freshness_anomaly_detection {
+        confidence_level = "ANOMALY_DETECTION_CONFIDENCE_LEVEL_STANDARD"
+      }
+    }
+
+    rules {
+      dimension = "VOLUME"
+      name      = "volume-anomalies"
+
+      volume_anomaly_detection {}
+    }
+  }
+
+  project = "my-project-name"
+}
+```
+
 ## Argument Reference
 
 The following arguments are supported:
@@ -1333,6 +1435,12 @@ The following arguments are supported:
   (Optional)
   A filter to selectively run a subset of rules.
 
+* `anomaly_detection` -
+  (Optional)
+  The scan-level anomaly detection configuration. These settings apply to all
+  the anomaly detection rules in the scan, unless a rule overrides them.
+  Structure is [documented below](#nested_data_quality_spec_anomaly_detection).
+
 
 <a name="nested_data_quality_spec_post_scan_actions"></a>The `post_scan_actions` block supports:
 
@@ -1480,6 +1588,24 @@ The following arguments are supported:
   Currently, only one query is supported, but this may be expanded in the future.
   Structure is [documented below](#nested_data_quality_spec_rules_debug_queries).
 
+* `data_anomaly_detection` -
+  (Optional)
+  Aggregate rule which detects anomalies in the metrics of the column.
+  The time series is built from the aggregation timestamp and window set in this rule or,
+  if not set, in `data_quality_spec.anomaly_detection`. All the data anomaly detection
+  rules in a scan must resolve to the same aggregation timestamp and aggregation window.
+  Structure is [documented below](#nested_data_quality_spec_rules_data_anomaly_detection).
+
+* `freshness_anomaly_detection` -
+  (Optional)
+  Table rule which detects irregularities and misses in the updates of the table.
+  Structure is [documented below](#nested_data_quality_spec_rules_freshness_anomaly_detection).
+
+* `volume_anomaly_detection` -
+  (Optional)
+  Table rule which detects irregularities and misses in the volume of the updates of the table.
+  Structure is [documented below](#nested_data_quality_spec_rules_volume_anomaly_detection).
+
 
 <a name="nested_data_quality_spec_rules_range_expectation"></a>The `range_expectation` block supports:
 
@@ -1588,6 +1714,116 @@ The following arguments are supported:
 * `sql_statement` -
   (Required)
   Specifies the SQL statement to be executed.
+
+<a name="nested_data_quality_spec_rules_data_anomaly_detection"></a>The `data_anomaly_detection` block supports:
+
+* `segmentation_columns` -
+  (Optional)
+  The columns used to segment the data. A time series is built for each combination of
+  the segmentation column values, and the metrics are evaluated on each time series.
+  For example, to look at sales trends, you might choose `state` and `city` as the
+  segmentation columns. By default, no segmentation columns are used.
+
+* `metrics` -
+  (Required)
+  The built-in metrics to detect anomalies in, for example `["AVG", "MIN", "COUNT"]`.
+  `AVG`, `MIN`, `MAX`, and `SUM` apply to numeric columns only. `COUNT` is the number of
+  rows with non-null values for numeric columns, or the number of unique values for
+  string columns.
+  Each value may be one of: `AVG`, `MIN`, `MAX`, `COUNT`, `SUM`.
+
+* `anomaly_probability_threshold` -
+  (Optional)
+  The probability threshold for labeling a value as an anomaly, in the range [0, 1).
+  For example, if set to 0.9, only anomalies with a probability greater than 0.9 are
+  labeled as anomalies. Defaults to 0.9.
+
+* `timestamp_column` -
+  (Optional)
+  The timestamp column in the table, used to build the time series for this rule.
+  Only one of `timestamp_column`, `use_partition_column`, or `use_incremental_column` can be set.
+
+* `use_partition_column` -
+  (Optional)
+  If true, the partition column of the table is used to build the time series for this rule.
+  Only one of `timestamp_column`, `use_partition_column`, or `use_incremental_column` can be set.
+
+* `use_incremental_column` -
+  (Optional)
+  If true, the incremental column of the scan (`execution_spec.field`) is used to build
+  the time series for this rule.
+  Only one of `timestamp_column`, `use_partition_column`, or `use_incremental_column` can be set.
+
+* `aggregation_window_override` -
+  (Optional)
+  The interval of the aggregation window for this rule, which overrides
+  `data_quality_spec.anomaly_detection.aggregation_window`.
+  Possible values are: `PER_MINUTE`, `HOURLY`, `DAILY`, `WEEKLY`, `MONTHLY`, `QUARTERLY`, `YEARLY`.
+
+<a name="nested_data_quality_spec_rules_freshness_anomaly_detection"></a>The `freshness_anomaly_detection` block supports:
+
+* `confidence_level` -
+  (Optional)
+  The confidence level for detecting freshness anomalies. The low, standard, and high
+  confidence levels apply a low, standard, and high anomaly threshold, respectively.
+  Possible values are: `ANOMALY_DETECTION_CONFIDENCE_LEVEL_LOW`, `ANOMALY_DETECTION_CONFIDENCE_LEVEL_STANDARD`, `ANOMALY_DETECTION_CONFIDENCE_LEVEL_HIGH`.
+
+<a name="nested_data_quality_spec_rules_volume_anomaly_detection"></a>The `volume_anomaly_detection` block supports:
+
+* `confidence_level` -
+  (Optional)
+  The confidence level for detecting volume anomalies. The low, standard, and high
+  confidence levels apply a low, standard, and high anomaly threshold, respectively.
+  Possible values are: `ANOMALY_DETECTION_CONFIDENCE_LEVEL_LOW`, `ANOMALY_DETECTION_CONFIDENCE_LEVEL_STANDARD`, `ANOMALY_DETECTION_CONFIDENCE_LEVEL_HIGH`.
+
+<a name="nested_data_quality_spec_anomaly_detection"></a>The `anomaly_detection` block supports:
+
+* `timestamp_column` -
+  (Optional)
+  The timestamp column in the table, used to build the time series.
+  Only one of `timestamp_column`, `use_partition_column`, or `use_incremental_column` can be set.
+
+* `use_partition_column` -
+  (Optional)
+  If true, the partition column of the table is used to build the time series.
+  Only one of `timestamp_column`, `use_partition_column`, or `use_incremental_column` can be set.
+
+* `use_incremental_column` -
+  (Optional)
+  If true, the incremental column of the scan (`execution_spec.field`) is used to build the time series.
+  Only one of `timestamp_column`, `use_partition_column`, or `use_incremental_column` can be set.
+
+* `aggregation_window` -
+  (Optional)
+  The interval of the aggregation window, which is the granularity of the time series.
+  This is different from the time window of the incoming data. If not set, it matches
+  the time window of the incoming data.
+  Possible values are: `PER_MINUTE`, `HOURLY`, `DAILY`, `WEEKLY`, `MONTHLY`, `QUARTERLY`, `YEARLY`.
+
+* `anomaly_detection_assets` -
+  (Optional)
+  The storage configuration for anomaly detection assets, such as aggregated data,
+  time series models, and detection results.
+  Structure is [documented below](#nested_data_quality_spec_anomaly_detection_anomaly_detection_assets).
+
+
+<a name="nested_data_quality_spec_anomaly_detection_anomaly_detection_assets"></a>The `anomaly_detection_assets` block supports:
+
+* `result_table` -
+  (Optional)
+  The BigQuery table to store anomaly detection results in.
+  Format: `projects/PROJECT_ID/datasets/DATASET_ID/tables/TABLE_ID` or
+  `//bigquery.googleapis.com/projects/PROJECT_ID/datasets/DATASET_ID/tables/TABLE_ID`.
+  If not set, a result table is created in the same dataset as the source table.
+
+* `intermediate_dataset` -
+  (Optional)
+  The BigQuery dataset to store intermediate results in. A table is created in this
+  dataset to store the time series data used to detect anomalies, and multiple models
+  may be created in this dataset.
+  Format: `projects/PROJECT_ID/datasets/DATASET_ID` or
+  `//bigquery.googleapis.com/projects/PROJECT_ID/datasets/DATASET_ID`.
+  If not set, the dataset of the source table is used.
 
 <a name="nested_data_profile_spec"></a>The `data_profile_spec` block supports:
 

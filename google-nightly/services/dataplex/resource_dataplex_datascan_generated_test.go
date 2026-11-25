@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -72,7 +73,7 @@ func TestAccDataplexDatascan_dataplexDatascanBasicProfileExample(t *testing.T) {
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -130,7 +131,7 @@ func TestAccDataplexDatascan_dataplexDatascanFullProfileTestExample(t *testing.T
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -251,7 +252,7 @@ func TestAccDataplexDatascan_dataplexDatascanOnetimeProfileExample(t *testing.T)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -311,7 +312,7 @@ func TestAccDataplexDatascan_dataplexDatascanBasicQualityExample(t *testing.T) {
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -378,7 +379,7 @@ func TestAccDataplexDatascan_dataplexDatascanFullQualityTestExample(t *testing.T
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -634,7 +635,7 @@ func TestAccDataplexDatascan_dataplexDatascanBasicDiscoveryExample(t *testing.T)
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -699,7 +700,7 @@ func TestAccDataplexDatascan_dataplexDatascanFullDiscoveryExample(t *testing.T) 
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -817,7 +818,7 @@ func TestAccDataplexDatascan_dataplexDatascanDocumentationExample(t *testing.T) 
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -961,7 +962,7 @@ func TestAccDataplexDatascan_dataplexDatascanOnetimeDocumentationExample(t *test
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -1083,7 +1084,7 @@ func TestAccDataplexDatascan_dataplexDatascanExecutionIdentityUserCredentialExam
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
 		Steps: []resource.TestStep{
 			{
@@ -1177,7 +1178,7 @@ func TestAccDataplexDatascan_dataplexDatascanExecutionIdentityServiceAccountExam
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		ExternalProviders: map[string]resource.ExternalProvider{
 			"time": {},
 		},
@@ -1316,7 +1317,7 @@ func TestAccDataplexDatascan_dataplexDatascanQualityReusableRulesCatalogBasedExa
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		ExternalProviders: map[string]resource.ExternalProvider{
 			"time": {},
 		},
@@ -1546,7 +1547,7 @@ func TestAccDataplexDatascan_dataplexDatascanDataQualityTemplateReferenceExample
 
 	acctest.VcrTest(t, resource.TestCase{
 		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
-		ProtoV5ProviderFactories: acctest.ProtoV5ProviderFactories(t),
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
 		ExternalProviders: map[string]resource.ExternalProvider{
 			"time": {},
 		},
@@ -1705,6 +1706,463 @@ resource "google_dataplex_datascan" "data_quality_template_reference" {
     google_bigquery_table.tf_test_table,
     time_sleep.wait_120_seconds
   ]
+}
+`, context)
+}
+
+func TestAccDataplexDatascan_dataplexDatascanAnomalyDetectionExample(t *testing.T) {
+	t.Parallel()
+
+	randomSuffix := acctest.RandString(t, 10)
+
+	context := map[string]interface{}{
+		"project_name":  envvar.GetTestProjectFromEnv(),
+		"datascan_name": "tf-test-dataquality-anomaly" + randomSuffix,
+		"dataset_id":    "tf_test_anomaly_detection_dataset" + randomSuffix,
+		"table_id":      "tf_test_anomaly_detection_table" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	context_1 := map[string]interface{}{
+		"project_name":  envvar.GetTestProjectFromEnv(),
+		"datascan_name": "tf-test-dataquality-anomaly" + randomSuffix,
+		"dataset_id":    "tf_test_anomaly_detection_dataset" + randomSuffix,
+		"table_id":      "tf_test_anomaly_detection_table" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	context_2 := map[string]interface{}{
+		"project_name":  envvar.GetTestProjectFromEnv(),
+		"datascan_name": "tf-test-dataquality-anomaly" + randomSuffix,
+		"dataset_id":    "tf_test_anomaly_detection_dataset" + randomSuffix,
+		"table_id":      "tf_test_anomaly_detection_table" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	context_3 := map[string]interface{}{
+		"project_name":  envvar.GetTestProjectFromEnv(),
+		"datascan_name": "tf-test-dataquality-anomaly" + randomSuffix,
+		"dataset_id":    "tf_test_anomaly_detection_dataset" + randomSuffix,
+		"table_id":      "tf_test_anomaly_detection_table" + randomSuffix,
+		"random_suffix": randomSuffix,
+	}
+
+	acctest.VcrTest(t, resource.TestCase{
+		PreCheck:                 func() { acctest.AccTestPreCheck(t) },
+		ProtoV5ProviderFactories: acctest.ProtoV5ProviderBetaFactories(t),
+		CheckDestroy:             testAccCheckDataplexDatascanDestroyProducer(t),
+		Steps: []resource.TestStep{
+			{
+				Config: testAccDataplexDatascan_dataplexDatascanAnomalyDetectionExample(context),
+			},
+			{
+				ResourceName:            "google_dataplex_datascan.anomaly_detection",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"data_scan_id", "labels", "location", "terraform_labels"},
+			},
+			{
+				ResourceName:       "google_dataplex_datascan.anomaly_detection",
+				ImportState:        true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+			{
+				Config: testAccDataplexDatascan_dataplexDatascanAnomalyDetectionUpdateExample(context_1),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("google_dataplex_datascan.anomaly_detection", plancheck.ResourceActionUpdate),
+					},
+				},
+			},
+			{
+				ResourceName:            "google_dataplex_datascan.anomaly_detection",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"data_scan_id", "labels", "location", "terraform_labels"},
+			},
+			{
+				ResourceName:       "google_dataplex_datascan.anomaly_detection",
+				ImportState:        true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+			{
+				Config: testAccDataplexDatascan_dataplexDatascanAnomalyDetectionIncrementalExample(context_2),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("google_dataplex_datascan.anomaly_detection", plancheck.ResourceActionUpdate),
+					},
+				},
+			},
+			{
+				ResourceName:            "google_dataplex_datascan.anomaly_detection",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"data_scan_id", "labels", "location", "terraform_labels"},
+			},
+			{
+				ResourceName:       "google_dataplex_datascan.anomaly_detection",
+				ImportState:        true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+			{
+				Config: testAccDataplexDatascan_dataplexDatascanAnomalyDetectionMinimalExample(context_3),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("google_dataplex_datascan.anomaly_detection", plancheck.ResourceActionUpdate),
+					},
+				},
+			},
+			{
+				ResourceName:            "google_dataplex_datascan.anomaly_detection",
+				ImportState:             true,
+				ImportStateVerify:       true,
+				ImportStateVerifyIgnore: []string{"data_scan_id", "labels", "location", "terraform_labels"},
+			},
+			{
+				ResourceName:       "google_dataplex_datascan.anomaly_detection",
+				ImportState:        true,
+				ExpectNonEmptyPlan: true,
+				ImportStateKind:    resource.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func testAccDataplexDatascan_dataplexDatascanAnomalyDetectionExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_bigquery_dataset" "source" {
+  provider   = google-nightly
+  dataset_id = "%{dataset_id}"
+  location   = "us-central1"
+}
+
+resource "google_bigquery_table" "source" {
+  provider            = google-nightly
+  dataset_id          = google_bigquery_dataset.source.dataset_id
+  table_id            = "%{table_id}"
+  deletion_protection = false
+
+  time_partitioning {
+    type  = "DAY"
+    field = "event_time"
+  }
+
+  schema = <<EOF
+[
+  {"name": "event_time", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "region", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "channel", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "sales_amount", "type": "NUMERIC", "mode": "NULLABLE"},
+  {"name": "order_count", "type": "INTEGER", "mode": "NULLABLE"}
+]
+EOF
+}
+
+resource "google_dataplex_datascan" "anomaly_detection" {
+  provider     = google-nightly
+  location     = "us-central1"
+  data_scan_id = "%{datascan_name}"
+
+  data {
+    resource = "//bigquery.googleapis.com/projects/${google_bigquery_table.source.project}/datasets/${google_bigquery_table.source.dataset_id}/tables/${google_bigquery_table.source.table_id}"
+  }
+
+  execution_spec {
+    trigger {
+      on_demand {}
+    }
+    field = "event_time"
+  }
+
+  data_quality_spec {
+    anomaly_detection {
+      timestamp_column   = "event_time"
+      aggregation_window = "DAILY"
+
+      anomaly_detection_assets {
+        result_table         = "//bigquery.googleapis.com/projects/${google_bigquery_dataset.source.project}/datasets/${google_bigquery_dataset.source.dataset_id}/tables/anomaly_detection_results"
+        intermediate_dataset = "//bigquery.googleapis.com/projects/${google_bigquery_dataset.source.project}/datasets/${google_bigquery_dataset.source.dataset_id}"
+      }
+    }
+
+    rules {
+      column    = "sales_amount"
+      dimension = "VALIDITY"
+      name      = "sales-amount-anomalies"
+
+      data_anomaly_detection {
+        metrics                       = ["SUM", "AVG"]
+        segmentation_columns          = ["region"]
+        anomaly_probability_threshold = 0.9
+      }
+    }
+
+    rules {
+      column    = "order_count"
+      dimension = "VALIDITY"
+      name      = "order-count-anomalies"
+
+      data_anomaly_detection {
+        metrics = ["COUNT"]
+      }
+    }
+
+    rules {
+      dimension = "FRESHNESS"
+      name      = "freshness-anomalies"
+
+      freshness_anomaly_detection {
+        confidence_level = "ANOMALY_DETECTION_CONFIDENCE_LEVEL_STANDARD"
+      }
+    }
+
+    rules {
+      dimension = "VOLUME"
+      name      = "volume-anomalies"
+
+      volume_anomaly_detection {}
+    }
+  }
+
+  project = "%{project_name}"
+}
+`, context)
+}
+
+func testAccDataplexDatascan_dataplexDatascanAnomalyDetectionUpdateExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_bigquery_dataset" "source" {
+  provider   = google-nightly
+  dataset_id = "%{dataset_id}"
+  location   = "us-central1"
+}
+
+resource "google_bigquery_table" "source" {
+  provider            = google-nightly
+  dataset_id          = google_bigquery_dataset.source.dataset_id
+  table_id            = "%{table_id}"
+  deletion_protection = false
+
+  time_partitioning {
+    type  = "DAY"
+    field = "event_time"
+  }
+
+  schema = <<EOF
+[
+  {"name": "event_time", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "region", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "channel", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "sales_amount", "type": "NUMERIC", "mode": "NULLABLE"},
+  {"name": "order_count", "type": "INTEGER", "mode": "NULLABLE"}
+]
+EOF
+}
+
+resource "google_dataplex_datascan" "anomaly_detection" {
+  provider     = google-nightly
+  location     = "us-central1"
+  data_scan_id = "%{datascan_name}"
+
+  data {
+    resource = "//bigquery.googleapis.com/projects/${google_bigquery_table.source.project}/datasets/${google_bigquery_table.source.dataset_id}/tables/${google_bigquery_table.source.table_id}"
+  }
+
+  execution_spec {
+    trigger {
+      on_demand {}
+    }
+    field = "event_time"
+  }
+
+  data_quality_spec {
+    anomaly_detection {
+      use_partition_column = true
+      aggregation_window   = "WEEKLY"
+
+      anomaly_detection_assets {
+        result_table         = "//bigquery.googleapis.com/projects/${google_bigquery_dataset.source.project}/datasets/${google_bigquery_dataset.source.dataset_id}/tables/anomaly_detection_results_v2"
+        intermediate_dataset = "//bigquery.googleapis.com/projects/${google_bigquery_dataset.source.project}/datasets/${google_bigquery_dataset.source.dataset_id}"
+      }
+    }
+
+    rules {
+      column    = "sales_amount"
+      dimension = "VALIDITY"
+      name      = "sales-amount-anomalies"
+
+      data_anomaly_detection {
+        metrics                       = ["MAX"]
+        segmentation_columns          = ["region", "channel"]
+        anomaly_probability_threshold = 0.75
+        timestamp_column              = "event_time"
+        aggregation_window_override   = "DAILY"
+      }
+    }
+
+    rules {
+      column    = "order_count"
+      dimension = "VALIDITY"
+      name      = "order-count-anomalies"
+
+      data_anomaly_detection {
+        metrics                     = ["MIN"]
+        timestamp_column            = "event_time"
+        aggregation_window_override = "DAILY"
+      }
+    }
+
+    rules {
+      dimension = "FRESHNESS"
+      name      = "freshness-anomalies"
+
+      freshness_anomaly_detection {}
+    }
+
+    rules {
+      dimension = "VOLUME"
+      name      = "volume-anomalies"
+
+      volume_anomaly_detection {
+        confidence_level = "ANOMALY_DETECTION_CONFIDENCE_LEVEL_HIGH"
+      }
+    }
+  }
+
+  project = "%{project_name}"
+}
+`, context)
+}
+
+func testAccDataplexDatascan_dataplexDatascanAnomalyDetectionIncrementalExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_bigquery_dataset" "source" {
+  provider   = google-nightly
+  dataset_id = "%{dataset_id}"
+  location   = "us-central1"
+}
+
+resource "google_bigquery_table" "source" {
+  provider            = google-nightly
+  dataset_id          = google_bigquery_dataset.source.dataset_id
+  table_id            = "%{table_id}"
+  deletion_protection = false
+
+  time_partitioning {
+    type  = "DAY"
+    field = "event_time"
+  }
+
+  schema = <<EOF
+[
+  {"name": "event_time", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "region", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "channel", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "sales_amount", "type": "NUMERIC", "mode": "NULLABLE"},
+  {"name": "order_count", "type": "INTEGER", "mode": "NULLABLE"}
+]
+EOF
+}
+
+resource "google_dataplex_datascan" "anomaly_detection" {
+  provider     = google-nightly
+  location     = "us-central1"
+  data_scan_id = "%{datascan_name}"
+
+  data {
+    resource = "//bigquery.googleapis.com/projects/${google_bigquery_table.source.project}/datasets/${google_bigquery_table.source.dataset_id}/tables/${google_bigquery_table.source.table_id}"
+  }
+
+  execution_spec {
+    trigger {
+      on_demand {}
+    }
+    field = "event_time"
+  }
+
+  data_quality_spec {
+    anomaly_detection {
+      use_incremental_column = true
+    }
+
+    rules {
+      column    = "sales_amount"
+      dimension = "VALIDITY"
+
+      data_anomaly_detection {
+        metrics              = ["SUM"]
+        use_partition_column = true
+      }
+    }
+  }
+
+  project = "%{project_name}"
+}
+`, context)
+}
+
+func testAccDataplexDatascan_dataplexDatascanAnomalyDetectionMinimalExample(context map[string]interface{}) string {
+	return acctest.Nprintf(`
+resource "google_bigquery_dataset" "source" {
+  provider   = google-nightly
+  dataset_id = "%{dataset_id}"
+  location   = "us-central1"
+}
+
+resource "google_bigquery_table" "source" {
+  provider            = google-nightly
+  dataset_id          = google_bigquery_dataset.source.dataset_id
+  table_id            = "%{table_id}"
+  deletion_protection = false
+
+  time_partitioning {
+    type  = "DAY"
+    field = "event_time"
+  }
+
+  schema = <<EOF
+[
+  {"name": "event_time", "type": "TIMESTAMP", "mode": "REQUIRED"},
+  {"name": "region", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "channel", "type": "STRING", "mode": "NULLABLE"},
+  {"name": "sales_amount", "type": "NUMERIC", "mode": "NULLABLE"},
+  {"name": "order_count", "type": "INTEGER", "mode": "NULLABLE"}
+]
+EOF
+}
+
+resource "google_dataplex_datascan" "anomaly_detection" {
+  provider     = google-nightly
+  location     = "us-central1"
+  data_scan_id = "%{datascan_name}"
+
+  data {
+    resource = "//bigquery.googleapis.com/projects/${google_bigquery_table.source.project}/datasets/${google_bigquery_table.source.dataset_id}/tables/${google_bigquery_table.source.table_id}"
+  }
+
+  execution_spec {
+    trigger {
+      on_demand {}
+    }
+    field = "event_time"
+  }
+
+  data_quality_spec {
+    rules {
+      column    = "sales_amount"
+      dimension = "VALIDITY"
+
+      data_anomaly_detection {
+        metrics                = ["SUM"]
+        use_incremental_column = true
+      }
+    }
+  }
+
+  project = "%{project_name}"
 }
 `, context)
 }

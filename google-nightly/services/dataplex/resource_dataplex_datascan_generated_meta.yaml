@@ -1,4 +1,5 @@
 # Copyright IBM Corp. 2014, 2026
+# Copyright 2026 Google LLC
 # SPDX-License-Identifier: MPL-2.0
 resource: google_dataplex_datascan
 generation_type: mmv1
@@ -33,6 +34,12 @@ fields:
     - api_field: dataProfileSpec.postScanActions.bigqueryExport.resultsTable
     - api_field: dataProfileSpec.rowFilter
     - api_field: dataProfileSpec.samplingPercent
+    - api_field: dataQualitySpec.anomalyDetection.aggregationWindow
+    - api_field: dataQualitySpec.anomalyDetection.anomalyDetectionAssets.intermediateDataset
+    - api_field: dataQualitySpec.anomalyDetection.anomalyDetectionAssets.resultTable
+    - api_field: dataQualitySpec.anomalyDetection.timestampColumn
+    - api_field: dataQualitySpec.anomalyDetection.useIncrementalColumn
+    - api_field: dataQualitySpec.anomalyDetection.usePartitionColumn
     - api_field: dataQualitySpec.catalogPublishingEnabled
     - api_field: dataQualitySpec.enableCatalogBasedRules
     - api_field: dataQualitySpec.filter
@@ -44,10 +51,18 @@ fields:
     - api_field: dataQualitySpec.rowFilter
     - api_field: dataQualitySpec.rules.attributes
     - api_field: dataQualitySpec.rules.column
+    - api_field: dataQualitySpec.rules.dataAnomalyDetection.aggregationWindowOverride
+    - api_field: dataQualitySpec.rules.dataAnomalyDetection.anomalyProbabilityThreshold
+    - api_field: dataQualitySpec.rules.dataAnomalyDetection.metrics
+    - api_field: dataQualitySpec.rules.dataAnomalyDetection.segmentationColumns
+    - api_field: dataQualitySpec.rules.dataAnomalyDetection.timestampColumn
+    - api_field: dataQualitySpec.rules.dataAnomalyDetection.useIncrementalColumn
+    - api_field: dataQualitySpec.rules.dataAnomalyDetection.usePartitionColumn
     - api_field: dataQualitySpec.rules.debugQueries.description
     - api_field: dataQualitySpec.rules.debugQueries.sqlStatement
     - api_field: dataQualitySpec.rules.description
     - api_field: dataQualitySpec.rules.dimension
+    - api_field: dataQualitySpec.rules.freshnessAnomalyDetection.confidenceLevel
     - api_field: dataQualitySpec.rules.ignoreNull
     - api_field: dataQualitySpec.rules.name
     - api_field: dataQualitySpec.rules.nonNullExpectation
@@ -73,6 +88,7 @@ fields:
       field: data_quality_spec.rules.template_reference.values.value
     - api_field: dataQualitySpec.rules.threshold
     - api_field: dataQualitySpec.rules.uniquenessExpectation
+    - api_field: dataQualitySpec.rules.volumeAnomalyDetection.confidenceLevel
     - api_field: dataQualitySpec.samplingPercent
     - field: data_scan_id
       provider_only: true

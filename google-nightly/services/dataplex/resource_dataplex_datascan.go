@@ -1,4 +1,5 @@
 // Copyright IBM Corp. 2014, 2026
+// Copyright 2026 Google LLC
 // SPDX-License-Identifier: MPL-2.0
 
 // ----------------------------------------------------------------------------
@@ -513,6 +514,75 @@ Sampling is not applied if 'sampling_percent' is not specified, 0 or 100.`,
 				MaxItems:    1,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
+						"anomaly_detection": {
+							Type:     schema.TypeList,
+							Optional: true,
+							Description: `The scan-level anomaly detection configuration. These settings apply to all
+the anomaly detection rules in the scan, unless a rule overrides them.`,
+							MaxItems: 1,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"aggregation_window": {
+										Type:         schema.TypeString,
+										Optional:     true,
+										ValidateFunc: verify.ValidateEnum([]string{"PER_MINUTE", "HOURLY", "DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY", ""}),
+										Description: `The interval of the aggregation window, which is the granularity of the time series.
+This is different from the time window of the incoming data. If not set, it matches
+the time window of the incoming data. Possible values: ["PER_MINUTE", "HOURLY", "DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]`,
+									},
+									"anomaly_detection_assets": {
+										Type:     schema.TypeList,
+										Optional: true,
+										Description: `The storage configuration for anomaly detection assets, such as aggregated data,
+time series models, and detection results.`,
+										MaxItems: 1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"intermediate_dataset": {
+													Type:     schema.TypeString,
+													Optional: true,
+													Description: `The BigQuery dataset to store intermediate results in. A table is created in this
+dataset to store the time series data used to detect anomalies, and multiple models
+may be created in this dataset.
+Format: 'projects/PROJECT_ID/datasets/DATASET_ID' or
+'//bigquery.googleapis.com/projects/PROJECT_ID/datasets/DATASET_ID'.
+If not set, the dataset of the source table is used.`,
+												},
+												"result_table": {
+													Type:     schema.TypeString,
+													Optional: true,
+													Description: `The BigQuery table to store anomaly detection results in.
+Format: 'projects/PROJECT_ID/datasets/DATASET_ID/tables/TABLE_ID' or
+'//bigquery.googleapis.com/projects/PROJECT_ID/datasets/DATASET_ID/tables/TABLE_ID'.
+If not set, a result table is created in the same dataset as the source table.`,
+												},
+											},
+										},
+									},
+									"timestamp_column": {
+										Type:     schema.TypeString,
+										Optional: true,
+										Description: `The timestamp column in the table, used to build the time series.
+Only one of 'timestamp_column', 'use_partition_column', or 'use_incremental_column' can be set.`,
+										ConflictsWith: []string{"data_quality_spec.0.anomaly_detection.0.use_incremental_column", "data_quality_spec.0.anomaly_detection.0.use_partition_column"},
+									},
+									"use_incremental_column": {
+										Type:     schema.TypeBool,
+										Optional: true,
+										Description: `If true, the incremental column of the scan ('execution_spec.field') is used to build the time series.
+Only one of 'timestamp_column', 'use_partition_column', or 'use_incremental_column' can be set.`,
+										ConflictsWith: []string{"data_quality_spec.0.anomaly_detection.0.timestamp_column", "data_quality_spec.0.anomaly_detection.0.use_partition_column"},
+									},
+									"use_partition_column": {
+										Type:     schema.TypeBool,
+										Optional: true,
+										Description: `If true, the partition column of the table is used to build the time series.
+Only one of 'timestamp_column', 'use_partition_column', or 'use_incremental_column' can be set.`,
+										ConflictsWith: []string{"data_quality_spec.0.anomaly_detection.0.timestamp_column", "data_quality_spec.0.anomaly_detection.0.use_incremental_column"},
+									},
+								},
+							},
+						},
 						"catalog_publishing_enabled": {
 							Type:        schema.TypeBool,
 							Optional:    true,
@@ -643,6 +713,75 @@ Format://bigquery.googleapis.com/projects/PROJECT_ID/datasets/DATASET_ID/tables/
 										Optional:    true,
 										Description: `The unnested column which this rule is evaluated against.`,
 									},
+									"data_anomaly_detection": {
+										Type:     schema.TypeList,
+										Optional: true,
+										Description: `Aggregate rule which detects anomalies in the metrics of the column.
+The time series is built from the aggregation timestamp and window set in this rule or,
+if not set, in 'data_quality_spec.anomaly_detection'. All the data anomaly detection
+rules in a scan must resolve to the same aggregation timestamp and aggregation window.`,
+										MaxItems: 1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"metrics": {
+													Type:     schema.TypeList,
+													Required: true,
+													Description: `The built-in metrics to detect anomalies in, for example '["AVG", "MIN", "COUNT"]'.
+'AVG', 'MIN', 'MAX', and 'SUM' apply to numeric columns only. 'COUNT' is the number of
+rows with non-null values for numeric columns, or the number of unique values for
+string columns. Possible values: ["AVG", "MIN", "MAX", "COUNT", "SUM"]`,
+													Elem: &schema.Schema{
+														Type:         schema.TypeString,
+														ValidateFunc: verify.ValidateEnum([]string{"AVG", "MIN", "MAX", "COUNT", "SUM"}),
+													},
+												},
+												"aggregation_window_override": {
+													Type:         schema.TypeString,
+													Optional:     true,
+													ValidateFunc: verify.ValidateEnum([]string{"PER_MINUTE", "HOURLY", "DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY", ""}),
+													Description: `The interval of the aggregation window for this rule, which overrides
+'data_quality_spec.anomaly_detection.aggregation_window'. Possible values: ["PER_MINUTE", "HOURLY", "DAILY", "WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"]`,
+												},
+												"anomaly_probability_threshold": {
+													Type:     schema.TypeFloat,
+													Optional: true,
+													Description: `The probability threshold for labeling a value as an anomaly, in the range [0, 1).
+For example, if set to 0.9, only anomalies with a probability greater than 0.9 are
+labeled as anomalies. Defaults to 0.9.`,
+												},
+												"segmentation_columns": {
+													Type:     schema.TypeList,
+													Optional: true,
+													Description: `The columns used to segment the data. A time series is built for each combination of
+the segmentation column values, and the metrics are evaluated on each time series.
+For example, to look at sales trends, you might choose 'state' and 'city' as the
+segmentation columns. By default, no segmentation columns are used.`,
+													Elem: &schema.Schema{
+														Type: schema.TypeString,
+													},
+												},
+												"timestamp_column": {
+													Type:     schema.TypeString,
+													Optional: true,
+													Description: `The timestamp column in the table, used to build the time series for this rule.
+Only one of 'timestamp_column', 'use_partition_column', or 'use_incremental_column' can be set.`,
+												},
+												"use_incremental_column": {
+													Type:     schema.TypeBool,
+													Optional: true,
+													Description: `If true, the incremental column of the scan ('execution_spec.field') is used to build
+the time series for this rule.
+Only one of 'timestamp_column', 'use_partition_column', or 'use_incremental_column' can be set.`,
+												},
+												"use_partition_column": {
+													Type:     schema.TypeBool,
+													Optional: true,
+													Description: `If true, the partition column of the table is used to build the time series for this rule.
+Only one of 'timestamp_column', 'use_partition_column', or 'use_incremental_column' can be set.`,
+												},
+											},
+										},
+									},
 									"debug_queries": {
 										Type:     schema.TypeList,
 										Optional: true,
@@ -669,6 +808,23 @@ The maximum length is 1,024 characters.`,
 										Optional: true,
 										Description: `Description of the rule.
 The maximum length is 1,024 characters.`,
+									},
+									"freshness_anomaly_detection": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `Table rule which detects irregularities and misses in the updates of the table.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"confidence_level": {
+													Type:         schema.TypeString,
+													Optional:     true,
+													ValidateFunc: verify.ValidateEnum([]string{"ANOMALY_DETECTION_CONFIDENCE_LEVEL_LOW", "ANOMALY_DETECTION_CONFIDENCE_LEVEL_STANDARD", "ANOMALY_DETECTION_CONFIDENCE_LEVEL_HIGH", ""}),
+													Description: `The confidence level for detecting freshness anomalies. The low, standard, and high
+confidence levels apply a low, standard, and high anomaly threshold, respectively. Possible values: ["ANOMALY_DETECTION_CONFIDENCE_LEVEL_LOW", "ANOMALY_DETECTION_CONFIDENCE_LEVEL_STANDARD", "ANOMALY_DETECTION_CONFIDENCE_LEVEL_HIGH"]`,
+												},
+											},
+										},
 									},
 									"ignore_null": {
 										Type:        schema.TypeBool,
@@ -898,6 +1054,23 @@ Only relevant if a minValue has been defined. Default = false.`,
 										MaxItems:    1,
 										Elem: &schema.Resource{
 											Schema: map[string]*schema.Schema{},
+										},
+									},
+									"volume_anomaly_detection": {
+										Type:        schema.TypeList,
+										Optional:    true,
+										Description: `Table rule which detects irregularities and misses in the volume of the updates of the table.`,
+										MaxItems:    1,
+										Elem: &schema.Resource{
+											Schema: map[string]*schema.Schema{
+												"confidence_level": {
+													Type:         schema.TypeString,
+													Optional:     true,
+													ValidateFunc: verify.ValidateEnum([]string{"ANOMALY_DETECTION_CONFIDENCE_LEVEL_LOW", "ANOMALY_DETECTION_CONFIDENCE_LEVEL_STANDARD", "ANOMALY_DETECTION_CONFIDENCE_LEVEL_HIGH", ""}),
+													Description: `The confidence level for detecting volume anomalies. The low, standard, and high
+confidence levels apply a low, standard, and high anomaly threshold, respectively. Possible values: ["ANOMALY_DETECTION_CONFIDENCE_LEVEL_LOW", "ANOMALY_DETECTION_CONFIDENCE_LEVEL_STANDARD", "ANOMALY_DETECTION_CONFIDENCE_LEVEL_HIGH"]`,
+												},
+											},
 										},
 									},
 								},
@@ -1133,6 +1306,11 @@ func resourceDataplexDatascanCreate(d *schema.ResourceData, meta interface{}) er
 		return err
 	} else if v, ok := d.GetOkExists("effective_labels"); !tpgresource.IsEmptyValue(reflect.ValueOf(effectiveLabelsProp)) && (ok || !reflect.DeepEqual(v, effectiveLabelsProp)) {
 		obj["labels"] = effectiveLabelsProp
+	}
+
+	obj, err = resourceDataplexDatascanEncoder(d, meta, obj)
+	if err != nil {
+		return err
 	}
 
 	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataScans?dataScanId={{data_scan_id}}")
@@ -1397,6 +1575,11 @@ func resourceDataplexDatascanUpdate(d *schema.ResourceData, meta interface{}) er
 		return err
 	} else if v, ok := d.GetOkExists("effective_labels"); !tpgresource.IsEmptyValue(reflect.ValueOf(v)) && (ok || !reflect.DeepEqual(v, effectiveLabelsProp)) {
 		obj["labels"] = effectiveLabelsProp
+	}
+
+	obj, err = resourceDataplexDatascanEncoder(d, meta, obj)
+	if err != nil {
+		return err
 	}
 
 	url, err := tpgresource.ReplaceVars(d, config, transport_tpg.BaseUrl(Product, config)+"projects/{{project}}/locations/{{location}}/dataScans/{{data_scan_id}}")
@@ -1806,6 +1989,8 @@ func flattenDataplexDatascanDataQualitySpec(v interface{}, d *schema.ResourceDat
 		flattenDataplexDatascanDataQualitySpecEnableCatalogBasedRules(original["enableCatalogBasedRules"], d, config)
 	transformed["filter"] =
 		flattenDataplexDatascanDataQualitySpecFilter(original["filter"], d, config)
+	transformed["anomaly_detection"] =
+		flattenDataplexDatascanDataQualitySpecAnomalyDetection(original["anomalyDetection"], d, config)
 	return []interface{}{transformed}
 }
 func flattenDataplexDatascanDataQualitySpecSamplingPercent(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
@@ -1950,6 +2135,9 @@ func flattenDataplexDatascanDataQualitySpecRules(v interface{}, d *schema.Resour
 			"sql_assertion":               flattenDataplexDatascanDataQualitySpecRulesSqlAssertion(original["sqlAssertion"], d, config),
 			"template_reference":          flattenDataplexDatascanDataQualitySpecRulesTemplateReference(original["templateReference"], d, config),
 			"debug_queries":               flattenDataplexDatascanDataQualitySpecRulesDebugQueries(original["debugQueries"], d, config),
+			"data_anomaly_detection":      flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetection(original["dataAnomalyDetection"], d, config),
+			"freshness_anomaly_detection": flattenDataplexDatascanDataQualitySpecRulesFreshnessAnomalyDetection(original["freshnessAnomalyDetection"], d, config),
+			"volume_anomaly_detection":    flattenDataplexDatascanDataQualitySpecRulesVolumeAnomalyDetection(original["volumeAnomalyDetection"], d, config),
 		})
 	}
 	return transformed
@@ -2229,6 +2417,87 @@ func flattenDataplexDatascanDataQualitySpecRulesDebugQueriesSqlStatement(v inter
 	return v
 }
 
+func flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetection(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["segmentation_columns"] =
+		flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionSegmentationColumns(original["segmentationColumns"], d, config)
+	transformed["metrics"] =
+		flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionMetrics(original["metrics"], d, config)
+	transformed["anomaly_probability_threshold"] =
+		flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionAnomalyProbabilityThreshold(original["anomalyProbabilityThreshold"], d, config)
+	transformed["timestamp_column"] =
+		flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionTimestampColumn(original["timestampColumn"], d, config)
+	transformed["use_partition_column"] =
+		flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionUsePartitionColumn(original["usePartitionColumn"], d, config)
+	transformed["use_incremental_column"] =
+		flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionUseIncrementalColumn(original["useIncrementalColumn"], d, config)
+	transformed["aggregation_window_override"] =
+		flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionAggregationWindowOverride(original["aggregationWindowOverride"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionSegmentationColumns(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionMetrics(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionAnomalyProbabilityThreshold(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionTimestampColumn(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionUsePartitionColumn(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionUseIncrementalColumn(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionAggregationWindowOverride(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesFreshnessAnomalyDetection(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	transformed := make(map[string]interface{})
+	transformed["confidence_level"] =
+		flattenDataplexDatascanDataQualitySpecRulesFreshnessAnomalyDetectionConfidenceLevel(original["confidenceLevel"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDataplexDatascanDataQualitySpecRulesFreshnessAnomalyDetectionConfidenceLevel(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecRulesVolumeAnomalyDetection(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	transformed := make(map[string]interface{})
+	transformed["confidence_level"] =
+		flattenDataplexDatascanDataQualitySpecRulesVolumeAnomalyDetectionConfidenceLevel(original["confidenceLevel"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDataplexDatascanDataQualitySpecRulesVolumeAnomalyDetectionConfidenceLevel(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
 func flattenDataplexDatascanDataQualitySpecCatalogPublishingEnabled(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
@@ -2238,6 +2507,66 @@ func flattenDataplexDatascanDataQualitySpecEnableCatalogBasedRules(v interface{}
 }
 
 func flattenDataplexDatascanDataQualitySpecFilter(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecAnomalyDetection(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["timestamp_column"] =
+		flattenDataplexDatascanDataQualitySpecAnomalyDetectionTimestampColumn(original["timestampColumn"], d, config)
+	transformed["use_partition_column"] =
+		flattenDataplexDatascanDataQualitySpecAnomalyDetectionUsePartitionColumn(original["usePartitionColumn"], d, config)
+	transformed["use_incremental_column"] =
+		flattenDataplexDatascanDataQualitySpecAnomalyDetectionUseIncrementalColumn(original["useIncrementalColumn"], d, config)
+	transformed["aggregation_window"] =
+		flattenDataplexDatascanDataQualitySpecAnomalyDetectionAggregationWindow(original["aggregationWindow"], d, config)
+	transformed["anomaly_detection_assets"] =
+		flattenDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssets(original["anomalyDetectionAssets"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDataplexDatascanDataQualitySpecAnomalyDetectionTimestampColumn(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecAnomalyDetectionUsePartitionColumn(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecAnomalyDetectionUseIncrementalColumn(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecAnomalyDetectionAggregationWindow(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssets(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	if v == nil {
+		return nil
+	}
+	original := v.(map[string]interface{})
+	if len(original) == 0 {
+		return nil
+	}
+	transformed := make(map[string]interface{})
+	transformed["result_table"] =
+		flattenDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssetsResultTable(original["resultTable"], d, config)
+	transformed["intermediate_dataset"] =
+		flattenDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssetsIntermediateDataset(original["intermediateDataset"], d, config)
+	return []interface{}{transformed}
+}
+func flattenDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssetsResultTable(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
+	return v
+}
+
+func flattenDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssetsIntermediateDataset(v interface{}, d *schema.ResourceData, config *transport_tpg.Config) interface{} {
 	return v
 }
 
@@ -2887,6 +3216,13 @@ func expandDataplexDatascanDataQualitySpec(v interface{}, d tpgresource.Terrafor
 		transformed["filter"] = transformedFilter
 	}
 
+	transformedAnomalyDetection, err := expandDataplexDatascanDataQualitySpecAnomalyDetection(original["anomaly_detection"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedAnomalyDetection); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["anomalyDetection"] = transformedAnomalyDetection
+	}
+
 	return transformed, nil
 }
 
@@ -3228,6 +3564,27 @@ func expandDataplexDatascanDataQualitySpecRules(v interface{}, d tpgresource.Ter
 			return nil, err
 		} else if val := reflect.ValueOf(transformedDebugQueries); val.IsValid() && !tpgresource.IsEmptyValue(val) {
 			transformed["debugQueries"] = transformedDebugQueries
+		}
+
+		transformedDataAnomalyDetection, err := expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetection(original["data_anomaly_detection"], d, config)
+		if err != nil {
+			return nil, err
+		} else if val := reflect.ValueOf(transformedDataAnomalyDetection); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+			transformed["dataAnomalyDetection"] = transformedDataAnomalyDetection
+		}
+
+		transformedFreshnessAnomalyDetection, err := expandDataplexDatascanDataQualitySpecRulesFreshnessAnomalyDetection(original["freshness_anomaly_detection"], d, config)
+		if err != nil {
+			return nil, err
+		} else {
+			transformed["freshnessAnomalyDetection"] = transformedFreshnessAnomalyDetection
+		}
+
+		transformedVolumeAnomalyDetection, err := expandDataplexDatascanDataQualitySpecRulesVolumeAnomalyDetection(original["volume_anomaly_detection"], d, config)
+		if err != nil {
+			return nil, err
+		} else {
+			transformed["volumeAnomalyDetection"] = transformedVolumeAnomalyDetection
 		}
 
 		req = append(req, transformed)
@@ -3671,6 +4028,160 @@ func expandDataplexDatascanDataQualitySpecRulesDebugQueriesSqlStatement(v interf
 	return v, nil
 }
 
+func expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetection(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedSegmentationColumns, err := expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionSegmentationColumns(original["segmentation_columns"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedSegmentationColumns); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["segmentationColumns"] = transformedSegmentationColumns
+	}
+
+	transformedMetrics, err := expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionMetrics(original["metrics"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedMetrics); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["metrics"] = transformedMetrics
+	}
+
+	transformedAnomalyProbabilityThreshold, err := expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionAnomalyProbabilityThreshold(original["anomaly_probability_threshold"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedAnomalyProbabilityThreshold); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["anomalyProbabilityThreshold"] = transformedAnomalyProbabilityThreshold
+	}
+
+	transformedTimestampColumn, err := expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionTimestampColumn(original["timestamp_column"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedTimestampColumn); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["timestampColumn"] = transformedTimestampColumn
+	}
+
+	transformedUsePartitionColumn, err := expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionUsePartitionColumn(original["use_partition_column"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedUsePartitionColumn); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["usePartitionColumn"] = transformedUsePartitionColumn
+	}
+
+	transformedUseIncrementalColumn, err := expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionUseIncrementalColumn(original["use_incremental_column"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedUseIncrementalColumn); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["useIncrementalColumn"] = transformedUseIncrementalColumn
+	}
+
+	transformedAggregationWindowOverride, err := expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionAggregationWindowOverride(original["aggregation_window_override"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedAggregationWindowOverride); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["aggregationWindowOverride"] = transformedAggregationWindowOverride
+	}
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionSegmentationColumns(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionMetrics(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionAnomalyProbabilityThreshold(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionTimestampColumn(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionUsePartitionColumn(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionUseIncrementalColumn(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesDataAnomalyDetectionAggregationWindowOverride(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesFreshnessAnomalyDetection(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 {
+		return nil, nil
+	}
+
+	if l[0] == nil {
+		transformed := make(map[string]interface{})
+		return transformed, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedConfidenceLevel, err := expandDataplexDatascanDataQualitySpecRulesFreshnessAnomalyDetectionConfidenceLevel(original["confidence_level"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedConfidenceLevel); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["confidenceLevel"] = transformedConfidenceLevel
+	}
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesFreshnessAnomalyDetectionConfidenceLevel(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesVolumeAnomalyDetection(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 {
+		return nil, nil
+	}
+
+	if l[0] == nil {
+		transformed := make(map[string]interface{})
+		return transformed, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedConfidenceLevel, err := expandDataplexDatascanDataQualitySpecRulesVolumeAnomalyDetectionConfidenceLevel(original["confidence_level"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedConfidenceLevel); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["confidenceLevel"] = transformedConfidenceLevel
+	}
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanDataQualitySpecRulesVolumeAnomalyDetectionConfidenceLevel(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
 func expandDataplexDatascanDataQualitySpecCatalogPublishingEnabled(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
@@ -3680,6 +4191,109 @@ func expandDataplexDatascanDataQualitySpecEnableCatalogBasedRules(v interface{},
 }
 
 func expandDataplexDatascanDataQualitySpecFilter(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecAnomalyDetection(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedTimestampColumn, err := expandDataplexDatascanDataQualitySpecAnomalyDetectionTimestampColumn(original["timestamp_column"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedTimestampColumn); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["timestampColumn"] = transformedTimestampColumn
+	}
+
+	transformedUsePartitionColumn, err := expandDataplexDatascanDataQualitySpecAnomalyDetectionUsePartitionColumn(original["use_partition_column"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedUsePartitionColumn); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["usePartitionColumn"] = transformedUsePartitionColumn
+	}
+
+	transformedUseIncrementalColumn, err := expandDataplexDatascanDataQualitySpecAnomalyDetectionUseIncrementalColumn(original["use_incremental_column"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedUseIncrementalColumn); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["useIncrementalColumn"] = transformedUseIncrementalColumn
+	}
+
+	transformedAggregationWindow, err := expandDataplexDatascanDataQualitySpecAnomalyDetectionAggregationWindow(original["aggregation_window"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedAggregationWindow); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["aggregationWindow"] = transformedAggregationWindow
+	}
+
+	transformedAnomalyDetectionAssets, err := expandDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssets(original["anomaly_detection_assets"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedAnomalyDetectionAssets); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["anomalyDetectionAssets"] = transformedAnomalyDetectionAssets
+	}
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanDataQualitySpecAnomalyDetectionTimestampColumn(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecAnomalyDetectionUsePartitionColumn(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecAnomalyDetectionUseIncrementalColumn(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecAnomalyDetectionAggregationWindow(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssets(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	if v == nil {
+		return nil, nil
+	}
+	l := v.([]interface{})
+	if len(l) == 0 || l[0] == nil {
+		return nil, nil
+	}
+	raw := l[0]
+	original := raw.(map[string]interface{})
+	transformed := make(map[string]interface{})
+
+	transformedResultTable, err := expandDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssetsResultTable(original["result_table"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedResultTable); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["resultTable"] = transformedResultTable
+	}
+
+	transformedIntermediateDataset, err := expandDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssetsIntermediateDataset(original["intermediate_dataset"], d, config)
+	if err != nil {
+		return nil, err
+	} else if val := reflect.ValueOf(transformedIntermediateDataset); val.IsValid() && !tpgresource.IsEmptyValue(val) {
+		transformed["intermediateDataset"] = transformedIntermediateDataset
+	}
+
+	return transformed, nil
+}
+
+func expandDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssetsResultTable(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
+	return v, nil
+}
+
+func expandDataplexDatascanDataQualitySpecAnomalyDetectionAnomalyDetectionAssetsIntermediateDataset(v interface{}, d tpgresource.TerraformResourceData, config *transport_tpg.Config) (interface{}, error) {
 	return v, nil
 }
 
@@ -4181,6 +4795,31 @@ func expandDataplexDatascanEffectiveLabels(v interface{}, d tpgresource.Terrafor
 		m[k] = val.(string)
 	}
 	return m, nil
+}
+
+func resourceDataplexDatascanEncoder(d *schema.ResourceData, meta interface{}, obj map[string]interface{}) (map[string]interface{}, error) {
+	// freshnessAnomalyDetection and volumeAnomalyDetection use send_empty_value so
+	// that an empty block is sent as {}, which means the rule is sent as null when
+	// the block is unset. These fields are restricted by API visibility labels, and
+	// the API rejects unknown field names even when their value is null. Remove the
+	// null values so that rules can still be created and updated in projects
+	// without visibility of anomaly detection.
+	if dataQualitySpec, ok := obj["dataQualitySpec"].(map[string]interface{}); ok {
+		if rules, ok := dataQualitySpec["rules"].([]interface{}); ok {
+			for _, raw := range rules {
+				rule, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for _, field := range []string{"freshnessAnomalyDetection", "volumeAnomalyDetection"} {
+					if v, ok := rule[field]; ok && v == nil {
+						delete(rule, field)
+					}
+				}
+			}
+		}
+	}
+	return obj, nil
 }
 
 func ResourceDataplexDatascanFlatten(d *schema.ResourceData, meta interface{}, res map[string]interface{}, config *transport_tpg.Config, project string, userAgent string, billingProject string, url string, headers http.Header) error {
